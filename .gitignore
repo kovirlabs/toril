@@ -13,3 +13,6 @@ dist-ssr
 .DS_Store
 .idea/
 .claude/settings.local.json
+
+# Private working notes (not for the public repo)
+MARKETING.md

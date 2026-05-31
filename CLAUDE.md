@@ -72,7 +72,10 @@ Implementation notes for whoever resumes (learned the hard way): Milkdown `$mark
 HTML/RTF always serialize via `docToMarkdown`).
 
 **Next:** finish Phase 4 — remaining is shippable-quality work: optional code-signing (removes the
-SmartScreen warning) and on-device verification. A backlog of further QoL features is in §13.
+SmartScreen warning) and on-device verification. A backlog of further QoL features is in §13. The
+**forward plan beyond Phase 4** — turning the editor into a notes *system* (search, links, version
+history, sync coexistence, the AI wedge) branch-by-branch, with per-stage publicity guidance — lives in
+**`ROADMAP.md`**.
 
 ### Commands
 ```bash

@@ -105,4 +105,6 @@ The same `pnpm tauri build` works, with platform build dependencies:
 | Backend logic tests | `cd src-tauri && cargo test -p fsatomic -p vaultscan` |
 
 The architecture, data-safety rules, command contract, and build milestones live
-in **[CLAUDE.md](./CLAUDE.md)**; brand and theming in **[BRAND.md](./BRAND.md)**.
+in **[CLAUDE.md](./CLAUDE.md)**; the forward plan (branch-by-branch, with adoption
+guidance) in **[ROADMAP.md](./ROADMAP.md)**; brand and theming in
+**[BRAND.md](./BRAND.md)**.
