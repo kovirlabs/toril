@@ -24,8 +24,8 @@ importers:
         specifier: 2.7.1
         version: 2.7.1
       dompurify:
-        specifier: 3.4.5
-        version: 3.4.5
+        specifier: 3.4.9
+        version: 3.4.9
     devDependencies:
       '@tauri-apps/cli':
         specifier: 2.11.2
@@ -776,8 +776,8 @@ packages:
   devlop@1.1.0:
     resolution: {integrity: sha512-RWmIqhcFf1lRYBvNmr7qTNuyCt/7/ns2jbpp1+PalgE/rDQcBT0fioSMUpJ93irlUhC5hrg4cYqe6U+0ImW0rA==}
 
-  dompurify@3.4.5:
-    resolution: {integrity: sha512-OrwIBKsdNSVEeubdJ1HBv/wNENRM9ytAVCv7YXt//A3vPdVMNuACRqK9mXCGCBW2ln7BT/A4X0jXHo2Gu89miA==}
+  dompurify@3.4.9:
+    resolution: {integrity: sha512-4dPSRMRDqHvs0V4YDFCsaIZo4if5u0xM+llyxiM2fwuZFdKArUBAF3VtI2+n8NKg9P870WMdYk0UhqQNoWXbfQ==}
 
   emoji-regex@10.6.0:
     resolution: {integrity: sha512-toUI84YS5YmxW219erniWD0CIVOo46xGKColeNQRgOzDorgBi1v4D71/OFzgD9GO2UGKIv1C3Sp8DAn0+j5w7A==}
@@ -1560,7 +1560,7 @@ snapshots:
       '@milkdown/utils': 7.21.1
       '@types/lodash-es': 4.17.12
       clsx: 2.1.1
-      dompurify: 3.4.5
+      dompurify: 3.4.9
       lodash-es: 4.18.1
       nanoid: 5.1.11
       unist-util-visit: 5.1.0
@@ -1665,7 +1665,7 @@ snapshots:
       '@milkdown/prose': 7.21.1
       '@milkdown/transformer': 7.21.1
       '@milkdown/utils': 7.21.1
-      dompurify: 3.4.5
+      dompurify: 3.4.9
       emoji-regex: 10.6.0
       node-emoji: 2.2.0
       remark-emoji: 5.0.2
@@ -2135,7 +2135,7 @@ snapshots:
     dependencies:
       dequal: 2.0.3
 
-  dompurify@3.4.5:
+  dompurify@3.4.9:
     optionalDependencies:
       '@types/trusted-types': 2.0.7
 
