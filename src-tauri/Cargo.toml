@@ -15,7 +15,7 @@ exclude = ["third-party/glib"]
 
 [package]
 name = "toril-app"
-version = "0.1.1"
+version = "1.0.0-beta.1"
 description = "Toril — a WYSIWYG markdown editor"
 authors = ["Toril contributors"]
 edition = "2024"

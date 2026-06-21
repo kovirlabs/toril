@@ -13,6 +13,43 @@ GitHub Release notes plus the commits that shipped in it.
 
 _Nothing yet._
 
+## [v1.0.0-beta.1] — 2026-06-21
+
+**First beta — Toril opens your files the way you expect, and ships a patched
+sanitizer.**
+
+- **Double-click to open.** Set Toril as the default app for `.md` (or
+  `.markdown`/`.html`/`.htm`) and double-clicking a file — or "Open with →
+  Toril" — now opens it directly. If Toril is already running, the file opens in
+  the existing window instead of launching a second copy.
+- **Security:** the bundled HTML sanitizer (DOMPurify) is updated to 3.4.11,
+  clearing a batch of sanitization-bypass / config-pollution advisories; the
+  test-only `undici` dependency is patched to 7.28.0.
+
+_Still pre-1.0 in spirit — a beta. Back up your notes. On Windows, SmartScreen
+warns on first run because the build is unsigned; that is expected._
+
+### Added
+- **File-association open** (CLAUDE.md §5). `bundle.fileAssociations` in
+  `tauri.conf.json` registers Toril as a handler for `md`/`markdown`/`html`/`htm`
+  so the installer writes the OS registry entries. On first launch the file path
+  arrives as `argv[1]`; `lib.rs` captures it into `LaunchPath` and the frontend
+  pulls it once via the new `take_launch_path` command (after session restore, so
+  it becomes the active tab). `tauri-plugin-single-instance` forwards a second
+  launch's path to the running window as an `open-file` event and focuses it.
+
+### Security
+- DOMPurify 3.4.5 → 3.4.11 (shipped in `sanitize.ts`); `undici` → 7.28.0
+  (transitive dev dependency of jsdom). pnpm overrides live in
+  `pnpm-workspace.yaml`.
+
+### Notes
+- macOS file-opens (via `RunEvent::Opened`, not argv) are not yet wired — Windows
+  is the focus (§1).
+- The file-open GUI flow needs on-device verification on a webview-capable build
+  (§0); the logic layers are gated (`launch_path_from_args` unit test, frontend
+  typecheck + 97 tests).
+
 ## [v0.1.1-alpha.1] — 2026-05-30
 
 **Release notes — edit HTML, not just Markdown:**
@@ -285,7 +322,9 @@ watcher, and the cross-platform release pipeline.
 - `0d5b7f5` initial commit
 - `24d2c42` Initial commit
 
-[Unreleased]: https://github.com/kovirlabs/toril/compare/v0.1.0-alpha.8...HEAD
+[Unreleased]: https://github.com/kovirlabs/toril/compare/v1.0.0-beta.1...HEAD
+[v1.0.0-beta.1]: https://github.com/kovirlabs/toril/compare/v0.1.1-alpha.1...v1.0.0-beta.1
+[v0.1.1-alpha.1]: https://github.com/kovirlabs/toril/compare/v0.1.0-alpha.8...v0.1.1-alpha.1
 [v0.1.0-alpha.8]: https://github.com/kovirlabs/toril/compare/v0.1.0-alpha.7...v0.1.0-alpha.8
 [v0.1.0-alpha.7]: https://github.com/kovirlabs/toril/compare/v0.1.0-alpha.6...v0.1.0-alpha.7
 [v0.1.0-alpha.6]: https://github.com/kovirlabs/toril/compare/v0.1.0-alpha.5...v0.1.0-alpha.6

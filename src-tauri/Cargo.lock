@@ -4233,7 +4233,7 @@ checksum = "756daf9b1013ebe47a8776667b466417e2d4c5679d441c26230efd9ef78692db"
 
 [[package]]
 name = "toril-app"
-version = "0.1.1"
+version = "1.0.0-beta.1"
 dependencies = [
  "fsatomic",
  "imgasset",
