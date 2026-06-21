@@ -109,14 +109,21 @@ reach**: the data-safety floor ships before the differentiators, and the AI laye
 stands on top of it.
 
 ```mermaid
-timeline
-    title Toril — The Next Horizon
-    Now · v1.0.0-beta.1 : Inline WYSIWYG editor : Atomic saves · tabs · file watcher : HTML/RTF export · themes
-    I · Trust Foundation : Autosave + crash recovery : Safe-delete trash : Local version history : Sync-conflict coexistence : Release-readiness + code signing
-    II · Notes System : Global vault search : Command palette / quick switcher : Wikilinks · backlinks · tags : Front-matter · outline · file ops
-    III · Writing Craft : Code highlighting · KaTeX · Mermaid : Focus / typewriter modes : Writing stats · daily notes · templates
-    IV · The AI Wedge : AI assist panel (BYO key + Ollama) : Chat-with-your-vault (local RAG) : AI organization · MCP bridge
-    V · Reach : Per-tab undo · large-vault perf : a11y · i18n · encrypted notes : Mobile — iOS / Android
+flowchart TD
+    Now["<b>Now · v1.0.0-beta.1</b><br/>Inline WYSIWYG editor · atomic I/O<br/>tabs · file watcher · HTML/RTF export · themes"]
+    I["<b>Movement I — Trust Foundation</b><br/>autosave + crash recovery · safe-delete trash<br/>local version history · sync coexistence · code signing"]
+    II["<b>Movement II — Notes System</b><br/>global vault search · command palette<br/>wikilinks · backlinks · tags · outline · file ops"]
+    III["<b>Movement III — Writing Craft</b><br/>code highlighting · KaTeX · Mermaid<br/>focus / typewriter modes · stats · daily notes"]
+    IV["<b>Movement IV — The AI Wedge</b><br/>AI assist panel (BYO key + Ollama)<br/>chat-with-your-vault (local RAG) · AI organization · MCP bridge"]
+    V["<b>Movement V — Reach</b><br/>per-tab undo · large-vault perf · a11y / i18n<br/>encrypted notes · mobile (iOS / Android)"]
+    Now --> I --> II --> III --> IV --> V
+
+    classDef done fill:#dafbe1,stroke:#2da44e,color:#0a0a0a;
+    classDef step fill:#eef2ff,stroke:#6e7bff,color:#0a0a0a;
+    classDef ai fill:#fff4e5,stroke:#fb8500,color:#0a0a0a;
+    class Now done;
+    class I,II,III,V step;
+    class IV ai;
 ```
 
 | Movement | Focus | Milestone |
