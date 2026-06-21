@@ -16,10 +16,3 @@ dist-ssr
 
 # Private working notes (not for the public repo)
 MARKETING.md
-
-
-# Added by cargo
-#
-# already existing elements were commented out
-
-#/target
