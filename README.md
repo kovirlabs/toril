@@ -14,36 +14,60 @@ live Obsidian vault — no proprietary container, no lock-in.
 **Primary platform: Windows.** macOS and Linux build from the same stack but are
 not the current focus.
 
-> ⚠️ **Status: early alpha.** The editor, atomic file saving, a folder
-> sidebar, multi-document tabs, and an external-change watcher are in place
-> (build milestones 0–2). The first prebuilt installers are available in
-> **[v0.1.0-alpha](https://github.com/kovirlabs/toril/releases/tag/v0.1.0-alpha)** —
-> expect rough edges, and keep backups of important notes.
+> ⚠️ **Status: beta.** The core editor and the surrounding workflow are in place
+> (build phases 0–3 complete; phase 4 polish in progress). Prebuilt installers are
+> available in
+> **[v1.0.0-beta.1](https://github.com/kovirlabs/toril/releases/latest)** — it's
+> still pre-1.0 in spirit, so expect the occasional rough edge and keep backups of
+> important notes.
+
+---
+
+## Features
+
+- **Inline WYSIWYG** — CommonMark + GitHub Flavored Markdown (tables, task lists,
+  strikethrough, footnotes) + emoji shortcodes, rendered in place as you type.
+- **HTML as a first-class format** — open, edit, and save `.html`/`.htm` documents
+  WYSIWYG alongside `.md`, with the markup sanitized on load.
+- **Atomic saves** — every write is temp-file + fsync + rename, so a crash
+  mid-save can never corrupt an existing note.
+- **Workspace sidebar + multi-document tabs** with an external-change file watcher
+  (so editing a folder that's also an Obsidian vault stays in sync).
+- **Session memory** — reopens your last folder and files on launch.
+- **Themes** — System / Light / Dark.
+- **Export** to HTML and RTF.
+- **Clipboard image paste** — pasted images are saved beside the document.
+- **Formatting toolbar, status bar** (word/char count + reading time), and a
+  native app menu.
+- **Quality-of-life** — Find & Replace, Save All, toggle sidebar, an
+  unsaved-changes close guard, and opening files via double-click / "Open with".
+
+> Not yet: Math (KaTeX), PDF export, and in-editor YAML front matter — see
+> [CLAUDE.md](./CLAUDE.md) for the current status of each.
 
 ---
 
 ## Download
 
-Prebuilt installers for the latest alpha are on the
+Prebuilt installers for the latest beta are on the
 **[releases page](https://github.com/kovirlabs/toril/releases/latest)**. Grab the
 one for your platform:
 
 | Platform | Download |
 |---|---|
-| **Windows** (recommended) | [`Toril_0.1.0_x64-setup.exe`](https://github.com/kovirlabs/toril/releases/download/v0.1.0-alpha/Toril_0.1.0_x64-setup.exe) |
-| **Windows** (MSI) | [`Toril_0.1.0_x64_en-US.msi`](https://github.com/kovirlabs/toril/releases/download/v0.1.0-alpha/Toril_0.1.0_x64_en-US.msi) |
-| **macOS** (Apple Silicon) | [`Toril_0.1.0_aarch64.dmg`](https://github.com/kovirlabs/toril/releases/download/v0.1.0-alpha/Toril_0.1.0_aarch64.dmg) |
-| **macOS** (Intel) | [`Toril_0.1.0_x64.dmg`](https://github.com/kovirlabs/toril/releases/download/v0.1.0-alpha/Toril_0.1.0_x64.dmg) |
-| **Linux** (AppImage) | [`Toril_0.1.0_amd64.AppImage`](https://github.com/kovirlabs/toril/releases/download/v0.1.0-alpha/Toril_0.1.0_amd64.AppImage) |
-| **Linux** (Debian/Ubuntu) | [`Toril_0.1.0_amd64.deb`](https://github.com/kovirlabs/toril/releases/download/v0.1.0-alpha/Toril_0.1.0_amd64.deb) |
-| **Linux** (Fedora/RHEL) | [`Toril-0.1.0-1.x86_64.rpm`](https://github.com/kovirlabs/toril/releases/download/v0.1.0-alpha/Toril-0.1.0-1.x86_64.rpm) |
+| **Windows** | [`Toril_1.0.0-beta.1_x64-setup.exe`](https://github.com/kovirlabs/toril/releases/download/v1.0.0-beta.1/Toril_1.0.0-beta.1_x64-setup.exe) |
+| **macOS** (Apple Silicon) | [`Toril_1.0.0-beta.1_aarch64.dmg`](https://github.com/kovirlabs/toril/releases/download/v1.0.0-beta.1/Toril_1.0.0-beta.1_aarch64.dmg) |
+| **macOS** (Intel) | [`Toril_1.0.0-beta.1_x64.dmg`](https://github.com/kovirlabs/toril/releases/download/v1.0.0-beta.1/Toril_1.0.0-beta.1_x64.dmg) |
+| **Linux** (AppImage) | [`Toril_1.0.0-beta.1_amd64.AppImage`](https://github.com/kovirlabs/toril/releases/download/v1.0.0-beta.1/Toril_1.0.0-beta.1_amd64.AppImage) |
+| **Linux** (Debian/Ubuntu) | [`Toril_1.0.0-beta.1_amd64.deb`](https://github.com/kovirlabs/toril/releases/download/v1.0.0-beta.1/Toril_1.0.0-beta.1_amd64.deb) |
+| **Linux** (Fedora/RHEL) | [`Toril-1.0.0-beta.1-1.x86_64.rpm`](https://github.com/kovirlabs/toril/releases/download/v1.0.0-beta.1/Toril-1.0.0-beta.1-1.x86_64.rpm) |
 
 Prefer to compile it yourself? See [Building from source](#running-from-source-development).
 
 ## Installing on Windows
 
-Download **`Toril_0.1.0_x64-setup.exe`** above and double-click it. It performs a
-per-user install — no administrator rights needed:
+Download **`Toril_1.0.0-beta.1_x64-setup.exe`** above and double-click it. It
+performs a per-user install — no administrator rights needed:
 
 - Copies the app into **`%LOCALAPPDATA%\Toril`** (i.e.
   `C:\Users\<you>\AppData\Local\Toril`) — no admin prompt.
@@ -66,9 +90,45 @@ uninstaller in `%LOCALAPPDATA%\Toril`.
 - **macOS:** open the `.dmg` and drag **Toril** to Applications. The build is
   unsigned, so the first launch needs **right-click → Open** (or *System Settings
   → Privacy & Security → Open Anyway*) to get past Gatekeeper.
-- **Linux:** the `.AppImage` is portable — `chmod +x Toril_0.1.0_amd64.AppImage`
-  and run it. Or install the `.deb` (`sudo apt install ./Toril_0.1.0_amd64.deb`)
-  / `.rpm` (`sudo dnf install ./Toril-0.1.0-1.x86_64.rpm`).
+- **Linux:** the `.AppImage` is portable — `chmod +x Toril_1.0.0-beta.1_amd64.AppImage`
+  and run it. Or install the `.deb`
+  (`sudo apt install ./Toril_1.0.0-beta.1_amd64.deb`) / `.rpm`
+  (`sudo dnf install ./Toril-1.0.0-beta.1-1.x86_64.rpm`).
+
+---
+
+## Roadmap
+
+> **The bull, penned — now learning to roam.** Toril is a solid single-document
+> editor today; the plan is to grow it into a notes **system** you live in: the
+> local-first, plain-files, AI-native writing tool you defect to when you outgrow
+> Apple Notes.
+
+The work is organized into five movements, sequenced by one rule — **trust before
+reach**: the data-safety floor ships before the differentiators, and the AI layer
+stands on top of it.
+
+```mermaid
+timeline
+    title Toril — The Next Horizon
+    Now · v1.0.0-beta.1 : Inline WYSIWYG editor : Atomic saves · tabs · file watcher : HTML/RTF export · themes
+    I · Trust Foundation : Autosave + crash recovery : Safe-delete trash : Local version history : Sync-conflict coexistence : Release-readiness + code signing
+    II · Notes System : Global vault search : Command palette / quick switcher : Wikilinks · backlinks · tags : Front-matter · outline · file ops
+    III · Writing Craft : Code highlighting · KaTeX · Mermaid : Focus / typewriter modes : Writing stats · daily notes · templates
+    IV · The AI Wedge : AI assist panel (BYO key + Ollama) : Chat-with-your-vault (local RAG) : AI organization · MCP bridge
+    V · Reach : Per-tab undo · large-vault perf : a11y · i18n · encrypted notes : Mobile — iOS / Android
+```
+
+| Movement | Focus | Milestone |
+|---|---|---|
+| **I — Trust Foundation** | Make it safe to live in | *"Safe to live in"* |
+| **II — Notes System** | The daily-driver core | *"A real notes system"* — first beta |
+| **III — Writing Craft** | Win the focus-writer fight | *"A joy to write in"* |
+| **IV — The AI Wedge** | The unfair advantage | *"Your notes, with Claude inside"* |
+| **V — Reach** | Scale, polish, and the mobile bet | **v1.0** — *"for everyone who outgrew their notes app"* |
+
+The full branch-by-branch plan — goals, gates, new crates, and open decisions —
+lives in **[ROADMAP.md](./ROADMAP.md)**.
 
 ---
 
@@ -106,7 +166,7 @@ The same `pnpm tauri build` works, with platform build dependencies:
 | Frontend type-check | `pnpm typecheck` |
 | Frontend build only | `pnpm build` |
 | Frontend tests (round-trip, tabs) | `pnpm test` |
-| Backend logic tests | `cd src-tauri && cargo test -p fsatomic -p vaultscan` |
+| Backend logic tests | `cd src-tauri && cargo test -p fsatomic -p vaultscan -p mdhtml -p mdrtf -p imgasset` |
 
 The architecture, data-safety rules, command contract, and build milestones live
 in **[CLAUDE.md](./CLAUDE.md)**; the forward plan (branch-by-branch, with adoption

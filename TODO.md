@@ -12,3 +12,7 @@ as GitHub Actions secrets and sign in the Windows `release.yml` job, then soften
 SmartScreen note in `README.md` and `docs/index.html`. (Trusted Signing is OV-class:
 it builds SmartScreen reputation over downloads/time, it doesn't bypass the warning
 instantly like an EV cert.)
+
+Full reference — current signing state, the Windows installer quirks that *were*
+solved (NSIS-vs-MSI, per-user install, WebView2 bootstrapper), and the
+implementation checklist — lives in **[WINDOWS-SIGNING.md](./WINDOWS-SIGNING.md)**.
