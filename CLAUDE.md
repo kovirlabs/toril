@@ -335,9 +335,16 @@ pnpm tauri dev          # development
 pnpm tauri build        # production -> .exe + installer
 ```
 
-Output: `src-tauri/target/release/` (raw `.exe`) and `…/bundle/` (NSIS + MSI). In `tauri.conf.json`:
-`bundle.targets = ["nsis","msi"]`; `bundle.windows.webviewInstallMode = "downloadBootstrapper"`
+Output: `src-tauri/target/release/` (raw `.exe`) and `…/bundle/` (NSIS installer). In
+`tauri.conf.json`: `bundle.targets` is an explicit list (`nsis` on Windows; `app`/`dmg` on macOS;
+`deb`/`rpm`/`appimage` on Linux); `bundle.windows.webviewInstallMode = "downloadBootstrapper"`
 (handles Win10 WebView2); set icon, product name, version, publisher.
+
+> **MSI is intentionally excluded.** Windows Installer versions are 4-part numeric and only accept a
+> *numeric* pre-release field, so a semver tag like `1.0.0-beta.1` cannot be bundled as MSI — it fails
+> with `optional pre-release identifier in app version must be numeric-only …`. NSIS handles
+> pre-release versions (and file associations + the WebView2 bootstrapper) fine, so it is the sole
+> Windows installer. Revisit MSI only for a final numeric release (`x.y.z`, no `-beta`/`-rc`).
 
 Code signing is optional for personal use; without it, Windows SmartScreen warns on first run —
 expected, not a bug.
