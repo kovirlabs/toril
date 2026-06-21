@@ -7,6 +7,10 @@ Toril is a small, fast desktop markdown editor built on **Tauri 2 + TypeScript +
 Milkdown**. Files are plain `.md` in ordinary folders, so a workspace can be a
 live Obsidian vault — no proprietary container, no lock-in.
 
+<p align="center">
+  <img src="./media/UI-Screenshot_2026-06-21.png" alt="Toril editing a Markdown document with inline WYSIWYG rendering" width="90%">
+</p>
+
 **Primary platform: Windows.** macOS and Linux build from the same stack but are
 not the current focus.
 
