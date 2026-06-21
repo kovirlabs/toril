@@ -241,16 +241,28 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 | `export_pdf` | `content, theme` | `path` | *(deferred — §7)* |
 | `save_clipboard_image` | `bytes, docPath` | `relative_path` | writes pasted image to `./assets/` (`imgasset`), returns MD-relative path (§6) |
 | `load_settings` / `save_settings` | — / `Settings` | `Settings` / `()` | JSON in app config dir; includes `theme` + `sidebar_visible` |
+| `take_launch_path` | — | `path?` | file the app was launched with (double-click / "Open with"); returns it **once**, then `null` (§file-open) |
 
 > **HTML export is split** across two commands to hold the single sanitization path (§3.3):
 > `markdown_to_html` renders (raw HTML passed through), the **frontend** runs it through `sanitize.ts`
 > and builds the standalone document, then `export_html` writes that finished HTML atomically. comrak
 > never writes files; sanitize never moves to Rust.
 >
-> **Events (Rust → frontend):** `workspace:change` (file watcher) and `menu` (native menu item id
-> `menu_*` → mapped to the same handlers as toolbar buttons). Subscribe via `onWorkspaceChange` /
-> `onMenuAction` in `ipc.ts`. The window **close guard** uses the frontend window API
-> (`onCloseRequested`, `installCloseGuard`), not a command — see §3.
+> **Events (Rust → frontend):** `workspace:change` (file watcher), `menu` (native menu item id
+> `menu_*` → mapped to the same handlers as toolbar buttons), and `open-file` (a *second* launch's
+> file path, forwarded by the single-instance plugin while Toril is already running). Subscribe via
+> `onWorkspaceChange` / `onMenuAction` / `onOpenFile` in `ipc.ts`. The window **close guard** uses the
+> frontend window API (`onCloseRequested`, `installCloseGuard`), not a command — see §3.
+>
+> **File-association open (double-click / "Open with").** Three parts: (1) `bundle.fileAssociations`
+> in `tauri.conf.json` registers Toril as a `.md`/`.markdown`/`.html`/`.htm` handler so the installer
+> writes the OS registry entries; (2) on **first** launch the path arrives as `argv[1]` —
+> `lib.rs` captures it into `LaunchPath` and the bootstrap pulls it via `take_launch_path` (after
+> session restore, so it becomes the active tab); (3) `tauri-plugin-single-instance` forwards a
+> *subsequent* launch's argv to the running window as the `open-file` event instead of spawning a
+> duplicate. **macOS** delivers file-opens via `RunEvent::Opened`, not argv — not yet wired (Windows
+> is the focus, §1); add that handler when macOS becomes a target. All flows need on-device GUI
+> verification (no webview here, §0).
 
 ---
 

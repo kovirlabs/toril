@@ -91,6 +91,23 @@ export function onMenuAction(handler: (id: string) => void): Promise<UnlistenFn>
 }
 
 /**
+ * Consume the file Toril was launched with via double-click / "Open with" (§5).
+ * Resolves to the path once, then `null` on subsequent calls (the backend clears
+ * it so a session restore can't reopen a closed file). `null` on a normal launch.
+ */
+export function takeLaunchPath(): Promise<string | null> {
+  return invoke<string | null>("take_launch_path");
+}
+
+/**
+ * Subscribe to file-open requests forwarded from a *second* launch while Toril is
+ * already running (single-instance, §5). The payload is the file path to open.
+ */
+export function onOpenFile(handler: (path: string) => void): Promise<UnlistenFn> {
+  return listen<string>("open-file", (event) => handler(event.payload));
+}
+
+/**
  * Guard the window's close button: when `hasUnsaved()` reports dirty documents,
  * intercept the close, ask for confirmation, and only then destroy the window
  * (§3 data safety). Returns once the handler is registered.

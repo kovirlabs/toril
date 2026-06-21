@@ -20,6 +20,7 @@ import {
   loadSettings,
   markdownToHtml,
   onMenuAction,
+  onOpenFile,
   onWorkspaceChange,
   openFile,
   openFolder,
@@ -30,6 +31,7 @@ import {
   saveFileAs,
   saveSettings,
   showAbout,
+  takeLaunchPath,
   watchFolder,
 } from "./ipc";
 import { SearchBar } from "./ui/search";
@@ -602,7 +604,22 @@ window.addEventListener("DOMContentLoaded", async () => {
   // Restore the last session (folder + open files); fall back to a welcome tab
   // if there was nothing to restore or every remembered path is now gone.
   await restoreSession();
+
+  // A file passed at launch (double-click / "Open with", §5) takes priority over
+  // the welcome fallback and becomes the active tab. openPath dedupes against any
+  // already-restored tab, so a remembered + double-clicked file isn't opened twice.
+  try {
+    const launchPath = await takeLaunchPath();
+    if (launchPath) await openPath(launchPath);
+  } catch {
+    // bad/missing path — ignore and fall through to the welcome tab
+  }
+
   if (!tabs.active()) {
     openDocument(null, "Untitled", WELCOME);
   }
+
+  // While Toril is already running, a second double-click is forwarded here by
+  // the single-instance plugin rather than starting a new process (§5).
+  void onOpenFile((path) => void openPath(path));
 });
