@@ -2,3 +2,12 @@
 # build-script allowlists here (the package.json "pnpm" field is ignored).
 allowBuilds:
   esbuild: true
+
+# Force a patched undici (jsdom pulls it transitively as ^7.25.0). 7.28.0 fixes
+# GHSA-vmh5-mc38-953g (SOCKS5 TLS cert-validation bypass) and
+# GHSA-pr7r-676h-xcf6 (shared-cache whitespace bypass). Drop once jsdom's range moves.
+overrides:
+  undici@>=7.0.0 <7.28.0: 7.28.0
+  # Milkdown pulls dompurify ^3.2.5 transitively; force the whole tree to the
+  # patched 3.4.11 (clears the GHSA-* dompurify alerts). Our direct dep is also 3.4.11.
+  dompurify@<3.4.11: 3.4.11
