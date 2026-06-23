@@ -7,7 +7,7 @@ import { Editor, defaultValueCtx, editorViewCtx, rootCtx } from "@milkdown/kit/c
 import { commonmark } from "@milkdown/kit/preset/commonmark";
 import { gfm } from "@milkdown/kit/preset/gfm";
 import type { Node as ProseNode } from "@milkdown/kit/prose/model";
-import { activeHeadingIndex, extractHeadings, type Heading } from "../src/ui/outline";
+import { activeHeadingIndex, extractHeadings, Outline, type Heading } from "../src/ui/outline";
 
 async function makeEditor(md: string): Promise<Editor> {
   const root = document.createElement("div");
@@ -67,5 +67,51 @@ describe("activeHeadingIndex", () => {
   });
   it("is -1 for an empty list", () => {
     expect(activeHeadingIndex([], 10)).toBe(-1);
+  });
+});
+
+describe("Outline (render + navigate)", () => {
+  it("renders one entry per heading with its text and level", async () => {
+    const editor = await makeEditor("# Alpha\n\n## Beta\n");
+    const editorRoot = document.createElement("div");
+    const panel = document.createElement("aside");
+    const outline = new Outline(panel, editor, editorRoot);
+    const entries = panel.querySelectorAll<HTMLElement>(".outline-entry");
+    expect([...entries].map((e) => e.textContent)).toEqual(["Alpha", "Beta"]);
+    expect(entries[0].dataset.level).toBe("1");
+    expect(entries[1].dataset.level).toBe("2");
+    outline.destroy();
+    await editor.destroy();
+  });
+
+  it("shows an empty-state when there are no headings", async () => {
+    const editor = await makeEditor("Just text.\n");
+    const panel = document.createElement("aside");
+    const outline = new Outline(panel, editor, document.createElement("div"));
+    expect(panel.querySelector(".outline-entry")).toBeNull();
+    expect(panel.querySelector(".outline-empty")?.textContent).toBe("No headings");
+    outline.destroy();
+    await editor.destroy();
+  });
+
+  it("moves the selection into the heading when an entry is clicked", async () => {
+    const editor = await makeEditor("# Alpha\n\n## Beta\n");
+    const editorRoot = document.createElement("div");
+    const panel = document.createElement("aside");
+    const outline = new Outline(panel, editor, editorRoot);
+    const entries = panel.querySelectorAll<HTMLButtonElement>(".outline-entry");
+    entries[1].click(); // navigate to "Beta"
+
+    let parentName = "";
+    let parentText = "";
+    editor.action((ctx) => {
+      const { selection } = ctx.get(editorViewCtx).state;
+      parentName = selection.$from.parent.type.name;
+      parentText = selection.$from.parent.textContent;
+    });
+    expect(parentName).toBe("heading");
+    expect(parentText).toBe("Beta");
+    outline.destroy();
+    await editor.destroy();
   });
 });
