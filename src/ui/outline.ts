@@ -36,7 +36,8 @@ export function extractHeadings(doc: ProseNode): Heading[] {
 /**
  * Index of the last heading at or before `pos` (the heading the caret/viewport
  * is currently within); -1 when `pos` is above the first heading. Headings are
- * in document order, so we can stop at the first one past `pos`.
+ * in document order, so we can stop at the first one past `pos`. Assumes `headings`
+ * is in ascending `pos` order — which is what `extractHeadings` returns.
  */
 export function activeHeadingIndex(headings: Heading[], pos: number): number {
   let idx = -1;
