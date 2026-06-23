@@ -127,20 +127,69 @@ body {
   font-weight: 600;
 }
 
-/* ---- Workspace: sidebar | main ---- */
+/* ---- Workspace: sidebar | main | outline ---- */
 #workspace {
   display: grid;
-  grid-template-columns: 240px 1fr;
+  grid-template-columns: var(--sidebar-w, 240px) 1fr var(--outline-w, 220px);
   min-height: 0;
 }
 
-/* Toggled via Ctrl+\ / the ☰ button; the sidebar collapses to zero width. */
+/* Two independent toggles compose without a combinatorial rule explosion:
+   Ctrl+\ collapses the sidebar, Ctrl+Shift+\ the outline. */
 #workspace.sidebar-hidden {
-  grid-template-columns: 0 1fr;
+  --sidebar-w: 0;
 }
 
-#workspace.sidebar-hidden #sidebar {
+#workspace.outline-hidden {
+  --outline-w: 0;
+}
+
+#workspace.sidebar-hidden #sidebar,
+#workspace.outline-hidden #outline {
   display: none;
+}
+
+#outline {
+  background: var(--sidebar-bg);
+  border-left: 1px solid var(--border);
+  overflow: auto;
+  padding: 0.5rem;
+}
+
+#outline .outline-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+#outline .outline-entry {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0.15rem 0.25rem;
+  border-radius: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#outline .outline-entry[data-level="2"] { padding-left: 1rem; }
+#outline .outline-entry[data-level="3"] { padding-left: 1.75rem; }
+#outline .outline-entry[data-level="4"] { padding-left: 2.5rem; }
+#outline .outline-entry[data-level="5"] { padding-left: 3.25rem; }
+#outline .outline-entry[data-level="6"] { padding-left: 4rem; }
+
+#outline .outline-entry:hover { background: var(--hover-bg, rgba(127, 127, 127, 0.15)); }
+#outline .outline-entry[data-active="true"] { background: var(--active-bg); font-weight: 600; }
+
+#outline .outline-empty {
+  color: var(--muted);
+  font-style: italic;
+  padding: 0.5rem;
 }
 
 #sidebar {

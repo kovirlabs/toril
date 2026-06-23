@@ -34,6 +34,7 @@ import {
   takeLaunchPath,
   watchFolder,
 } from "./ipc";
+import { Outline } from "./ui/outline";
 import { SearchBar } from "./ui/search";
 import { Sidebar } from "./ui/sidebar";
 import { StatusBar } from "./ui/statusbar";
@@ -51,11 +52,13 @@ let tabs: TabManager;
 let sidebar: Sidebar;
 let formatToolbar: FormattingToolbar | null = null;
 let statusBar: StatusBar | null = null;
+let outline: Outline | null = null;
 let searchBar: SearchBar | null = null;
 let theme: ThemeController | null = null;
 
 let workspaceRoot: string | null = null;
 let sidebarVisible = true;
+let outlineVisible = true;
 let unwatch: UnlistenFn | null = null;
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 let sessionTimer: ReturnType<typeof setTimeout> | null = null;
@@ -108,6 +111,7 @@ function formatForPath(path: string): DocFormat {
 function onEditorChange(): void {
   if (loading) return;
   statusBar?.refresh();
+  outline?.refresh();
   const tab = tabs.active();
   if (tab && !tab.dirty) {
     tabs.setDirty(tab.id, true);
@@ -126,6 +130,7 @@ function onActivate(tab: TabState): void {
   updateTitle();
   formatToolbar?.refresh();
   statusBar?.refresh();
+  outline?.refresh();
   scheduleSessionSave();
 }
 
@@ -285,6 +290,21 @@ function toggleSidebar(): void {
   scheduleSessionSave();
 }
 
+// ---- Outline visibility -----------------------------------------------------
+
+/** Apply the outline-panel visibility to the DOM (a class on #workspace drives CSS). */
+function applyOutline(): void {
+  document.querySelector("#workspace")?.classList.toggle("outline-hidden", !outlineVisible);
+  const btn = document.querySelector<HTMLElement>("#btn-toggle-outline");
+  if (btn) btn.dataset.active = String(outlineVisible);
+}
+
+function toggleOutline(): void {
+  outlineVisible = !outlineVisible;
+  applyOutline();
+  scheduleSessionSave();
+}
+
 // ---- Export ----------------------------------------------------------------
 
 /**
@@ -396,6 +416,7 @@ async function handleWorkspaceChange(change: WorkspaceChange): Promise<void> {
     const file = await openFile(active.path);
     active.content = file.content;
     loadIntoEditor(file.content, active.format);
+    outline?.refresh();
     tabs.setDirty(active.id, false);
     updateTitle();
     setStatus(`Reloaded ${active.name}`);
@@ -530,7 +551,8 @@ function installShortcuts(): void {
         break;
       case "\\":
         e.preventDefault();
-        toggleSidebar();
+        if (e.shiftKey) toggleOutline();
+        else toggleSidebar();
         break;
       case "o":
         e.preventDefault();
@@ -584,6 +606,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   formatToolbar = new FormattingToolbar(formatBar, editor, editorRoot);
   const docStats = document.querySelector<HTMLElement>("#docstats");
   if (docStats) statusBar = new StatusBar(docStats, editor, editorRoot);
+  const outlineEl = document.querySelector<HTMLElement>("#outline");
+  if (outlineEl) outline = new Outline(outlineEl, editor, editorRoot);
   const searchEl = document.querySelector<HTMLElement>("#searchbar");
   if (searchEl) searchBar = new SearchBar(searchEl, editor);
 
@@ -596,6 +620,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   document.querySelector("#btn-export")?.addEventListener("click", () => void doExportHtml());
   document.querySelector("#btn-export-rtf")?.addEventListener("click", () => void doExportRtf());
   document.querySelector("#btn-toggle-sidebar")?.addEventListener("click", () => toggleSidebar());
+  document.querySelector("#btn-toggle-outline")?.addEventListener("click", () => toggleOutline());
   installShortcuts();
   void onMenuAction(handleMenuAction); // native menu → same actions as the buttons
   // Guard against losing unsaved work when the window is closed (§3).
