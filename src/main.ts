@@ -534,6 +534,9 @@ function handleMenuAction(id: string): void {
     case "menu_toggle_sidebar":
       toggleSidebar();
       break;
+    case "menu_toggle_outline":
+      toggleOutline();
+      break;
     case "menu_export_html":
       void doExportHtml();
       break;
