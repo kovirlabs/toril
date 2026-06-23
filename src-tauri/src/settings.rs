@@ -35,6 +35,8 @@ pub struct Settings {
     pub theme: Option<String>,
     /// Whether the workspace sidebar is shown. `None` ⇒ visible (default).
     pub sidebar_visible: Option<bool>,
+    /// Whether the outline panel is shown. `None` ⇒ visible (default).
+    pub outline_visible: Option<bool>,
 }
 
 fn settings_path(app: &AppHandle) -> Result<PathBuf, String> {

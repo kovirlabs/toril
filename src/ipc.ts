@@ -152,6 +152,8 @@ export interface Settings {
   theme: string | null;
   /** Whether the workspace sidebar is shown. `null` ⇒ visible (default). */
   sidebar_visible: boolean | null;
+  /** Whether the outline panel is shown. `null` ⇒ visible (default). */
+  outline_visible: boolean | null;
 }
 
 /** Load persisted settings; resolves to defaults if none exist or the file is corrupt. */

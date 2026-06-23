@@ -446,6 +446,7 @@ function scheduleSessionSave(): void {
       active_file: tabs.active()?.path ?? null,
       theme: theme?.current() ?? null,
       sidebar_visible: sidebarVisible,
+      outline_visible: outlineVisible,
     };
     void saveSettings(settings).catch(() => {}); // best-effort
   }, 400);
@@ -473,6 +474,10 @@ async function restoreSession(): Promise<void> {
   if (settings.sidebar_visible !== null) {
     sidebarVisible = settings.sidebar_visible;
     applySidebar();
+  }
+  if (settings.outline_visible !== null) {
+    outlineVisible = settings.outline_visible;
+    applyOutline();
   }
 
   if (settings.last_folder) {
