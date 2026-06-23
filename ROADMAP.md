@@ -51,6 +51,16 @@ It is a fine **editor**. It is not yet a **notes system** — no global search, 
 quick switcher, no links, no tags, no version history, no sync conflict handling,
 no AI. That gap is this roadmap.
 
+> **Status (2026-06-22).** The foundation above — plus file-association / double-click
+> open — shipped through **`v1.0.0-beta.1`** (see `CHANGELOG.md`). **None of the
+> Movement I–V branches below have started**; every checkbox is unticked.
+> **▶ Pick up at Movement I, branch 1 — `feat/autosave-recovery`.**
+>
+> *Version note:* the `v1.0.0-beta.1` tag ran **ahead** of the indicative ladder in §2
+> (that ladder is guidance, not gospel). The data-safety floor (Movement I) is still
+> unbuilt, so the project is functionally pre-`v0.2` despite the tag — keep §3's
+> trust-before-reach rule in mind before leaning on the version number.
+
 ---
 
 ## 2. How we work (recap — these don't change)
@@ -136,7 +146,7 @@ nice in a synced folder. This movement is also the prerequisite for the AI wedge
 
 **Branches**
 
-1. **`feat/autosave-recovery`** — debounced atomic autosave of dirty *saved* files +
+- [ ] **1. `feat/autosave-recovery`** — debounced atomic autosave of dirty *saved* files +
    a crash-recovery journal for unsaved buffers; toggle in `Settings`.
    - *Touches:* `src/main.ts`, `src/ipc.ts`, `settings.rs` (add `autosave`,
      `autosave_debounce_ms`); reuses `fsatomic`.
@@ -145,13 +155,13 @@ nice in a synced folder. This movement is also the prerequisite for the AI wedge
    - *§3:* every write still goes through atomic save + `serializer.ts`. Never write
      a file the user didn't intend.
 
-2. **`feat/safe-delete-trash`** — soft-delete to a workspace `.trash/` with restore,
+- [ ] **2. `feat/safe-delete-trash`** — soft-delete to a workspace `.trash/` with restore,
    instead of hard `rm`; backs the future sidebar delete op.
    - *Touches:* new `crates/trashbin` (move-to-trash + restore, atomic) +
      `commands/files.rs`; contract row in §5.
    - *Gate:* `cargo test -p trashbin`.
 
-3. **`feat/local-version-history`** — periodic content-addressed snapshots of each
+- [ ] **3. `feat/local-version-history`** — periodic content-addressed snapshots of each
    note + a diff/restore panel. **This out-does Apple Notes** and is squarely
    on-brand.
    - *New crate:* `crates/snapshots` — content-addressed blob store; prefer **`gix`**
@@ -163,7 +173,7 @@ nice in a synced folder. This movement is also the prerequisite for the AI wedge
    - *§3:* snapshots are *additive* and never block a save; restore goes through the
      atomic path.
 
-4. **`feat/sync-coexistence`** — make folder-sync bulletproof: detect external edits
+- [ ] **4. `feat/sync-coexistence`** — make folder-sync bulletproof: detect external edits
    to open files, 3-way merge where safe, write Obsidian-style `…(conflict).md`
    otherwise, and a clear "changed on disk — reload / keep mine / merge" UX. **This is
    our entire sync story.**
@@ -175,7 +185,7 @@ nice in a synced folder. This movement is also the prerequisite for the AI wedge
      loss) + a `tests/` watcher-reaction suite.
    - *§3:* a conflict must **never** silently overwrite either side.
 
-5. **`feat/release-readiness`** — auto-update + signing + first-run, so the floor is
+- [ ] **5. `feat/release-readiness`** — auto-update + signing + first-run, so the floor is
    *shippable to strangers*.
    - *Scope:* wire **`tauri-plugin-updater`** (official) and **`tauri-plugin-window-state`**
      (vet versions per §2); editor zoom (`Ctrl +/-/0`); recent-files MRU; open-links-in-
@@ -187,7 +197,7 @@ nice in a synced folder. This movement is also the prerequisite for the AI wedge
      `menu.rs`, `main.ts`.
    - *Gate:* settings round-trip for the new prefs; manual on-device verify of update +
      first-run (no webview here).
-   - **⬢ RELEASE `v0.2.0-alpha`** — *"Safe to live in."* First build you can hand to
+   - [ ] **⬢ RELEASE `v0.2.0-alpha`** — *"Safe to live in."* First build you can hand to
      someone without an asterisk on their data.
 
 ---
@@ -200,7 +210,7 @@ something you *tried once*.
 
 **Branches**
 
-6. **`feat/vault-search`** — global find-in-files with a results panel; **the #1 felt
+- [ ] **6. `feat/vault-search`** — global find-in-files with a results panel; **the #1 felt
    gap.** Incremental index updated on watcher events.
    - *New crate:* `crates/vaultsearch` — full-text index on **`tantivy`** (pure-Rust,
      Quickwit-maintained); sibling to `vaultscan` so scan/index logic stays
@@ -209,7 +219,7 @@ something you *tried once*.
      `src/ui/searchpanel.ts`.
    - *Gate:* `cargo test -p vaultsearch` (index → query → rank) + a panel test.
 
-7. **`feat/command-palette`** — quick switcher (fuzzy-open any note) + command palette
+- [ ] **7. `feat/command-palette`** — quick switcher (fuzzy-open any note) + command palette
    (`Ctrl/Cmd-P` / `Ctrl-K`) running every editor/menu action. The power-user muscle
    memory whose absence is felt instantly.
    - *Touches:* `src/ui/palette.ts`; fuzzy ranking via **`nucleo`** (Helix team) exposed
@@ -217,7 +227,7 @@ something you *tried once*.
    - *Gate:* `tests/palette.test.ts` (fuzzy rank + command dispatch parity with menu).
    - *Depends on:* `vaultsearch` for file ranking.
 
-8. **`feat/wikilinks-backlinks`** — `[[wikilink]]` with `[[`-autocomplete + a backlinks
+- [ ] **8. `feat/wikilinks-backlinks`** — `[[wikilink]]` with `[[`-autocomplete + a backlinks
    panel. **The stickiest feature in modern note-taking and our strongest Obsidian-compat
    play.**
    - *New crate:* `crates/linkgraph` — parse `[[links]]`, resolve to files, maintain a
@@ -229,26 +239,26 @@ something you *tried once*.
    - *§3:* links serialize through `serializer.ts`; stays plain-text and
      Obsidian-readable.
 
-9. **`feat/tags`** — `#inline-tags` + frontmatter `tags:`; a tag browser pane.
+- [ ] **9. `feat/tags`** — `#inline-tags` + frontmatter `tags:`; a tag browser pane.
    - *Touches:* extend `linkgraph` (tag index reuses the same crate); a Milkdown mark
      for `#tag`; `src/ui/tags.ts`.
    - *Gate:* tag-index test in `linkgraph` + round-trip fixture.
 
-10. **`feat/frontmatter-properties`** — edit YAML front matter as a friendly key/value
+- [ ] **10. `feat/frontmatter-properties`** — edit YAML front matter as a friendly key/value
     panel; **closes the deferred front-matter round-trip gate.**
     - *Touches:* `serializer.ts` (front-matter handling), `src/ui/properties.ts`.
     - *Gate:* front-matter fixtures **added to `roundtrip.test.ts`** (the §0 to-do).
 
-11. **`feat/outline-panel`** — heading outline / TOC; click to scroll. Cheap, pure
+- [x] **11. `feat/outline-panel`** — heading outline / TOC; click to scroll. Cheap, pure
     frontend (was §13 backlog).
     - *Touches:* `src/ui/outline.ts`. *Gate:* `tests/outline.test.ts`.
 
-12. **`feat/sidebar-file-ops`** — new / rename / delete / new-folder via context menu,
+- [ ] **12. `feat/sidebar-file-ops`** — new / rename / delete / new-folder via context menu,
     backed by **atomic** Rust commands; delete routes through `trashbin`.
     - *Touches:* `commands/files.rs` (new atomic ops + contract rows), `src/ui/sidebar.ts`;
       mind the watcher interplay.
     - *Gate:* extend `fsatomic` / a new ops suite.
-    - **⬢ RELEASE `v0.5.0-beta.1`** — *"A real notes system."* First **beta**.
+    - [ ] **⬢ RELEASE `v0.5.0-beta.1`** — *"A real notes system."* First **beta**.
 
 ---
 
@@ -260,7 +270,7 @@ makes Toril *feel premium* and gives reviewers something to film.
 
 **Branches**
 
-13. **`feat/code-highlighting`** — syntax-highlighted code blocks (a gray code block
+- [ ] **13. `feat/code-highlighting`** — syntax-highlighted code blocks (a gray code block
     looks *broken* to a developer).
     - *New crate (or JS):* `crates/highlight` on **`syntect`** (use its `fancy-regex`
       backend to stay C-free) returning spans → ProseMirror decorations; *or* CodeMirror
@@ -268,32 +278,32 @@ makes Toril *feel premium* and gives reviewers something to film.
     - *Gate:* `cargo test -p highlight` (token spans for a few languages) or a nodeview
       test.
 
-14. **`feat/math-katex`** — inline `$…$` / block `$$…$$`, **bespoke Milkdown node on the
+- [ ] **14. `feat/math-katex`** — inline `$…$` / block `$$…$$`, **bespoke Milkdown node on the
     healthy `katex` package** (not the deprecated plugin). *Un-defers the long-standing
     §0 item.*
     - *Touches:* `src/editor/math.ts`; template gets the KaTeX stylesheet for HTML export
       (§7 note).
     - *Gate:* **math fixtures added to `roundtrip.test.ts`** (the §3.2 to-do) + export test.
 
-15. **`feat/mermaid-diagrams`** — fenced ` ```mermaid ` rendered via the healthy
+- [ ] **15. `feat/mermaid-diagrams`** — fenced ` ```mermaid ` rendered via the healthy
     `mermaid` package as a nodeview.
     - *Gate:* render-smoke + round-trip (fence survives).
 
-16. **`feat/focus-typewriter`** — Focus mode (dim non-active paragraph), Typewriter mode
+- [ ] **16. `feat/focus-typewriter`** — Focus mode (dim non-active paragraph), Typewriter mode
     (caret-centered scroll), distraction-free fullscreen. *Un-drops the dropped modes.*
     - *Touches:* `src/ui/` + CSS; toggles in menu + palette + `Settings`.
     - *Gate:* `tests/focusmode.test.ts` (state toggles; no content mutation).
 
-17. **`feat/writing-stats-goals`** — session word-count, daily goals, streaks, a small
+- [ ] **17. `feat/writing-stats-goals`** — session word-count, daily goals, streaks, a small
     stats panel; extends the existing statusbar.
     - *Gate:* extend `statusbar.test.ts`.
 
-18. **`feat/daily-notes-templates`** — daily-note creation + a template system (variables
+- [ ] **18. `feat/daily-notes-templates`** — daily-note creation + a template system (variables
     like `{{date}}`, `{{title}}`). Drives habitual daily use.
     - *Touches:* `src/ui/templates.ts`; a tiny TS template engine (no heavy dep).
     - *Gate:* `tests/templates.test.ts`.
 
-19. **`feat/editor-polish`** — themes + sanitized **custom user CSS**, spellcheck
+- [ ] **19. `feat/editor-polish`** — themes + sanitized **custom user CSS**, spellcheck
     (`spellcheck="true"` on the editable; verify on-device), smart-paste (URL→link,
     pasted HTML table→markdown table), **toolbar/menu affordances for the HTML constructs**
     (callout/details/mark/sub/sup — the §0 HTML follow-up), and the **"Save As .html"
@@ -302,7 +312,7 @@ makes Toril *feel premium* and gives reviewers something to film.
       `styles.css`, `sanitize.ts` (scoped user CSS).
     - *Gate:* extend `toolbar.test.ts` + `security.test.ts` (user CSS can't break the
       sanitize boundary).
-    - **⬢ RELEASE `v0.6.0-beta`** — *"A joy to write in."*
+    - [ ] **⬢ RELEASE `v0.6.0-beta`** — *"A joy to write in."*
 
 ---
 
@@ -315,7 +325,7 @@ snapshot first** and writes through the canonical serializer.
 
 **Branches**
 
-20. **`feat/ai-assist-panel`** — side panel + inline commands: continue, rewrite,
+- [ ] **20. `feat/ai-assist-panel`** — side panel + inline commands: continue, rewrite,
     summarize, change tone, fix grammar, translate, outline. **BYO key** (Anthropic /
     OpenAI over HTTP) **and** local via **Ollama** — so it stays free and private.
     - *Touches:* `src/ui/ai.ts`; key storage via the **`keyring`** crate (OS keychain,
@@ -327,23 +337,23 @@ snapshot first** and writes through the canonical serializer.
       via `serializer.ts` + atomic save. AI may *propose*; the user accepts; the file is
       protected. No telemetry.
 
-21. **`feat/vault-rag-chat`** — chat-with-your-vault: local embeddings + semantic search
+- [ ] **21. `feat/vault-rag-chat`** — chat-with-your-vault: local embeddings + semantic search
     + Q&A over the user's notes. **Almost nobody does this free *and* local.**
     - *New crate:* `crates/embedindex` — embeddings via Ollama (no bundled model, keeps
       §2 clean) + a small vector store (**`instant-distance`** HNSW, or brute-force cosine
       for small vaults; keep it pluggable).
     - *Gate:* `cargo test -p embedindex` (index → nearest-neighbor recall on a fixture).
 
-22. **`feat/ai-organization`** — AI-suggested tags, titles, `[[links]]` (feeds
+- [ ] **22. `feat/ai-organization`** — AI-suggested tags, titles, `[[links]]` (feeds
     `linkgraph`), and frontmatter summaries — all opt-in, all reviewable before write.
     - *Gate:* mocked-provider suite; writes go through serializer + snapshot.
 
-23. **`feat/mcp-bridge`** — expose the vault over **MCP** (and/or host MCP tools
+- [ ] **23. `feat/mcp-bridge`** — expose the vault over **MCP** (and/or host MCP tools
     in-editor) so Claude/agents can read & write notes safely. The natural endpoint of
     "AI assistants emit rich content into my editor."
     - *§3:* agent writes are sandboxed to the vault, atomic, snapshotted, and surfaced in
       version history.
-    - **⬢ RELEASE `v0.8.0-beta`** — *"Your notes, with Claude inside."*
+    - [ ] **⬢ RELEASE `v0.8.0-beta`** — *"Your notes, with Claude inside."*
 
 ---
 
@@ -354,29 +364,29 @@ everyone," culminating in `v1.0`.
 
 **Branches**
 
-24. **`feat/per-tab-undo`** — give each tab its own editor state / undo history (today a
+- [ ] **24. `feat/per-tab-undo`** — give each tab its own editor state / undo history (today a
     single shared editor swaps content). Structural debt that heavy users — and mobile —
     will demand.
     - *Touches:* `tabs.ts`, `milkdown.ts`. *Gate:* extend `tabs.test.ts`.
 
-25. **`perf/large-vault`** — lazy/incremental `vaultscan`, sidebar virtualization,
+- [ ] **25. `perf/large-vault`** — lazy/incremental `vaultscan`, sidebar virtualization,
     large-file editing guard (ProseMirror chokes on huge docs).
     - *Gate:* `vaultscan` benchmark/fixture at thousands of files; a large-file guard test.
 
-26. **`feat/a11y-i18n`** — accessibility pass (keyboard nav, ARIA, screen-reader) +
+- [ ] **26. `feat/a11y-i18n`** — accessibility pass (keyboard nav, ARIA, screen-reader) +
     localization scaffolding. Matters for "mainstream" and is a quiet credibility signal.
 
-27. **`feat/encryption-locked-notes`** — opt-in per-note encryption via the **`age`**
+- [ ] **27. `feat/encryption-locked-notes`** — opt-in per-note encryption via the **`age`**
     crate (pure-Rust) for "locked notes" parity. *Eyes open:* `.md.age` breaks
     Obsidian-compat for those notes — offer it, never default it.
     - *Gate:* `cargo test -p` (encrypt → decrypt round-trip; wrong-key fails closed).
 
-28. **`feat/mobile-ios-android`** — the big bet, on Tauri 2 mobile (the
+- [ ] **28. `feat/mobile-ios-android`** — the big bet, on Tauri 2 mobile (the
     `tauri::mobile_entry_point` hook is already latent). Touch UI, mobile Milkdown UX,
     and the iOS file-sandbox reality (lean on the Files app / iCloud Drive container;
     "plain files anywhere" is harder there — be honest about it). A quarter of work, not
     a weekend.
-    - **⬢ RELEASE `v1.0.0`** — *Toril, for everyone who outgrew their notes app.*
+    - [ ] **⬢ RELEASE `v1.0.0`** — *Toril, for everyone who outgrew their notes app.*
 
 ---
 
