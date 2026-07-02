@@ -155,9 +155,14 @@ file *content* writes and does not apply; a structural re-scan is the correct re
   and leaves the item in trash.
 - **corrupt manifest tolerated**: `list` skips an unparseable manifest and still returns
   the others.
-- **rollback**: when the manifest write fails (e.g. an unwritable container), the file is
-  renamed back to its origin and the error surfaces.
+- **failed move cleans up**: moving a nonexistent target errors and leaves no orphan
+  container behind (covers the `fs::rename` failure branch).
 - **empty/purge**: `purge(id)` removes one container; `empty` clears all.
+
+> The manifest-write-failure rollback path (rename the file back to origin) has no
+> deterministic unit seam without injecting a fake writer; it is verified by code
+> inspection rather than an automated test. The invariant it protects — file always at
+> exactly one location — is what the round-trip and failed-move tests exercise.
 
 ## Self-review notes
 
