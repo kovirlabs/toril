@@ -29,8 +29,10 @@ so folders work mechanically; only file-delete is a wired use case for now.
 ## Non-negotiables (CLAUDE.md §3)
 
 - **Atomic moves.** File moves use `fs::rename` (atomic on a same-filesystem rename;
-  `.trash/` lives inside the vault, so this always holds). Manifest writes reuse
-  `fsatomic::atomic_write`.
+  `.trash/` lives inside the vault, so this holds in the normal case). Manifest writes reuse
+  `fsatomic::atomic_write`. (A separate mount *inside* the vault would put `.trash/` on a
+  different device; the rename then returns `EXDEV` and the delete fails **safely**, file
+  left at origin — no copy-fallback. See accepted edges.)
 - **The one-location invariant.** The user's file is always at **exactly one** location —
   origin or trash, never zero. Operation ordering (below) preserves this at every step,
   including on error.
@@ -176,6 +178,20 @@ file *content* writes and does not apply; a structural re-scan is the correct re
   branch.
 - **Accepted edge:** a leftover empty container after a best-effort cleanup failure is
   harmless litter, reclaimed by `empty`/`purge`.
+- **Accepted edge (double-fault orphan):** if the manifest write fails **and** the
+  rollback rename-back also fails, the file remains at `.trash/<id>/<name>` with no
+  manifest. Never-zero still holds (the bytes are on disk), but `list`/`restore` skip it, so
+  recovery means manually reaching into `.trash/`. An extreme double-fault; data is preserved.
+- **EXDEV (cross-device `.trash/`):** see Atomic moves above — a `.trash/` on a different
+  mount than the target fails the delete safely (file left at origin); no copy-fallback.
+
+### Follow-ups for `feat/sidebar-file-ops` (#12)
+
+- Extend the `is_valid_id` path-traversal guard (currently on `restore_from_trash` only) to
+  the `purge`/`empty` commands when they are wired, or lift it into the `trashbin` crate so
+  it gains headless unit tests and is reused across commands.
+- On-device verification (no webview here, §0): compile + clippy the app crate, and exercise
+  the real move → list → restore IPC round-trip against a live vault.
 - **Known limitation (restore no-clobber is not atomic):** `restore` checks
   `original.exists()` then `fs::rename`s — a file created at the path in that microsecond
   window would be overwritten on POSIX (`rename` overwrites). On **Windows — the primary
