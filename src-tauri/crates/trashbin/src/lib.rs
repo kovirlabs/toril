@@ -66,7 +66,25 @@ fn new_id() -> String {
 /// the manifest write fails, the file is renamed back to its origin (rollback) and
 /// the error is returned — the file is never left in limbo. `target` must be an
 /// absolute path; its `original_path` is stored verbatim for restore.
+///
+/// Defense-in-depth (§3, untrusted webview IPC): `target` must resolve to a path
+/// **inside** `vault_root` — you can only trash a file that belongs to this vault.
+/// A `target` outside the vault (or one that doesn't exist) is rejected before any
+/// filesystem change, so a crafted command can't relocate arbitrary files into the
+/// vault's trash.
 pub fn move_to_trash(vault_root: &Path, target: &Path) -> io::Result<TrashEntry> {
+    // Canonicalize both sides (resolves symlinks/`..`, and on Windows applies the
+    // same verbatim prefix to each) and require containment. `canonicalize` also
+    // fails fast if `target` doesn't exist — nothing is created in that case.
+    let canon_root = fs::canonicalize(vault_root)?;
+    let canon_target = fs::canonicalize(target)?;
+    if !canon_target.starts_with(&canon_root) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "target is outside the vault",
+        ));
+    }
+
     let name = target
         .file_name()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "target has no file name"))?
@@ -259,6 +277,25 @@ mod tests {
                 "no orphan container"
             );
         }
+    }
+
+    #[test]
+    fn move_rejects_target_outside_vault() {
+        let tmp = TempDir::new("outside");
+        let vault = tmp.path().join("vault");
+        fs::create_dir_all(&vault).unwrap();
+        // A real file that exists but lives OUTSIDE the vault (a sibling dir).
+        let outsider = tmp.path().join("outside.md");
+        write_file(&outsider, "secret");
+
+        let err = move_to_trash(&vault, &outsider).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+        // The outside file is untouched and no trash was created in the vault.
+        assert!(outsider.exists(), "outside file must not be moved");
+        assert!(
+            !vault.join(TRASH_DIR).exists(),
+            "no trash created for a rejected move"
+        );
     }
 
     #[test]

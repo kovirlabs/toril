@@ -38,6 +38,13 @@ so folders work mechanically; only file-delete is a wired use case for now.
   including on error.
 - **Never clobber.** Restore refuses to overwrite a file that reappeared at the original
   path; it errors and leaves the item in trash.
+- **Containment (untrusted IPC, §3).** `move_to_trash` canonicalizes `target` and
+  `vault_root` and requires `target` to resolve **inside** the vault — you can only trash a
+  file that belongs to this vault. A `target` outside the vault (or a nonexistent one) is
+  rejected before any filesystem change, so a crafted command (a compromised webview, §3)
+  can't relocate arbitrary readable files into the vault's trash. Enforced in the crate so
+  every caller inherits it; gate-tested (`move_rejects_target_outside_vault`). The command
+  `id` for restore is separately validated as a single path component (`is_valid_id`).
 - **Vault stays clean (§1).** `.trash/` sits at the vault root and starts with `.`, so
   `vaultscan` already excludes it from the sidebar (same rule that hides `.git`/
   `.obsidian`) and Obsidian hides it too. No `vaultscan` change needed.
@@ -192,6 +199,10 @@ file *content* writes and does not apply; a structural re-scan is the correct re
   it gains headless unit tests and is reused across commands.
 - On-device verification (no webview here, §0): compile + clippy the app crate, and exercise
   the real move → list → restore IPC round-trip against a live vault.
+- Extend the `move_to_trash` containment check to `restore`'s `original_path` (a hand-crafted
+  `manifest.json` could otherwise redirect a restore outside the vault). Low-risk today — it
+  requires pre-existing filesystem write into `.trash/`, and the `id` guard already blocks
+  escaping `.trash/` — but worth closing when restore is wired to real IPC in #12.
 - **Known limitation (restore no-clobber is not atomic):** `restore` checks
   `original.exists()` then `fs::rename`s — a file created at the path in that microsecond
   window would be overwritten on POSIX (`rename` overwrites). On **Windows — the primary
