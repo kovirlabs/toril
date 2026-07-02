@@ -176,3 +176,11 @@ file *content* writes and does not apply; a structural re-scan is the correct re
   branch.
 - **Accepted edge:** a leftover empty container after a best-effort cleanup failure is
   harmless litter, reclaimed by `empty`/`purge`.
+- **Known limitation (restore no-clobber is not atomic):** `restore` checks
+  `original.exists()` then `fs::rename`s — a file created at the path in that microsecond
+  window would be overwritten on POSIX (`rename` overwrites). On **Windows — the primary
+  target — `fs::rename` fails if the destination exists**, so restore is fail-safe there;
+  the residual race is POSIX-only, single-user, and on a not-yet-UI-wired command. A truly
+  atomic no-clobber needs per-OS FFI (`renameat2 RENAME_NOREPLACE` / `renamex_np
+  RENAME_EXCL`), which is disproportionate for an alpha (§2/§7) and would regress the
+  type-agnostic (folder-capable) `rename`; deferred.
