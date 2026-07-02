@@ -240,9 +240,13 @@ pub fn move_to_trash(vault_root: &Path, target: &Path) -> io::Result<TrashEntry>
     };
     let json = serde_json::to_vec_pretty(&manifest).map_err(io::Error::other)?;
     if let Err(e) = fsatomic::atomic_write(container.join(MANIFEST), &json) {
-        // Roll back: put the file back where it came from, drop the container.
-        let _ = fs::rename(&dest, target);
-        let _ = fs::remove_dir_all(&container);
+        // Roll back: try to return the file to its origin. Only discard the
+        // container once the file has actually left it — if the rename-back
+        // fails, the file is still safely in trash and must NOT be deleted
+        // (the never-zero invariant, §3). It stays recoverable in .trash/.
+        if fs::rename(&dest, target).is_ok() {
+            let _ = fs::remove_dir_all(&container);
+        }
         return Err(e);
     }
 
