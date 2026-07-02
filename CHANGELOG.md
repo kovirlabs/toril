@@ -18,6 +18,11 @@ GitHub Release notes plus the commits that shipped in it.
   included — to the app config dir, so a crash or kill can't lose unsaved work;
   recovered buffers reopen as dirty tabs on next launch. Journal lives outside the
   vault and is cleared on clean exit.
+- **Safe delete (trash)** (ROADMAP Movement I.2). Deletes now soft-delete into a
+  per-workspace `.trash/` (each item in its own container beside a manifest) instead of
+  a destructive remove, with atomic restore that refuses to overwrite a file that
+  reappeared at the original path. Backed by the `trashbin` crate; the sidebar delete UI
+  that surfaces it lands in a later branch.
 
 ## [v1.0.0-beta.1] — 2026-06-21
 

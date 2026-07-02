@@ -1,0 +1,10 @@
+[package]
+name = "trashbin"
+version = "0.1.0"
+edition = "2024"
+description = "Soft-delete (move-to-trash) + restore for a Toril workspace (CLAUDE.md §3). Per-delete container + manifest; no Tauri dep so it's unit-testable anywhere."
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+fsatomic = { path = "../fsatomic" }

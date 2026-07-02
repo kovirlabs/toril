@@ -206,7 +206,8 @@ toril/
     │   ├── vaultscan/         # markdown-tree scanner (§5 open_folder)
     │   ├── mdhtml/            # comrak markdown→HTML for export (§7)
     │   ├── mdrtf/             # comrak markdown→RTF for export (§7)
-    │   └── imgasset/          # save pasted clipboard images beside the doc (§6)
+    │   ├── imgasset/          # save pasted clipboard images beside the doc (§6)
+    │   └── trashbin/          # soft-delete to workspace .trash/ + restore (§3)
     └── src/
         ├── main.rs            # bin entry → lib::run()
         ├── lib.rs             # Tauri builder + menu + command registration
@@ -244,6 +245,9 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 | `save_recovery` | `entries` | `()` | **atomic** write of `recovery.json` in the app config dir — crash-recovery journal (§3) |
 | `load_recovery` | — | `RecoveryEntry[]` | empty on missing/corrupt (never bricks startup) |
 | `clear_recovery` | — | `()` | delete `recovery.json` — the clean-shutdown sentinel |
+| `move_to_trash` | `vault_root, path` | `TrashEntry` | soft-delete into workspace `.trash/` via `trashbin` — **atomic** move (§3) |
+| `list_trash` | `vault_root` | `TrashEntry[]` | newest first; empty when no `.trash/` |
+| `restore_from_trash` | `vault_root, id` | `path` | restore to original path; errors **without clobbering** an existing file |
 | `take_launch_path` | — | `path?` | file the app was launched with (double-click / "Open with"); returns it **once**, then `null` (§file-open) |
 
 > **HTML export is split** across two commands to hold the single sanitization path (§3.3):
@@ -255,6 +259,13 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 > one deliberate exception to session.json's "paths only, never contents" rule (§3.2):
 > crash recovery requires buffer contents. It is written debounced, cleared on clean
 > exit, and never lives in the user's vault (§1).
+>
+> **Trash.** Soft-delete moves a file into `<vault>/.trash/<id>/` (own container +
+> `manifest.json`) rather than `rm`; restore reads the manifest and atomically renames
+> it back, refusing to clobber a file that reappeared at the path. `.trash/` starts with
+> `.`, so `vaultscan` already hides it from the sidebar (§1) and Obsidian hides it too.
+> Backed by `crates/trashbin`; commands are not yet called by any UI (the sidebar file-ops
+> branch wires them).
 >
 > **Events (Rust → frontend):** `workspace:change` (file watcher), `menu` (native menu item id
 > `menu_*` → mapped to the same handlers as toolbar buttons), and `open-file` (a *second* launch's

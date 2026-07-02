@@ -8,6 +8,7 @@ members = [
     "crates/mdhtml",
     "crates/mdrtf",
     "crates/imgasset",
+    "crates/trashbin",
 ]
 # Vendored, security-patched glib (see [patch.crates-io] below). Excluded so it
 # is never a workspace member — we don't fmt/clippy/test upstream third-party code.
@@ -49,6 +50,7 @@ vaultscan = { path = "crates/vaultscan" }
 mdhtml = { path = "crates/mdhtml" }
 mdrtf = { path = "crates/mdrtf" }
 imgasset = { path = "crates/imgasset" }
+trashbin = { path = "crates/trashbin" }
 
 # Security patch for glib (Linux/gtk3 transitive dep via Tauri).
 # GHSA-wrw7-89jp-8q8g: VariantStrIter::impl_get passed a NULL out-pointer as
