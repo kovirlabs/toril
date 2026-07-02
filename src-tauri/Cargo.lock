@@ -4326,6 +4326,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "trashbin"
+version = "0.1.0"
+dependencies = [
+ "fsatomic",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "tray-icon"
 version = "0.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
