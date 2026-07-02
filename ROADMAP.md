@@ -52,10 +52,10 @@ quick switcher, no links, no tags, no version history, no sync conflict handling
 no AI. That gap is this roadmap.
 
 > **Status (2026-06-22).** The foundation above — plus file-association / double-click
-> open — shipped through **`v1.0.0-beta.1`** (see `CHANGELOG.md`). **Movement I, branch 1
-> (`feat/autosave-recovery`) is complete** (autosave + crash-recovery journal); the
-> remaining Movement I–V branches are unstarted.
-> **▶ Pick up at Movement I, branch 2 — `feat/safe-delete-trash`.**
+> open — shipped through **`v1.0.0-beta.1`** (see `CHANGELOG.md`). **Movement I,
+> branches 1–2 are complete** (autosave + crash-recovery journal;
+> safe-delete-to-trash); the remaining Movement I–V branches are unstarted.
+> **▶ Pick up at Movement I, branch 3 — `feat/local-version-history`.**
 >
 > *Version note:* the `v1.0.0-beta.1` tag ran **ahead** of the indicative ladder in §2
 > (that ladder is guidance, not gospel). The data-safety floor (Movement I) is still
@@ -156,7 +156,7 @@ nice in a synced folder. This movement is also the prerequisite for the AI wedge
    - *§3:* every write still goes through atomic save + `serializer.ts`. Never write
      a file the user didn't intend.
 
-- [ ] **2. `feat/safe-delete-trash`** — soft-delete to a workspace `.trash/` with restore,
+- [x] **2. `feat/safe-delete-trash`** — soft-delete to a workspace `.trash/` with restore,
    instead of hard `rm`; backs the future sidebar delete op.
    - *Touches:* new `crates/trashbin` (move-to-trash + restore, atomic) +
      `commands/files.rs`; contract row in §5.
