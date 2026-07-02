@@ -66,6 +66,9 @@ pub fn run() {
             commands::recovery::save_recovery,
             commands::recovery::load_recovery,
             commands::recovery::clear_recovery,
+            commands::trash::move_to_trash,
+            commands::trash::list_trash,
+            commands::trash::restore_from_trash,
             take_launch_path,
         ])
         .run(tauri::generate_context!())

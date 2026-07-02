@@ -50,6 +50,7 @@ vaultscan = { path = "crates/vaultscan" }
 mdhtml = { path = "crates/mdhtml" }
 mdrtf = { path = "crates/mdrtf" }
 imgasset = { path = "crates/imgasset" }
+trashbin = { path = "crates/trashbin" }
 
 # Security patch for glib (Linux/gtk3 transitive dep via Tauri).
 # GHSA-wrw7-89jp-8q8g: VariantStrIter::impl_get passed a NULL out-pointer as
