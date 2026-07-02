@@ -102,12 +102,44 @@ describe("AutosaveScheduler", () => {
     expect(calls.saves).toBe(1);
   });
 
-  it("round-trips recovery entries losslessly through JSON", () => {
-    const entries: RecoveryEntry[] = [
-      { id: "1", path: "/n/a.md", name: "a.md", content: "# A\n\nbody", format: "markdown" },
-      { id: "2", path: null, name: "Untitled", content: "draft", format: "markdown" },
-      { id: "3", path: "/n/page.html", name: "page.html", content: "<p>hi</p>", format: "html" },
+  it("defaults the debounce to 2000ms when unspecified", async () => {
+    const { deps, calls } = makeDeps();
+    const s = new AutosaveScheduler(deps); // no debounceMs
+    s.notifyChange();
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(calls.journal).toHaveLength(0); // not yet
+    await vi.advanceTimersByTimeAsync(1);
+    expect(calls.journal).toHaveLength(1); // fired at 2000ms
+  });
+
+  it("routes a debounced flush failure to reportError", async () => {
+    const err = new Error("disk full");
+    let received: unknown = null;
+    const { deps } = makeDeps({
+      writeJournal: async () => {
+        throw err;
+      },
+      reportError: (e) => {
+        received = e;
+      },
+    });
+    const s = new AutosaveScheduler(deps, { debounceMs: 10 });
+    s.notifyChange();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(received).toBe(err);
+  });
+
+  it("snapshotDirty output survives the journal serialize/deserialize boundary", () => {
+    const list = [
+      buf({ id: "1", path: "/n/a.md", name: "a.md", content: "# A\n\nbody", format: "markdown", dirty: true }),
+      buf({ id: "2", path: null, name: "Untitled", content: "draft", format: "markdown", dirty: true }),
+      buf({ id: "3", path: "/n/page.html", name: "page.html", content: "<p>hi</p>", format: "html", dirty: true }),
     ];
-    expect(JSON.parse(JSON.stringify(entries))).toEqual(entries);
+    const entries = snapshotDirty(list);
+    // The Rust journal command persists entries as JSON; assert they survive it.
+    const restored = JSON.parse(JSON.stringify(entries)) as RecoveryEntry[];
+    expect(restored).toEqual(entries);
+    expect(restored).toHaveLength(3);
+    expect(restored[1].path).toBeNull(); // Untitled preserved as null, never dropped
   });
 });

@@ -38,6 +38,8 @@ export interface AutosaveDeps {
   writeJournal(entries: RecoveryEntry[]): Promise<void>;
   /** Save every dirty, path-backed tab through the atomic save path. */
   saveDirtySaved(): Promise<void>;
+  /** Report a failure from the debounced flush (journal/autosave). Optional. */
+  reportError?(err: unknown): void;
 }
 
 export interface AutosaveConfig {
@@ -69,7 +71,8 @@ export class AutosaveScheduler {
     cfg: Partial<AutosaveConfig> = {},
   ) {
     this.enabled = cfg.enabled ?? false;
-    this.debounceMs = cfg.debounceMs ?? DEFAULT_DEBOUNCE_MS;
+    this.debounceMs =
+      cfg.debounceMs !== undefined && cfg.debounceMs > 0 ? cfg.debounceMs : DEFAULT_DEBOUNCE_MS;
   }
 
   setConfig(cfg: Partial<AutosaveConfig>): void {
@@ -80,7 +83,9 @@ export class AutosaveScheduler {
   /** (Re)arm the debounce; a quiet `debounceMs` window triggers a flush. */
   notifyChange(): void {
     if (this.timer) clearTimeout(this.timer);
-    this.timer = setTimeout(() => void this.flush(), this.debounceMs);
+    this.timer = setTimeout(() => {
+      this.flush().catch((err) => this.deps.reportError?.(err));
+    }, this.debounceMs);
   }
 
   /**
@@ -93,6 +98,7 @@ export class AutosaveScheduler {
       clearTimeout(this.timer);
       this.timer = null;
     }
+    // The real writeJournal is an atomic Rust write, so overlapping flushes can't corrupt it.
     const entries = this.deps.snapshotDirtyBuffers();
     await this.deps.writeJournal(entries);
     if (this.enabled) await this.deps.saveDirtySaved();
