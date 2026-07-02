@@ -15,7 +15,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -113,10 +113,85 @@ pub fn move_to_trash(vault_root: &Path, target: &Path) -> io::Result<TrashEntry>
     })
 }
 
+/// Restore trash entry `id` to its original path. Errors with `AlreadyExists`
+/// (without clobbering) if a file is already there; the item stays in trash. The
+/// original parent folder is recreated if it was removed since. Returns the path.
+pub fn restore(vault_root: &Path, id: &str) -> io::Result<String> {
+    let container = vault_root.join(TRASH_DIR).join(id);
+    let text = fsatomic::read_to_string(container.join(MANIFEST))?;
+    let manifest: Manifest = serde_json::from_str(&text).map_err(io::Error::other)?;
+
+    let original = PathBuf::from(&manifest.original_path);
+    if original.exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!("{} already exists", manifest.original_path),
+        ));
+    }
+    if let Some(parent) = original.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::rename(container.join(&manifest.name), &original)?;
+    let _ = fs::remove_dir_all(&container); // best-effort; empty leftover is harmless
+    Ok(manifest.original_path)
+}
+
+/// List every trash entry, newest first. A missing `.trash/` yields an empty list;
+/// a single unparseable manifest is skipped so it can't hide the others.
+pub fn list(vault_root: &Path) -> io::Result<Vec<TrashEntry>> {
+    let trash_root = vault_root.join(TRASH_DIR);
+    let read = match fs::read_dir(&trash_root) {
+        Ok(r) => r,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e),
+    };
+
+    let mut out = Vec::new();
+    for entry in read {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        let id = entry.file_name().to_string_lossy().into_owned();
+        let Ok(text) = fsatomic::read_to_string(entry.path().join(MANIFEST)) else {
+            continue;
+        };
+        let Ok(manifest) = serde_json::from_str::<Manifest>(&text) else {
+            continue;
+        };
+        out.push(TrashEntry {
+            id,
+            original_path: manifest.original_path,
+            name: manifest.name,
+            deleted_at: manifest.deleted_at,
+        });
+    }
+    out.sort_by_key(|e| std::cmp::Reverse(e.deleted_at));
+    Ok(out)
+}
+
+/// Permanently delete one entry's container. A missing container is Ok (idempotent).
+pub fn purge(vault_root: &Path, id: &str) -> io::Result<()> {
+    remove_dir_all_ok(&vault_root.join(TRASH_DIR).join(id))
+}
+
+/// Permanently delete every entry (empty the trash). Missing `.trash/` is Ok.
+pub fn empty(vault_root: &Path) -> io::Result<()> {
+    remove_dir_all_ok(&vault_root.join(TRASH_DIR))
+}
+
+/// `remove_dir_all` that treats "already gone" as success.
+fn remove_dir_all_ok(path: &Path) -> io::Result<()> {
+    match fs::remove_dir_all(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     struct TempDir(PathBuf);
     impl TempDir {
@@ -184,5 +259,132 @@ mod tests {
                 "no orphan container"
             );
         }
+    }
+
+    #[test]
+    fn round_trip_restores_identical_bytes() {
+        let tmp = TempDir::new("rt");
+        let vault = tmp.path();
+        let file = vault.join("sub").join("note.md");
+        write_file(&file, "content");
+
+        let entry = move_to_trash(vault, &file).unwrap();
+        assert!(!file.exists());
+
+        let restored = restore(vault, &entry.id).unwrap();
+        assert_eq!(restored, file.to_string_lossy());
+        assert_eq!(fs::read_to_string(&file).unwrap(), "content");
+        assert!(
+            !vault.join(TRASH_DIR).join(&entry.id).exists(),
+            "container removed"
+        );
+    }
+
+    #[test]
+    fn restore_recreates_missing_parent() {
+        let tmp = TempDir::new("parent");
+        let vault = tmp.path();
+        let file = vault.join("sub").join("note.md");
+        write_file(&file, "x");
+
+        let entry = move_to_trash(vault, &file).unwrap();
+        fs::remove_dir_all(vault.join("sub")).unwrap(); // parent folder gone
+
+        restore(vault, &entry.id).unwrap();
+        assert_eq!(fs::read_to_string(&file).unwrap(), "x");
+    }
+
+    #[test]
+    fn restore_refuses_to_clobber_existing() {
+        let tmp = TempDir::new("clobber");
+        let vault = tmp.path();
+        let file = vault.join("note.md");
+        write_file(&file, "old");
+
+        let entry = move_to_trash(vault, &file).unwrap();
+        write_file(&file, "new"); // something re-occupies the path
+
+        let err = restore(vault, &entry.id).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(
+            fs::read_to_string(&file).unwrap(),
+            "new",
+            "existing file untouched"
+        );
+        assert!(
+            vault.join(TRASH_DIR).join(&entry.id).exists(),
+            "item stays in trash"
+        );
+    }
+
+    #[test]
+    fn same_name_deletes_do_not_collide() {
+        let tmp = TempDir::new("collide");
+        let vault = tmp.path();
+        let a = vault.join("a").join("note.md");
+        let b = vault.join("b").join("note.md");
+        write_file(&a, "AAA");
+        write_file(&b, "BBB");
+
+        let ea = move_to_trash(vault, &a).unwrap();
+        let eb = move_to_trash(vault, &b).unwrap();
+        assert_ne!(ea.id, eb.id);
+        assert_eq!(list(vault).unwrap().len(), 2);
+
+        restore(vault, &ea.id).unwrap();
+        restore(vault, &eb.id).unwrap();
+        assert_eq!(fs::read_to_string(&a).unwrap(), "AAA");
+        assert_eq!(fs::read_to_string(&b).unwrap(), "BBB");
+    }
+
+    #[test]
+    fn list_skips_corrupt_manifest() {
+        let tmp = TempDir::new("corrupt");
+        let vault = tmp.path();
+        let good = vault.join("good.md");
+        write_file(&good, "g");
+        let entry = move_to_trash(vault, &good).unwrap();
+
+        let bad = vault.join(TRASH_DIR).join("9999-bad");
+        fs::create_dir_all(&bad).unwrap();
+        fs::write(bad.join(MANIFEST), "not json").unwrap();
+
+        let listed = list(vault).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, entry.id);
+    }
+
+    #[test]
+    fn list_is_empty_without_trash_dir() {
+        let tmp = TempDir::new("notrash");
+        assert!(list(tmp.path()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn purge_removes_one_entry_and_is_idempotent() {
+        let tmp = TempDir::new("purge");
+        let vault = tmp.path();
+        let f = vault.join("n.md");
+        write_file(&f, "x");
+        let e = move_to_trash(vault, &f).unwrap();
+
+        purge(vault, &e.id).unwrap();
+        assert!(!vault.join(TRASH_DIR).join(&e.id).exists());
+        assert!(list(vault).unwrap().is_empty());
+        purge(vault, &e.id).unwrap(); // idempotent on missing
+    }
+
+    #[test]
+    fn empty_clears_all_and_is_idempotent() {
+        let tmp = TempDir::new("empty");
+        let vault = tmp.path();
+        for name in ["a.md", "b.md"] {
+            let f = vault.join(name);
+            write_file(&f, "x");
+            move_to_trash(vault, &f).unwrap();
+        }
+        empty(vault).unwrap();
+        assert!(list(vault).unwrap().is_empty());
+        empty(vault).unwrap(); // idempotent on missing
     }
 }
