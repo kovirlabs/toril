@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ask, message, open as openDialog } from "@tauri-apps/plugin-dialog";
+import type { RecoveryEntry } from "./autosave";
 
 export type { UnlistenFn } from "@tauri-apps/api/event";
 
@@ -112,18 +113,28 @@ export function onOpenFile(handler: (path: string) => void): Promise<UnlistenFn>
  * intercept the close, ask for confirmation, and only then destroy the window
  * (§3 data safety). Returns once the handler is registered.
  */
-export async function installCloseGuard(hasUnsaved: () => number): Promise<UnlistenFn> {
+export async function installCloseGuard(
+  hasUnsaved: () => number,
+  onClose?: () => Promise<void>,
+): Promise<UnlistenFn> {
   const win = getCurrentWindow();
   return win.onCloseRequested(async (event) => {
+    event.preventDefault(); // we always destroy explicitly, so cleanup can run
     const dirty = hasUnsaved();
-    if (dirty === 0) return; // nothing unsaved — let it close
-    event.preventDefault();
-    const noun = dirty === 1 ? "document has" : "documents have";
-    const discard = await ask(`${dirty} ${noun} unsaved changes. Close without saving?`, {
-      title: "Toril",
-      kind: "warning",
-    });
-    if (discard) await win.destroy();
+    if (dirty > 0) {
+      const noun = dirty === 1 ? "document has" : "documents have";
+      const discard = await ask(`${dirty} ${noun} unsaved changes. Close without saving?`, {
+        title: "Toril",
+        kind: "warning",
+      });
+      if (!discard) return; // keep the window open
+    }
+    try {
+      await onClose?.(); // clear the recovery journal — best-effort
+    } catch {
+      // never block the close on a failed cleanup
+    }
+    await win.destroy();
   });
 }
 
@@ -154,6 +165,10 @@ export interface Settings {
   sidebar_visible: boolean | null;
   /** Whether the outline panel is shown. `null` ⇒ visible (default). */
   outline_visible: boolean | null;
+  /** Whether debounced autosave is enabled. `null` ⇒ off (default). */
+  autosave: boolean | null;
+  /** Autosave/journal debounce in ms. `null` ⇒ 2000 (default). */
+  autosave_debounce_ms: number | null;
 }
 
 /** Load persisted settings; resolves to defaults if none exist or the file is corrupt. */
@@ -200,4 +215,19 @@ export function exportRtf(content: string, defaultName: string): Promise<string 
  */
 export function saveClipboardImage(bytes: number[], docPath: string): Promise<string> {
   return invoke<string>("save_clipboard_image", { bytes, docPath });
+}
+
+/** Persist the crash-recovery journal atomically to the app config dir (§3). */
+export function saveRecovery(entries: RecoveryEntry[]): Promise<void> {
+  return invoke<void>("save_recovery", { entries });
+}
+
+/** Load the crash-recovery journal; resolves to [] when none exists or on corruption. */
+export function loadRecovery(): Promise<RecoveryEntry[]> {
+  return invoke<RecoveryEntry[]>("load_recovery");
+}
+
+/** Delete the recovery journal — the clean-shutdown sentinel. */
+export function clearRecovery(): Promise<void> {
+  return invoke<void>("clear_recovery");
 }

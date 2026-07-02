@@ -241,12 +241,20 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 | `export_pdf` | `content, theme` | `path` | *(deferred — §7)* |
 | `save_clipboard_image` | `bytes, docPath` | `relative_path` | writes pasted image to `./assets/` (`imgasset`), returns MD-relative path (§6) |
 | `load_settings` / `save_settings` | — / `Settings` | `Settings` / `()` | JSON in app config dir; includes `theme` + `sidebar_visible` |
+| `save_recovery` | `entries` | `()` | **atomic** write of `recovery.json` in the app config dir — crash-recovery journal (§3) |
+| `load_recovery` | — | `RecoveryEntry[]` | empty on missing/corrupt (never bricks startup) |
+| `clear_recovery` | — | `()` | delete `recovery.json` — the clean-shutdown sentinel |
 | `take_launch_path` | — | `path?` | file the app was launched with (double-click / "Open with"); returns it **once**, then `null` (§file-open) |
 
 > **HTML export is split** across two commands to hold the single sanitization path (§3.3):
 > `markdown_to_html` renders (raw HTML passed through), the **frontend** runs it through `sanitize.ts`
 > and builds the standalone document, then `export_html` writes that finished HTML atomically. comrak
 > never writes files; sanitize never moves to Rust.
+>
+> **Recovery journal.** `recovery.json` (app config dir, beside `session.json`) is the
+> one deliberate exception to session.json's "paths only, never contents" rule (§3.2):
+> crash recovery requires buffer contents. It is written debounced, cleared on clean
+> exit, and never lives in the user's vault (§1).
 >
 > **Events (Rust → frontend):** `workspace:change` (file watcher), `menu` (native menu item id
 > `menu_*` → mapped to the same handlers as toolbar buttons), and `open-file` (a *second* launch's

@@ -14,9 +14,11 @@ import {
   type Settings,
   type UnlistenFn,
   type WorkspaceChange,
+  clearRecovery,
   exportHtml,
   exportRtf,
   installCloseGuard,
+  loadRecovery,
   loadSettings,
   markdownToHtml,
   onMenuAction,
@@ -29,11 +31,13 @@ import {
   saveClipboardImage,
   saveFile,
   saveFileAs,
+  saveRecovery,
   saveSettings,
   showAbout,
   takeLaunchPath,
   watchFolder,
 } from "./ipc";
+import { AutosaveScheduler, type RecoveryEntry, selectDirtySaved, snapshotDirty } from "./autosave";
 import { Outline } from "./ui/outline";
 import { SearchBar } from "./ui/search";
 import { Sidebar } from "./ui/sidebar";
@@ -54,6 +58,9 @@ let formatToolbar: FormattingToolbar | null = null;
 let statusBar: StatusBar | null = null;
 let outline: Outline | null = null;
 let searchBar: SearchBar | null = null;
+let autosave: AutosaveScheduler | null = null;
+let autosaveEnabled = false;
+let autosaveDebounceMs = 2000;
 let theme: ThemeController | null = null;
 
 let workspaceRoot: string | null = null;
@@ -117,6 +124,7 @@ function onEditorChange(): void {
     tabs.setDirty(tab.id, true);
     updateTitle();
   }
+  autosave?.notifyChange();
 }
 
 // ---- Tab lifecycle: keep editor and per-tab buffers in sync ----------------
@@ -141,6 +149,7 @@ function onCloseRequest(tab: TabState): void {
     openDocument(null, "Untitled", ""); // never leave zero tabs
   }
   updateTitle();
+  autosave?.notifyChange();
   scheduleSessionSave();
 }
 
@@ -214,6 +223,7 @@ async function persistActive(path: string): Promise<void> {
   tabs.setDirty(tab.id, false);
   updateTitle();
   setStatus(`Saved ${basename(path)}`);
+  autosave?.notifyChange();
 }
 
 async function doSave(): Promise<void> {
@@ -230,13 +240,11 @@ async function doSave(): Promise<void> {
   }
 }
 
-/** Save every dirty, file-backed tab (Untitled tabs need Save As and are skipped). */
-async function doSaveAll(): Promise<void> {
-  const active = tabs.active();
-  if (active) active.content = serializeEditor(active.format); // capture the live buffer
+/** Save the given path-backed tabs atomically (dirty filtering is the caller's). */
+async function saveTabsToDisk(list: readonly TabState[]): Promise<number> {
   let saved = 0;
-  for (const tab of tabs.list()) {
-    if (!tab.dirty || !tab.path) continue;
+  for (const tab of list) {
+    if (!tab.path) continue;
     try {
       recordSelfWrite(tab.path);
       await saveFile(tab.path, tab.content);
@@ -246,7 +254,21 @@ async function doSaveAll(): Promise<void> {
       setStatus(`Save failed for ${tab.name}: ${String(e)}`);
     }
   }
+  return saved;
+}
+
+/** Serialize the live editor into the active tab's buffer (before snapshotting). */
+function captureActiveBuffer(): void {
+  const active = tabs.active();
+  if (active) active.content = serializeEditor(active.format);
+}
+
+/** Save every dirty, file-backed tab (Untitled tabs need Save As and are skipped). */
+async function doSaveAll(): Promise<void> {
+  captureActiveBuffer();
+  const saved = await saveTabsToDisk(tabs.list().filter((t) => t.dirty));
   updateTitle();
+  autosave?.notifyChange();
   if (saved > 0) setStatus(`Saved ${saved} file${saved === 1 ? "" : "s"}`);
 }
 
@@ -263,6 +285,7 @@ async function doSaveAs(): Promise<void> {
     tabs.setDirty(tab.id, false);
     updateTitle();
     setStatus(`Saved ${basename(path)}`);
+    autosave?.notifyChange();
     if (workspaceRoot && path.startsWith(workspaceRoot)) scheduleSidebarRefresh();
     scheduleSessionSave(); // the tab now has a path — make it restorable
   } catch (e) {
@@ -303,6 +326,14 @@ function toggleOutline(): void {
   outlineVisible = !outlineVisible;
   applyOutline();
   scheduleSessionSave();
+}
+
+function toggleAutosave(): void {
+  autosaveEnabled = !autosaveEnabled;
+  autosave?.setConfig({ enabled: autosaveEnabled });
+  setStatus(`Autosave ${autosaveEnabled ? "on" : "off"}`);
+  scheduleSessionSave();
+  if (autosaveEnabled) autosave?.notifyChange();
 }
 
 // ---- Export ----------------------------------------------------------------
@@ -447,6 +478,8 @@ function scheduleSessionSave(): void {
       theme: theme?.current() ?? null,
       sidebar_visible: sidebarVisible,
       outline_visible: outlineVisible,
+      autosave: autosaveEnabled,
+      autosave_debounce_ms: autosaveDebounceMs,
     };
     void saveSettings(settings).catch(() => {}); // best-effort
   }, 400);
@@ -479,6 +512,9 @@ async function restoreSession(): Promise<void> {
     outlineVisible = settings.outline_visible;
     applyOutline();
   }
+  if (settings.autosave !== null) autosaveEnabled = settings.autosave;
+  if (settings.autosave_debounce_ms !== null) autosaveDebounceMs = settings.autosave_debounce_ms;
+  autosave?.setConfig({ enabled: autosaveEnabled, debounceMs: autosaveDebounceMs });
 
   if (settings.last_folder) {
     try {
@@ -500,6 +536,42 @@ async function restoreSession(): Promise<void> {
     const tab = tabs.byPath(settings.active_file);
     if (tab) tabs.setActive(tab.id);
   }
+}
+
+/**
+ * After a crash/kill the recovery journal survives (clean exits clear it). Reopen
+ * each surviving buffer as a dirty tab so nothing is lost — the user decides to
+ * save or discard. Recovered content is newer than disk (a saved buffer would
+ * have dropped from the journal), so an already-open tab has its buffer swapped.
+ */
+async function recoverCrashedBuffers(): Promise<void> {
+  let entries: RecoveryEntry[];
+  try {
+    entries = await loadRecovery();
+  } catch {
+    return;
+  }
+  if (entries.length === 0) return;
+
+  for (const entry of entries) {
+    const existing = entry.path ? tabs.byPath(entry.path) : undefined;
+    if (existing) {
+      existing.content = entry.content;
+      if (existing.id === tabs.active()?.id) loadIntoEditor(entry.content, existing.format);
+      tabs.setDirty(existing.id, true);
+    } else {
+      const tab = tabs.open({
+        path: entry.path,
+        name: entry.name,
+        content: entry.content,
+        format: entry.format,
+      });
+      tabs.setDirty(tab.id, true);
+    }
+  }
+  updateTitle();
+  setStatus(`${entries.length} document${entries.length === 1 ? "" : "s"} recovered`);
+  autosave?.notifyChange(); // re-establish the journal from the live buffers
 }
 
 // ---- Wiring ----------------------------------------------------------------
@@ -536,6 +608,9 @@ function handleMenuAction(id: string): void {
       break;
     case "menu_toggle_outline":
       toggleOutline();
+      break;
+    case "menu_toggle_autosave":
+      toggleAutosave();
       break;
     case "menu_export_html":
       void doExportHtml();
@@ -619,6 +694,23 @@ window.addEventListener("DOMContentLoaded", async () => {
   const searchEl = document.querySelector<HTMLElement>("#searchbar");
   if (searchEl) searchBar = new SearchBar(searchEl, editor);
 
+  autosave = new AutosaveScheduler(
+    {
+      snapshotDirtyBuffers: (): RecoveryEntry[] => {
+        captureActiveBuffer();
+        return snapshotDirty(tabs.list());
+      },
+      writeJournal: (entries) => (entries.length > 0 ? saveRecovery(entries) : clearRecovery()),
+      saveDirtySaved: async () => {
+        captureActiveBuffer();
+        await saveTabsToDisk(selectDirtySaved(tabs.list()));
+        updateTitle();
+      },
+      reportError: (err) => setStatus(`Autosave failed: ${String(err)}`),
+    },
+    { enabled: autosaveEnabled, debounceMs: autosaveDebounceMs },
+  );
+
   document.querySelector("#btn-new")?.addEventListener("click", () => doNew());
   document.querySelector("#btn-open")?.addEventListener("click", () => void doOpenFile());
   document.querySelector("#btn-open-folder")?.addEventListener("click", () => void doOpenFolder());
@@ -631,12 +723,17 @@ window.addEventListener("DOMContentLoaded", async () => {
   document.querySelector("#btn-toggle-outline")?.addEventListener("click", () => toggleOutline());
   installShortcuts();
   void onMenuAction(handleMenuAction); // native menu → same actions as the buttons
-  // Guard against losing unsaved work when the window is closed (§3).
-  void installCloseGuard(() => tabs.list().filter((t) => t.dirty).length);
+  // Guard against losing unsaved work on close, and clear the recovery journal
+  // on every clean close so a leftover journal always means "we crashed" (§3).
+  void installCloseGuard(
+    () => tabs.list().filter((t) => t.dirty).length,
+    () => clearRecovery(),
+  );
 
   // Restore the last session (folder + open files); fall back to a welcome tab
   // if there was nothing to restore or every remembered path is now gone.
   await restoreSession();
+  await recoverCrashedBuffers();
 
   // A file passed at launch (double-click / "Open with", §5) takes priority over
   // the welcome fallback and becomes the active tab. openPath dedupes against any

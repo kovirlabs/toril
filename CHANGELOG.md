@@ -11,7 +11,13 @@ GitHub Release notes plus the commits that shipped in it.
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+- **Autosave + crash recovery** (ROADMAP Movement I.1). Opt-in debounced atomic
+  autosave of dirty, already-saved files (View → Toggle Autosave; off by default).
+  An always-on recovery journal snapshots every dirty buffer — Untitled drafts
+  included — to the app config dir, so a crash or kill can't lose unsaved work;
+  recovered buffers reopen as dirty tabs on next launch. Journal lives outside the
+  vault and is cleared on clean exit.
 
 ## [v1.0.0-beta.1] — 2026-06-21
 

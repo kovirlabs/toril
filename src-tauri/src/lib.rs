@@ -63,6 +63,9 @@ pub fn run() {
             commands::images::save_clipboard_image,
             settings::load_settings,
             settings::save_settings,
+            commands::recovery::save_recovery,
+            commands::recovery::load_recovery,
+            commands::recovery::clear_recovery,
             take_launch_path,
         ])
         .run(tauri::generate_context!())

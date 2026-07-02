@@ -52,9 +52,10 @@ quick switcher, no links, no tags, no version history, no sync conflict handling
 no AI. That gap is this roadmap.
 
 > **Status (2026-06-22).** The foundation above — plus file-association / double-click
-> open — shipped through **`v1.0.0-beta.1`** (see `CHANGELOG.md`). **None of the
-> Movement I–V branches below have started**; every checkbox is unticked.
-> **▶ Pick up at Movement I, branch 1 — `feat/autosave-recovery`.**
+> open — shipped through **`v1.0.0-beta.1`** (see `CHANGELOG.md`). **Movement I, branch 1
+> (`feat/autosave-recovery`) is complete** (autosave + crash-recovery journal); the
+> remaining Movement I–V branches are unstarted.
+> **▶ Pick up at Movement I, branch 2 — `feat/safe-delete-trash`.**
 >
 > *Version note:* the `v1.0.0-beta.1` tag ran **ahead** of the indicative ladder in §2
 > (that ladder is guidance, not gospel). The data-safety floor (Movement I) is still
@@ -146,7 +147,7 @@ nice in a synced folder. This movement is also the prerequisite for the AI wedge
 
 **Branches**
 
-- [ ] **1. `feat/autosave-recovery`** — debounced atomic autosave of dirty *saved* files +
+- [x] **1. `feat/autosave-recovery`** — debounced atomic autosave of dirty *saved* files +
    a crash-recovery journal for unsaved buffers; toggle in `Settings`.
    - *Touches:* `src/main.ts`, `src/ipc.ts`, `settings.rs` (add `autosave`,
      `autosave_debounce_ms`); reuses `fsatomic`.

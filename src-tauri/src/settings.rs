@@ -37,6 +37,10 @@ pub struct Settings {
     pub sidebar_visible: Option<bool>,
     /// Whether the outline panel is shown. `None` ⇒ visible (default).
     pub outline_visible: Option<bool>,
+    /// Whether debounced autosave of dirty, saved files is on. `None` ⇒ off.
+    pub autosave: Option<bool>,
+    /// Autosave/journal debounce in ms. `None` ⇒ 2000 (frontend default).
+    pub autosave_debounce_ms: Option<u32>,
 }
 
 fn settings_path(app: &AppHandle) -> Result<PathBuf, String> {
