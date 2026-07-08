@@ -127,15 +127,18 @@ body {
   font-weight: 600;
 }
 
-/* ---- Workspace: sidebar | main | outline ---- */
+/* ---- Workspace: sidebar | main | outline | history ---- */
 #workspace {
   display: grid;
-  grid-template-columns: var(--sidebar-w, 240px) 1fr var(--outline-w, 220px);
+  grid-template-columns:
+    var(--sidebar-w, 240px) 1fr
+    var(--outline-w, 220px) var(--history-w, 240px);
   min-height: 0;
 }
 
-/* Two independent toggles compose without a combinatorial rule explosion:
-   Ctrl+\ collapses the sidebar, Ctrl+Shift+\ the outline. */
+/* Independent toggles compose without a combinatorial rule explosion:
+   Ctrl+\ collapses the sidebar, Ctrl+Shift+\ the outline, and a button/menu the
+   history panel (hidden by default). */
 #workspace.sidebar-hidden {
   --sidebar-w: 0;
 }
@@ -144,8 +147,13 @@ body {
   --outline-w: 0;
 }
 
+#workspace.history-hidden {
+  --history-w: 0;
+}
+
 #workspace.sidebar-hidden #sidebar,
-#workspace.outline-hidden #outline {
+#workspace.outline-hidden #outline,
+#workspace.history-hidden #history {
   display: none;
 }
 
@@ -190,6 +198,73 @@ body {
   color: var(--muted);
   font-style: italic;
   padding: 0.5rem;
+}
+
+/* ---- Version-history panel ---- */
+#history {
+  background: var(--sidebar-bg);
+  border-left: 1px solid var(--border);
+  overflow: auto;
+  padding: 0.5rem;
+}
+
+#history .history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+#history .history-entry {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0.2rem 0.3rem;
+  border-radius: 3px;
+}
+
+#history .history-entry:hover {
+  background: var(--hover-bg, rgba(127, 127, 127, 0.15));
+}
+
+#history .history-size {
+  color: var(--muted);
+}
+
+#history .history-empty {
+  color: var(--muted);
+  font-style: italic;
+  padding: 0.5rem;
+}
+
+#history .history-diff {
+  margin-top: 0.5rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.5rem;
+}
+
+#history .history-diff-body {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+#history .history-diff-line[data-op="add"] {
+  background: rgba(46, 160, 67, 0.18);
+}
+
+#history .history-diff-line[data-op="del"] {
+  background: rgba(248, 81, 73, 0.18);
+}
+
+#history .history-restore {
+  cursor: pointer;
 }
 
 #sidebar {

@@ -165,6 +165,8 @@ export interface Settings {
   sidebar_visible: boolean | null;
   /** Whether the outline panel is shown. `null` ⇒ visible (default). */
   outline_visible: boolean | null;
+  /** Whether the version-history panel is shown. `null` ⇒ hidden (default). */
+  history_visible: boolean | null;
   /** Whether debounced autosave is enabled. `null` ⇒ off (default). */
   autosave: boolean | null;
   /** Autosave/journal debounce in ms. `null` ⇒ 2000 (default). */
@@ -230,4 +232,33 @@ export function loadRecovery(): Promise<RecoveryEntry[]> {
 /** Delete the recovery journal — the clean-shutdown sentinel. */
 export function clearRecovery(): Promise<void> {
   return invoke<void>("clear_recovery");
+}
+
+/** One stored version of a note (mirrors Rust `snapshots::SnapshotMeta`, §5). */
+export interface SnapshotMeta {
+  /** sha256 (hex) of the raw content — the version id. */
+  hash: string;
+  /** Save time, epoch milliseconds. */
+  saved_at: number;
+  /** Raw byte length. */
+  size: number;
+}
+
+/** Versions of the note at `path`, newest first (empty if none). */
+export function listHistory(path: string): Promise<SnapshotMeta[]> {
+  return invoke<SnapshotMeta[]>("list_history", { path });
+}
+
+/** The exact stored content of version `hash` for `path` (for the diff view). */
+export function readSnapshot(path: string, hash: string): Promise<string> {
+  return invoke<string>("read_snapshot", { path, hash });
+}
+
+/**
+ * Restore version `hash` to the note at `path`. The current on-disk content is
+ * snapshotted first (restore is undoable, §3), then the version is written
+ * atomically. Callers reload the buffer afterwards.
+ */
+export function restoreSnapshot(path: string, hash: string): Promise<void> {
+  return invoke<void>("restore_snapshot", { path, hash });
 }

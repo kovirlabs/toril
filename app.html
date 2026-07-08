@@ -12,6 +12,7 @@
       <div class="actions">
         <button id="btn-toggle-sidebar" title="Toggle Sidebar (Ctrl+\)">☰</button>
         <button id="btn-toggle-outline" title="Toggle Outline (Ctrl+Shift+\)">≣</button>
+        <button id="btn-toggle-history" title="Toggle Version History">⟲</button>
         <button id="btn-new" title="New (Ctrl+N)">New</button>
         <button id="btn-open" title="Open File (Ctrl+O)">Open</button>
         <button id="btn-open-folder" title="Open Folder (Ctrl+Shift+O)">Open Folder</button>
@@ -29,7 +30,7 @@
       </select>
     </header>
 
-    <div id="workspace">
+    <div id="workspace" class="history-hidden">
       <aside id="sidebar"></aside>
       <section id="main">
         <nav id="tabbar"></nav>
@@ -38,6 +39,7 @@
         <main id="editor" class="editor"></main>
       </section>
       <aside id="outline"></aside>
+      <aside id="history"></aside>
     </div>
 
     <footer id="statusbar">

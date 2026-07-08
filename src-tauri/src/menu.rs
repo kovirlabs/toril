@@ -43,6 +43,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let view = SubmenuBuilder::new(app, "View")
         .text("menu_toggle_sidebar", "Toggle Sidebar (Ctrl+\\)")
         .text("menu_toggle_outline", "Toggle Outline (Ctrl+Shift+\\)")
+        .text("menu_toggle_history", "Toggle Version History")
         .separator()
         .text("menu_toggle_autosave", "Toggle Autosave")
         .build()?;
