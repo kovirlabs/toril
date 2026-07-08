@@ -391,6 +391,34 @@ everyone," culminating in `v1.0`.
 
 ---
 
+### Parallel track — Toril-TUI follow-ups · *parked 2026-07-08*
+
+Not part of the desktop Movement ladder. **Toril-TUI** is a second, webview-free
+front-end on the same core (`ratatui` + `edtui`, reusing `fsatomic`/`vaultscan`);
+its MVP shipped under `[Unreleased]` in `CHANGELOG.md` (design spec + plan in
+`docs/superpowers/`). Parked by owner decision to keep focus on the desktop notes
+system — pull from here when the TUI comes back into scope. Its defining invariant to
+**preserve in every follow-up**: it edits markdown *source* directly, so saves are
+**byte-exact** (stronger §3.2 fidelity than the WYSIWYG app) — never introduce
+normalization here.
+
+- [ ] **On-device interactive verification** — the one verification *uniquely closeable
+  on a webview-free box* (the TUI's whole reason to exist). Drive open→edit→`Ctrl-S`→
+  byte-exact in a real terminal; tick the MVP plan's manual smoke tests
+  (`docs/superpowers/plans/2026-07-05-toril-tui-mvp.md`, lines 1459–1462). No new
+  feature code — do this **first** when the track resumes.
+- [ ] **Delete → trash key** — wire a delete keybinding to the existing (tested but
+  UI-less) `trashbin` crate. Small, high-value; makes the TUI the *first* surface for
+  soft-delete. Refresh the tree after; keep the unsaved-changes guard.
+- [ ] **In-document find** — search-within-open-file (highlight + `n`/`N` cycle, e.g.
+  `Ctrl-F`). Self-contained, fully headlessly testable; mirrors the desktop Find.
+- [ ] **Multi-file tabs** — per-tab buffers + a tab strip, matching the desktop app's
+  multi-document model. Larger increment: touches app state, keymap, and layout.
+- [ ] **RTF / HTML export** — reuse the existing `mdrtf` / `mdhtml` crates from the TUI
+  (both already webview-free), so export parity comes nearly for free.
+
+---
+
 ## 6. New crates at a glance
 
 All follow the `crates/*` pattern: webview-free, unit-tested, healthy pure-Rust deps.
