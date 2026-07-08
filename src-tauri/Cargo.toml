@@ -9,6 +9,7 @@ members = [
     "crates/mdrtf",
     "crates/imgasset",
     "crates/trashbin",
+    "crates/snapshots",
 ]
 # Vendored, security-patched glib (see [patch.crates-io] below). Excluded so it
 # is never a workspace member — we don't fmt/clippy/test upstream third-party code.
