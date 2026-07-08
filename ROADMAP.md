@@ -51,11 +51,11 @@ It is a fine **editor**. It is not yet a **notes system** — no global search, 
 quick switcher, no links, no tags, no version history, no sync conflict handling,
 no AI. That gap is this roadmap.
 
-> **Status (2026-06-22).** The foundation above — plus file-association / double-click
+> **Status (2026-07-08).** The foundation above — plus file-association / double-click
 > open — shipped through **`v1.0.0-beta.1`** (see `CHANGELOG.md`). **Movement I,
-> branches 1–2 are complete** (autosave + crash-recovery journal;
-> safe-delete-to-trash); the remaining Movement I–V branches are unstarted.
-> **▶ Pick up at Movement I, branch 3 — `feat/local-version-history`.**
+> branches 1–3 are complete** (autosave + crash-recovery journal; safe-delete-to-trash;
+> local version history); the remaining Movement I–V branches are unstarted.
+> **▶ Pick up at Movement I, branch 4 — `feat/sync-coexistence`.**
 >
 > *Version note:* the `v1.0.0-beta.1` tag ran **ahead** of the indicative ladder in §2
 > (that ladder is guidance, not gospel). The data-safety floor (Movement I) is still
@@ -162,17 +162,18 @@ nice in a synced folder. This movement is also the prerequisite for the AI wedge
      `commands/files.rs`; contract row in §5.
    - *Gate:* `cargo test -p trashbin`.
 
-- [ ] **3. `feat/local-version-history`** — periodic content-addressed snapshots of each
-   note + a diff/restore panel. **This out-does Apple Notes** and is squarely
-   on-brand.
-   - *New crate:* `crates/snapshots` — content-addressed blob store; prefer **`gix`**
-     (pure-Rust gitoxide) over `git2` to stay C-free, or a hand-rolled store.
+- [x] **3. `feat/local-version-history`** — content-addressed snapshots of each note
+   on save + a diff/restore panel. **This out-does Apple Notes** and is squarely
+   on-brand. *Store decision (§8) resolved: hand-rolled CAS, not `gix`.*
+   - *New crate:* `crates/snapshots` — hand-rolled content-addressed blob store
+     (sha2 + flate2/miniz_oxide + serde; pure-Rust, C-free); on-save dedup +
+     time-decay thinning + crash-safe `rekey`.
    - *Touches:* `commands/snapshots.rs` (new contract rows), a `src/ui/history.ts`
-     panel.
+     panel + `src/ui/linediff.ts`.
    - *Gate:* `cargo test -p snapshots` (snapshot → mutate → restore is lossless) +
      `tests/history.test.ts`.
    - *§3:* snapshots are *additive* and never block a save; restore goes through the
-     atomic path.
+     atomic path. Design spec: `docs/superpowers/specs/2026-07-08-local-version-history-design.md`.
 
 - [ ] **4. `feat/sync-coexistence`** — make folder-sync bulletproof: detect external edits
    to open files, 3-way merge where safe, write Obsidian-style `…(conflict).md`
@@ -450,8 +451,10 @@ else is execution.
 
 ## 8. Open decisions (resolve as we reach them)
 
-- **Snapshot store:** `gix` vs. a hand-rolled content-addressed store? (Lean `gix` for
-  diff/restore power, pure-Rust.)
+- ~~**Snapshot store:** `gix` vs. a hand-rolled content-addressed store?~~ **Resolved
+  (2026-07-08): hand-rolled CAS** (`crates/snapshots`). We only need blob-by-hash + a
+  manifest + custom time-decay thinning, not git semantics; a ~200-LOC pure-Rust crate
+  fits the house ethos and avoids `gix`'s large surface.
 - **AI providers at launch:** Anthropic + Ollama only, or also OpenAI? (Lean Anthropic +
   Ollama first — on-brand and covers free/local.)
 - **Beta graduation bar:** which exact branches must be green to drop `-alpha`? (Proposed:

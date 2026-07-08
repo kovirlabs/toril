@@ -12,6 +12,20 @@ GitHub Release notes plus the commits that shipped in it.
 ## [Unreleased]
 
 ### Added
+- **Local version history** (ROADMAP Movement I.3). Every save now records a
+  restorable version of the note, browsable in a new history panel (toggle in the
+  toolbar / View menu; hidden by default) with a read-only line diff against the
+  current text and one-click restore. Storage is a content-addressed store
+  (`crates/snapshots`): gzip, sha256-addressed blobs + a JSON manifest, kept in the
+  app config dir **outside the vault** — so it never pollutes the plain-files vault
+  or rides folder-sync. Capture is a best-effort, **additive** side-effect of saving
+  (it can never block or fail a save, §3), deduped on identical content, and thinned
+  by a time-decay policy (keep-all <24h → hourly <7d → daily <30d → weekly beyond,
+  always keeping the oldest draft and newest state). Restore snapshots the current
+  state first, so it is undoable and cannot lose work. History follows a note across
+  renames via a crash-safe copy-then-delete `rekey` (the sidebar rename that calls it
+  lands later). Gates: `cargo test -p snapshots` + `tests/history.test.ts`; GUI
+  toggle/restore is on-device (§0).
 - **Autosave + crash recovery** (ROADMAP Movement I.1). Opt-in debounced atomic
   autosave of dirty, already-saved files (View → Toggle Autosave; off by default).
   An always-on recovery journal snapshots every dirty buffer — Untitled drafts

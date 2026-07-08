@@ -207,7 +207,8 @@ toril/
     │   ├── mdhtml/            # comrak markdown→HTML for export (§7)
     │   ├── mdrtf/             # comrak markdown→RTF for export (§7)
     │   ├── imgasset/          # save pasted clipboard images beside the doc (§6)
-    │   └── trashbin/          # soft-delete to workspace .trash/ + restore (§3)
+    │   ├── trashbin/          # soft-delete to workspace .trash/ + restore (§3)
+    │   └── snapshots/         # content-addressed local version history (§3, ROADMAP I.3)
     └── src/
         ├── main.rs            # bin entry → lib::run()
         ├── lib.rs             # Tauri builder + menu + command registration
@@ -232,7 +233,7 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 | Command | Args | Returns | Notes |
 |---|---|---|---|
 | `open_file` | `path` | `{ path, content }` | UTF-8 read |
-| `save_file` | `path, content` | `()` | **atomic** (temp + fsync + rename) — §3.1 |
+| `save_file` | `path, content` | `()` | **atomic** (temp + fsync + rename) — §3.1; also records a version-history snapshot (best-effort, additive) |
 | `save_file_as` | `content` | `path` | native dialog |
 | `open_folder` | `path` | `FileNode[]` | recursive `.md` tree |
 | `watch_folder` | `path` | event stream | external-change events (`notify` crate) |
@@ -248,6 +249,9 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 | `move_to_trash` | `vault_root, path` | `TrashEntry` | soft-delete into workspace `.trash/` via `trashbin` — **atomic** move (§3) |
 | `list_trash` | `vault_root` | `TrashEntry[]` | newest first; empty when no `.trash/` |
 | `restore_from_trash` | `vault_root, id` | `path` | restore to original path; errors **without clobbering** an existing file |
+| `list_history` | `path` | `SnapshotMeta[]` | version list for a note, newest first; empty if none (`crates/snapshots`, ROADMAP I.3) |
+| `read_snapshot` | `path, hash` | `content` | exact stored content of one version (for the diff view) |
+| `restore_snapshot` | `path, hash` | `()` | snapshots current on-disk content **first**, then atomically writes the chosen version — restore is undoable (§3) |
 | `take_launch_path` | — | `path?` | file the app was launched with (double-click / "Open with"); returns it **once**, then `null` (§file-open) |
 
 > **HTML export is split** across two commands to hold the single sanitization path (§3.3):
@@ -266,6 +270,17 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 > `.`, so `vaultscan` already hides it from the sidebar (§1) and Obsidian hides it too.
 > Backed by `crates/trashbin`; commands are not yet called by any UI (the sidebar file-ops
 > branch wires them).
+>
+> **Version history.** Every save records a content-addressed snapshot (`crates/snapshots`):
+> per-note dir under `<app-config>/history/<hash(path)>/` — a `manifest.json` + gzip,
+> sha256-addressed blobs. It lives **outside the vault** (like recovery/session, §1) so it
+> never pollutes plain files or rides folder-sync. Capture is a **best-effort, additive**
+> side-effect of `save_file`/`save_file_as` (a failure never blocks a save, §3); on-save
+> content-dedup; **time-decay thinning** (keep-all <24h → hourly <7d → daily <30d → weekly,
+> always keeping oldest+newest). Byte-exact (raw-bytes addressing, §3.2). `rekey` carries a
+> note's history across a rename copy-then-delete (≥1 intact dir on power loss); the in-app
+> rename that calls it is Movement II.12. Restore snapshots the current state first, so it is
+> undoable. Frontend: `src/ui/history.ts` panel + `src/ui/linediff.ts`.
 >
 > **Events (Rust → frontend):** `workspace:change` (file watcher), `menu` (native menu item id
 > `menu_*` → mapped to the same handlers as toolbar buttons), and `open-file` (a *second* launch's
