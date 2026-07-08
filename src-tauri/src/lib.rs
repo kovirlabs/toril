@@ -47,8 +47,8 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
-        .menu(|app| menu::build(app))
-        .on_menu_event(|app, event| menu::on_event(app, event))
+        .menu(menu::build)
+        .on_menu_event(menu::on_event)
         .manage(launch_path)
         .manage(WatcherState::default())
         .invoke_handler(tauri::generate_handler![
