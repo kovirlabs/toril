@@ -4253,6 +4253,7 @@ dependencies = [
  "notify",
  "serde",
  "serde_json",
+ "snapshots",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
