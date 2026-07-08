@@ -21,7 +21,32 @@ export interface HistoryHost {
   confirm(message: string): boolean;
 }
 
-/** Human-friendly age of a timestamp relative to `now` (both epoch millis). */
+/**
+ * Absolute save time, precise to the second — the panel's primary label.
+ * Version-history saves often cluster within a minute, so relative time
+ * ("2 min ago") collapses a whole burst into one indistinct label; the exact
+ * clock time keeps them orderable. Same-day saves show just the time; older
+ * ones get a short date prefix.
+ */
+export function formatTimestamp(ms: number, now: number): string {
+  const d = new Date(ms);
+  const n = new Date(now);
+  const time = d.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const sameDay =
+    d.getFullYear() === n.getFullYear() &&
+    d.getMonth() === n.getMonth() &&
+    d.getDate() === n.getDate();
+  if (sameDay) return time;
+  const date = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return `${date}, ${time}`;
+}
+
+/** Human-friendly age of a timestamp relative to `now` (both epoch millis). Kept
+ *  as the row's hover tooltip — a quick "how long ago" without losing ordering. */
 export function formatRelativeTime(then: number, now: number): string {
   const sec = Math.max(0, Math.floor((now - then) / 1000));
   if (sec < 45) return "just now";
@@ -48,6 +73,7 @@ export class History {
   private path: string | null = null;
   private current = "";
   private metas: SnapshotMeta[] = [];
+  private selected: string | null = null;
 
   constructor(
     private readonly el: HTMLElement,
@@ -70,6 +96,13 @@ export class History {
 
   private render(): void {
     this.el.replaceChildren();
+    this.selected = null; // a rebuilt list has no open diff
+
+    const header = document.createElement("div");
+    header.className = "history-header";
+    header.textContent = "Version history";
+    this.el.append(header);
+
     if (!this.path || this.metas.length === 0) {
       const hint = document.createElement("p");
       hint.className = "history-empty";
@@ -87,7 +120,9 @@ export class History {
 
       const when = document.createElement("span");
       when.className = "history-when";
-      when.textContent = formatRelativeTime(meta.saved_at, this.host.now());
+      const now = this.host.now();
+      when.textContent = formatTimestamp(meta.saved_at, now);
+      when.title = formatRelativeTime(meta.saved_at, now); // hover for "2 min ago"
       const size = document.createElement("span");
       size.className = "history-size";
       size.textContent = formatSize(meta.size);
@@ -100,14 +135,36 @@ export class History {
     this.el.append(list);
   }
 
-  /** Load a version and show its diff vs the current buffer. */
+  /** Show the diff of a version vs the current buffer — or, if it is already
+   *  open, close it. Only one diff is ever shown; picking another replaces it
+   *  (no stacking). */
   private async select(hash: string): Promise<void> {
     if (!this.path) return;
+    if (this.selected === hash) {
+      this.closeDiff();
+      return;
+    }
     const snapshot = await this.port.read(this.path, hash);
+    this.selected = hash;
     this.renderDiff(hash, lineDiff(snapshot, this.current));
+    this.markActive();
+  }
+
+  private closeDiff(): void {
+    this.selected = null;
+    this.el.querySelector(".history-diff")?.remove();
+    this.markActive();
+  }
+
+  /** Reflect the open version on the entry buttons (highlight the selected one). */
+  private markActive(): void {
+    for (const btn of this.el.querySelectorAll<HTMLElement>(".history-entry")) {
+      btn.dataset.active = String(btn.dataset.hash === this.selected);
+    }
   }
 
   private renderDiff(hash: string, rows: DiffLine[]): void {
+    this.el.querySelector(".history-diff")?.remove(); // replace, never stack
     const view = document.createElement("div");
     view.className = "history-diff";
     view.dataset.hash = hash;

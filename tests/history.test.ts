@@ -7,6 +7,7 @@ import { type DiffLine, lineDiff } from "../src/ui/linediff";
 import {
   formatRelativeTime,
   formatSize,
+  formatTimestamp,
   History,
   type HistoryHost,
   type HistoryPort,
@@ -56,6 +57,22 @@ describe("formatRelativeTime", () => {
   });
   it("never reports negative time", () => {
     expect(formatRelativeTime(now + 5_000, now)).toBe("just now");
+  });
+});
+
+describe("formatTimestamp", () => {
+  // A fixed local wall-clock "now" so the test is deterministic.
+  const now = new Date(2026, 6, 8, 15, 6, 40).getTime();
+
+  it("distinguishes saves seconds apart (the whole reason for absolute time)", () => {
+    // Two saves 12s apart both read '2 min ago' relatively, but must differ here.
+    expect(formatRelativeTime(now - 140_000, now)).toBe(formatRelativeTime(now - 128_000, now));
+    expect(formatTimestamp(now - 140_000, now)).not.toBe(formatTimestamp(now - 128_000, now));
+  });
+
+  it("shows time-only for same-day saves and a date prefix for older ones", () => {
+    expect(formatTimestamp(now - 60_000, now)).not.toContain(","); // today → time only
+    expect(formatTimestamp(now - 3 * 86_400_000, now)).toContain(","); // older → date, time
   });
 });
 
@@ -132,6 +149,30 @@ describe("History panel", () => {
     expect(diff).not.toBeNull();
     // The extra "new" line is an addition in the current buffer.
     expect(diff?.querySelector('[data-op="add"]')?.textContent).toContain("new");
+  });
+
+  it("shows only one diff at a time — selecting another replaces it (no stacking)", async () => {
+    const h = new History(el, port(), host);
+    await h.setActive("/n.md", "current");
+    const entries = el.querySelectorAll<HTMLButtonElement>(".history-entry");
+    entries[0].click();
+    await flush();
+    entries[1].click();
+    await flush();
+    expect(el.querySelectorAll(".history-diff").length).toBe(1);
+    expect((el.querySelector(".history-diff") as HTMLElement).dataset.hash).toBe("bbb");
+  });
+
+  it("re-clicking the open version closes its diff", async () => {
+    const h = new History(el, port(), host);
+    await h.setActive("/n.md", "current");
+    const first = el.querySelector<HTMLButtonElement>(".history-entry");
+    first?.click();
+    await flush();
+    expect(el.querySelector(".history-diff")).not.toBeNull();
+    first?.click();
+    await flush();
+    expect(el.querySelector(".history-diff")).toBeNull();
   });
 
   it("restores via the port when confirmed, and not when declined", async () => {
