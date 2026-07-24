@@ -180,6 +180,15 @@ theirs is what is on disk now; the buffer holds the merged text and stays dirty.
 | `Merged` (HTML) | Treated as `Conflict` (§2). |
 | `Conflict` | Set `tab.diverged`, raise the banner. |
 
+**Convergent-edit refinement.** If the merged result equals *theirs* — both sides
+made the same change, or the user's edits were a subset — the buffer now matches
+disk exactly, so the tab is marked **clean** rather than dirty. Without this a
+tab sits dirty with nothing to save, which reads as a bug.
+
+**Clearing divergence.** `tab.diverged` is cleared by either banner action *and*
+by any later check returning `Unchanged` — i.e. if the external writer reverts
+their change, the conflict resolves itself and the banner disappears.
+
 ### 5.3 Removal of `isSelfWrite`
 
 The 2-second time window at `main.ts:465-477` is deleted. `Unchanged` replaces
@@ -217,6 +226,17 @@ Before `save_file` writes, the frontend calls `merge_external` and proceeds only
 on `Unchanged`; anything else raises the banner instead of writing. This demotes
 the watcher from *safety mechanism* to *optimization* and costs one extra read
 per save.
+
+**Exemptions**, so the check never blocks a legitimate first write:
+
+- **A tab with no `path`** (an Untitled draft) has nothing on disk to diverge
+  from; `save_file_as` is unaffected.
+- **Save As to a *new* path** writes without a check — there is no shared history
+  with that path. Save As over an *existing* file is a plain overwrite the user
+  explicitly chose via the native dialog, and stays that way.
+- **`TheirsOnly`** means the buffer is unmodified, so reload rather than banner.
+  Unreachable in practice (only dirty tabs are saved), specified so the mapping
+  is total.
 
 ### 5.7 External deletion
 
