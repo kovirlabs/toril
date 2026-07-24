@@ -37,6 +37,8 @@ pub struct Settings {
     pub sidebar_visible: Option<bool>,
     /// Whether the outline panel is shown. `None` ⇒ visible (default).
     pub outline_visible: Option<bool>,
+    /// Whether the version-history panel is shown. `None` ⇒ hidden (default).
+    pub history_visible: Option<bool>,
     /// Whether debounced autosave of dirty, saved files is on. `None` ⇒ off.
     pub autosave: Option<bool>,
     /// Autosave/journal debounce in ms. `None` ⇒ 2000 (frontend default).

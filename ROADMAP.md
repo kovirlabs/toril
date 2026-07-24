@@ -51,11 +51,11 @@ It is a fine **editor**. It is not yet a **notes system** — no global search, 
 quick switcher, no links, no tags, no version history, no sync conflict handling,
 no AI. That gap is this roadmap.
 
-> **Status (2026-06-22).** The foundation above — plus file-association / double-click
+> **Status (2026-07-08).** The foundation above — plus file-association / double-click
 > open — shipped through **`v1.0.0-beta.1`** (see `CHANGELOG.md`). **Movement I,
-> branches 1–2 are complete** (autosave + crash-recovery journal;
-> safe-delete-to-trash); the remaining Movement I–V branches are unstarted.
-> **▶ Pick up at Movement I, branch 3 — `feat/local-version-history`.**
+> branches 1–3 are complete** (autosave + crash-recovery journal; safe-delete-to-trash;
+> local version history); the remaining Movement I–V branches are unstarted.
+> **▶ Pick up at Movement I, branch 4 — `feat/sync-coexistence`.**
 >
 > *Version note:* the `v1.0.0-beta.1` tag ran **ahead** of the indicative ladder in §2
 > (that ladder is guidance, not gospel). The data-safety floor (Movement I) is still
@@ -162,17 +162,18 @@ nice in a synced folder. This movement is also the prerequisite for the AI wedge
      `commands/files.rs`; contract row in §5.
    - *Gate:* `cargo test -p trashbin`.
 
-- [ ] **3. `feat/local-version-history`** — periodic content-addressed snapshots of each
-   note + a diff/restore panel. **This out-does Apple Notes** and is squarely
-   on-brand.
-   - *New crate:* `crates/snapshots` — content-addressed blob store; prefer **`gix`**
-     (pure-Rust gitoxide) over `git2` to stay C-free, or a hand-rolled store.
+- [x] **3. `feat/local-version-history`** — content-addressed snapshots of each note
+   on save + a diff/restore panel. **This out-does Apple Notes** and is squarely
+   on-brand. *Store decision (§8) resolved: hand-rolled CAS, not `gix`.*
+   - *New crate:* `crates/snapshots` — hand-rolled content-addressed blob store
+     (sha2 + flate2/miniz_oxide + serde; pure-Rust, C-free); on-save dedup +
+     time-decay thinning + crash-safe `rekey`.
    - *Touches:* `commands/snapshots.rs` (new contract rows), a `src/ui/history.ts`
-     panel.
+     panel + `src/ui/linediff.ts`.
    - *Gate:* `cargo test -p snapshots` (snapshot → mutate → restore is lossless) +
      `tests/history.test.ts`.
    - *§3:* snapshots are *additive* and never block a save; restore goes through the
-     atomic path.
+     atomic path. Design spec: `docs/superpowers/specs/2026-07-08-local-version-history-design.md`.
 
 - [ ] **4. `feat/sync-coexistence`** — make folder-sync bulletproof: detect external edits
    to open files, 3-way merge where safe, write Obsidian-style `…(conflict).md`
@@ -391,6 +392,34 @@ everyone," culminating in `v1.0`.
 
 ---
 
+### Parallel track — Toril-TUI follow-ups · *parked 2026-07-08*
+
+Not part of the desktop Movement ladder. **Toril-TUI** is a second, webview-free
+front-end on the same core (`ratatui` + `edtui`, reusing `fsatomic`/`vaultscan`);
+its MVP shipped under `[Unreleased]` in `CHANGELOG.md` (design spec + plan in
+`docs/superpowers/`). Parked by owner decision to keep focus on the desktop notes
+system — pull from here when the TUI comes back into scope. Its defining invariant to
+**preserve in every follow-up**: it edits markdown *source* directly, so saves are
+**byte-exact** (stronger §3.2 fidelity than the WYSIWYG app) — never introduce
+normalization here.
+
+- [ ] **On-device interactive verification** — the one verification *uniquely closeable
+  on a webview-free box* (the TUI's whole reason to exist). Drive open→edit→`Ctrl-S`→
+  byte-exact in a real terminal; tick the MVP plan's manual smoke tests
+  (`docs/superpowers/plans/2026-07-05-toril-tui-mvp.md`, lines 1459–1462). No new
+  feature code — do this **first** when the track resumes.
+- [ ] **Delete → trash key** — wire a delete keybinding to the existing (tested but
+  UI-less) `trashbin` crate. Small, high-value; makes the TUI the *first* surface for
+  soft-delete. Refresh the tree after; keep the unsaved-changes guard.
+- [ ] **In-document find** — search-within-open-file (highlight + `n`/`N` cycle, e.g.
+  `Ctrl-F`). Self-contained, fully headlessly testable; mirrors the desktop Find.
+- [ ] **Multi-file tabs** — per-tab buffers + a tab strip, matching the desktop app's
+  multi-document model. Larger increment: touches app state, keymap, and layout.
+- [ ] **RTF / HTML export** — reuse the existing `mdrtf` / `mdhtml` crates from the TUI
+  (both already webview-free), so export parity comes nearly for free.
+
+---
+
 ## 6. New crates at a glance
 
 All follow the `crates/*` pattern: webview-free, unit-tested, healthy pure-Rust deps.
@@ -422,8 +451,10 @@ else is execution.
 
 ## 8. Open decisions (resolve as we reach them)
 
-- **Snapshot store:** `gix` vs. a hand-rolled content-addressed store? (Lean `gix` for
-  diff/restore power, pure-Rust.)
+- ~~**Snapshot store:** `gix` vs. a hand-rolled content-addressed store?~~ **Resolved
+  (2026-07-08): hand-rolled CAS** (`crates/snapshots`). We only need blob-by-hash + a
+  manifest + custom time-decay thinning, not git semantics; a ~200-LOC pure-Rust crate
+  fits the house ethos and avoids `gix`'s large surface.
 - **AI providers at launch:** Anthropic + Ollama only, or also OpenAI? (Lean Anthropic +
   Ollama first — on-brand and covers free/local.)
 - **Beta graduation bar:** which exact branches must be green to drop `-alpha`? (Proposed:

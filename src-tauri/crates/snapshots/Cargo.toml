@@ -1,0 +1,15 @@
+[package]
+name = "snapshots"
+version = "0.1.0"
+edition = "2024"
+description = "Content-addressed local version history for Toril notes (CLAUDE.md §3, ROADMAP Movement I.3). Hand-rolled CAS: sha256-addressed gzip blobs + JSON manifest + time-decay thinning. No Tauri dep so it is unit-testable anywhere."
+
+# Kept dependency-light and pure-Rust (§2): sha2 for content addressing, flate2
+# (default miniz_oxide backend — no zlib C) for blob compression, serde for the
+# manifest. All are already in the app's lockfile as transitive deps.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+flate2 = "1"
+fsatomic = { path = "../fsatomic" }

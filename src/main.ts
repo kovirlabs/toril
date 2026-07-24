@@ -18,6 +18,7 @@ import {
   exportHtml,
   exportRtf,
   installCloseGuard,
+  listHistory,
   loadRecovery,
   loadSettings,
   markdownToHtml,
@@ -28,6 +29,8 @@ import {
   openFolder,
   pickFileToOpen,
   pickFolder,
+  readSnapshot,
+  restoreSnapshot,
   saveClipboardImage,
   saveFile,
   saveFileAs,
@@ -38,6 +41,7 @@ import {
   watchFolder,
 } from "./ipc";
 import { AutosaveScheduler, type RecoveryEntry, selectDirtySaved, snapshotDirty } from "./autosave";
+import { History } from "./ui/history";
 import { Outline } from "./ui/outline";
 import { SearchBar } from "./ui/search";
 import { Sidebar } from "./ui/sidebar";
@@ -57,6 +61,7 @@ let sidebar: Sidebar;
 let formatToolbar: FormattingToolbar | null = null;
 let statusBar: StatusBar | null = null;
 let outline: Outline | null = null;
+let history: History | null = null;
 let searchBar: SearchBar | null = null;
 let autosave: AutosaveScheduler | null = null;
 let autosaveEnabled = false;
@@ -66,6 +71,7 @@ let theme: ThemeController | null = null;
 let workspaceRoot: string | null = null;
 let sidebarVisible = true;
 let outlineVisible = true;
+let historyVisible = false;
 let unwatch: UnlistenFn | null = null;
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 let sessionTimer: ReturnType<typeof setTimeout> | null = null;
@@ -139,6 +145,7 @@ function onActivate(tab: TabState): void {
   formatToolbar?.refresh();
   statusBar?.refresh();
   outline?.refresh();
+  refreshHistory();
   scheduleSessionSave();
 }
 
@@ -224,6 +231,7 @@ async function persistActive(path: string): Promise<void> {
   updateTitle();
   setStatus(`Saved ${basename(path)}`);
   autosave?.notifyChange();
+  refreshHistory(); // a save just created a new version
 }
 
 async function doSave(): Promise<void> {
@@ -326,6 +334,60 @@ function toggleOutline(): void {
   outlineVisible = !outlineVisible;
   applyOutline();
   scheduleSessionSave();
+}
+
+// ---- Version-history panel (ROADMAP Movement I.3) ---------------------------
+
+/** Apply the history-panel visibility to the DOM (a class on #workspace drives CSS). */
+function applyHistory(): void {
+  document.querySelector("#workspace")?.classList.toggle("history-hidden", !historyVisible);
+  const btn = document.querySelector<HTMLElement>("#btn-toggle-history");
+  if (btn) btn.dataset.active = String(historyVisible);
+}
+
+function toggleHistory(): void {
+  historyVisible = !historyVisible;
+  applyHistory();
+  refreshHistory(); // populate on show; a no-op read when hidden
+  scheduleSessionSave();
+}
+
+/** Point the panel at the active note's current buffer. Skipped while hidden so
+ *  it never reads the store needlessly. */
+function refreshHistory(): void {
+  if (!history || !historyVisible) return;
+  const tab = tabs.active();
+  const path = tab?.path ?? null;
+  const content = tab ? serializeEditor(tab.format) : "";
+  void history.setActive(path, content);
+}
+
+/**
+ * Full restore flow behind the panel's Restore button. If the active buffer has
+ * unsaved edits, save it first (which snapshots that state via the §4 hook), then
+ * restore the chosen version and reload the buffer from disk. `recordSelfWrite`
+ * suppresses the watcher's external-change prompt for our own writes.
+ */
+async function restoreVersion(path: string, hash: string): Promise<void> {
+  const tab = tabs.active();
+  if (tab && tab.path === path && tab.dirty) {
+    try {
+      await persistActive(path);
+    } catch (e) {
+      setStatus(`Save before restore failed: ${String(e)}`);
+      return;
+    }
+  }
+  recordSelfWrite(path);
+  await restoreSnapshot(path, hash);
+  const reloaded = await openFile(path);
+  if (tab && tab.path === path) {
+    loadIntoEditor(reloaded.content, tab.format);
+    tab.content = reloaded.content;
+    tabs.setDirty(tab.id, false);
+    updateTitle();
+  }
+  setStatus(`Restored a previous version of ${basename(path)}`);
 }
 
 function toggleAutosave(): void {
@@ -478,6 +540,7 @@ function scheduleSessionSave(): void {
       theme: theme?.current() ?? null,
       sidebar_visible: sidebarVisible,
       outline_visible: outlineVisible,
+      history_visible: historyVisible,
       autosave: autosaveEnabled,
       autosave_debounce_ms: autosaveDebounceMs,
     };
@@ -511,6 +574,10 @@ async function restoreSession(): Promise<void> {
   if (settings.outline_visible !== null) {
     outlineVisible = settings.outline_visible;
     applyOutline();
+  }
+  if (settings.history_visible !== null) {
+    historyVisible = settings.history_visible;
+    applyHistory();
   }
   if (settings.autosave !== null) autosaveEnabled = settings.autosave;
   if (settings.autosave_debounce_ms !== null) autosaveDebounceMs = settings.autosave_debounce_ms;
@@ -609,6 +676,9 @@ function handleMenuAction(id: string): void {
     case "menu_toggle_outline":
       toggleOutline();
       break;
+    case "menu_toggle_history":
+      toggleHistory();
+      break;
     case "menu_toggle_autosave":
       toggleAutosave();
       break;
@@ -691,6 +761,14 @@ window.addEventListener("DOMContentLoaded", async () => {
   if (docStats) statusBar = new StatusBar(docStats, editor, editorRoot);
   const outlineEl = document.querySelector<HTMLElement>("#outline");
   if (outlineEl) outline = new Outline(outlineEl, editor, editorRoot);
+  const historyEl = document.querySelector<HTMLElement>("#history");
+  if (historyEl) {
+    history = new History(
+      historyEl,
+      { list: listHistory, read: readSnapshot, restore: restoreVersion },
+      { now: () => Date.now(), confirm: (message) => confirm(message) },
+    );
+  }
   const searchEl = document.querySelector<HTMLElement>("#searchbar");
   if (searchEl) searchBar = new SearchBar(searchEl, editor);
 
@@ -721,6 +799,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   document.querySelector("#btn-export-rtf")?.addEventListener("click", () => void doExportRtf());
   document.querySelector("#btn-toggle-sidebar")?.addEventListener("click", () => toggleSidebar());
   document.querySelector("#btn-toggle-outline")?.addEventListener("click", () => toggleOutline());
+  document.querySelector("#btn-toggle-history")?.addEventListener("click", () => toggleHistory());
   installShortcuts();
   void onMenuAction(handleMenuAction); // native menu → same actions as the buttons
   // Guard against losing unsaved work on close, and clear the recovery journal

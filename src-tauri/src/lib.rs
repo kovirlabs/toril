@@ -47,8 +47,8 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
-        .menu(|app| menu::build(app))
-        .on_menu_event(|app, event| menu::on_event(app, event))
+        .menu(menu::build)
+        .on_menu_event(menu::on_event)
         .manage(launch_path)
         .manage(WatcherState::default())
         .invoke_handler(tauri::generate_handler![
@@ -69,6 +69,9 @@ pub fn run() {
             commands::trash::move_to_trash,
             commands::trash::list_trash,
             commands::trash::restore_from_trash,
+            commands::snapshots::list_history,
+            commands::snapshots::read_snapshot,
+            commands::snapshots::restore_snapshot,
             take_launch_path,
         ])
         .run(tauri::generate_context!())
