@@ -19,11 +19,15 @@ pub fn open_file(path: String) -> Result<OpenedFile, String> {
     Ok(OpenedFile { path, content })
 }
 
-/// Atomically write `content` to `path` (temp + fsync + rename, §3.1), then
-/// record a version-history snapshot (best-effort, additive — never blocks or
-/// fails the save, §3 / ROADMAP I.3).
+/// Atomically write `content` to `path` (temp + fsync + rename, §3.1), recording
+/// a version-history snapshot on **both** sides of the write: the bytes already on
+/// disk (so the pre-existing state of a note Toril has never written — e.g. one
+/// authored in Obsidian, about to be normalized to Toril's canonical form — stays
+/// restorable) and the bytes just written. Both are best-effort and additive:
+/// neither can block or fail the save (§3 / ROADMAP I.3).
 #[tauri::command]
 pub fn save_file(app: AppHandle, path: String, content: String) -> Result<(), String> {
+    super::snapshots::snapshot_before_write(&app, &path);
     fsatomic::atomic_write(&path, content.as_bytes()).map_err(|e| e.to_string())?;
     super::snapshots::snapshot_on_save(&app, &path, content.as_bytes());
     Ok(())
@@ -44,8 +48,11 @@ pub fn save_file_as(app: AppHandle, content: String) -> Result<Option<String>, S
     };
 
     let path = file_path.into_path().map_err(|e| e.to_string())?;
-    fsatomic::atomic_write(&path, content.as_bytes()).map_err(|e| e.to_string())?;
     let path_str = path.to_string_lossy().into_owned();
+    // The chosen destination may already hold a file the user is overwriting; keep
+    // its content restorable too (best-effort, as in `save_file`).
+    super::snapshots::snapshot_before_write(&app, &path_str);
+    fsatomic::atomic_write(&path, content.as_bytes()).map_err(|e| e.to_string())?;
     super::snapshots::snapshot_on_save(&app, &path_str, content.as_bytes());
     Ok(Some(path_str))
 }

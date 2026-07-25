@@ -1,0 +1,22 @@
+diff --git a/lib/index.js b/lib/index.js
+index 3832b797d7c76dfb77d852afc0e5a1f5dface4c7..8ccdceb8ff63ba7576d738ea6465225c966673e0 100644
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -1170,7 +1170,7 @@ var bulletListSchema = $nodeSchema("bullet_list", (ctx) => {
+ 			runner: (state, node) => {
+ 				state.openNode("list", void 0, {
+ 					ordered: false,
+-					spread: node.attrs.spread
++					spread: node.attrs.spread === "true"
+ 				}).next(node.content).closeNode();
+ 			}
+ 		}
+@@ -1368,7 +1368,7 @@ var listItemSchema = $nodeSchema("list_item", (ctx) => ({
+ 	toMarkdown: {
+ 		match: (node) => node.type.name === "list_item",
+ 		runner: (state, node) => {
+-			state.openNode("listItem", void 0, { spread: node.attrs.spread });
++			state.openNode("listItem", void 0, { spread: node.attrs.spread === "true" });
+ 			state.next(node.content);
+ 			state.closeNode();
+ 		}

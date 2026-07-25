@@ -20,21 +20,23 @@ import { commonmark } from "@milkdown/kit/preset/commonmark";
 import { gfm } from "@milkdown/kit/preset/gfm";
 import { emoji } from "@milkdown/plugin-emoji";
 import { TextSelection } from "@milkdown/kit/prose/state";
+import { useCanonical } from "../src/editor/canonical";
 import { docToMarkdown } from "../src/editor/serializer";
 import { activeState, editorCommands } from "../src/ui/toolbar";
 
 async function makeEditor(md: string): Promise<Editor> {
   const root = document.createElement("div");
   document.body.appendChild(root);
-  return Editor.make()
-    .config((ctx) => {
-      ctx.set(rootCtx, root);
-      ctx.set(defaultValueCtx, md);
-    })
-    .use(commonmark)
-    .use(gfm)
-    .use(emoji)
-    .create();
+  return useCanonical(
+    Editor.make()
+      .config((ctx) => {
+        ctx.set(rootCtx, root);
+        ctx.set(defaultValueCtx, md);
+      })
+      .use(commonmark)
+      .use(gfm)
+      .use(emoji),
+  ).create();
 }
 
 /** Build a one-paragraph editor whose entire text is selected. */
@@ -149,7 +151,7 @@ describe("formatting toolbar — round-trip equivalence (Phase 3 gate)", () => {
   it("horizontal rule serializes to the canonical thematic break", async () => {
     const editor = await makeEditor("above\n");
     editorCommands.hr(editor);
-    expect(docToMarkdown(editor)).toContain("***");
+    expect(docToMarkdown(editor)).toContain("---");
     await editor.destroy();
   });
 

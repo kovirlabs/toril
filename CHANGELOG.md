@@ -11,16 +11,18 @@ GitHub Release notes plus the commits that shipped in it.
 
 ## [Unreleased]
 
-### Security
-- **DOMPurify 3.4.11 → 3.4.12** — fixes GHSA-c2j3-45gr-mqc4, where
-  `CUSTOM_ELEMENT_HANDLING` let an allowed custom element bypass the
-  `afterSanitizeElements` hook. Rated low upstream, but DOMPurify *is* Toril's
-  defense against hostile markup in an opened file (§3.3), so a sanitizer bypass
-  carries more weight here than the rating suggests.
-- **PostCSS forced to 8.5.18** — fixes GHSA-r28c-9q8g-f849 (high), a path
-  traversal in previous-source-map auto-loading that could disclose arbitrary
-  `.map` files. It arrives transitively twice over: via Vite, and via
-  `@milkdown/components` → Vue → `@vue/compiler-sfc`.
+### Changed
+- **Canonical markdown now matches Obsidian.** Toril writes `-` bullets and `---`
+  thematic breaks, and no longer converts tight lists to loose ones — a Milkdown
+  bug that forwarded the list `spread` attribute as a truthy string, carried here
+  as a pinned dependency patch until it is fixed upstream. Notes written by
+  Obsidian or by hand now generally survive an open→save cycle untouched, which
+  matters when the folder is a live vault or is synced by iCloud/OneDrive/Dropbox.
+
+  **Existing notes re-normalize lazily** — only when you next save a note anyway,
+  never in bulk, so nothing rewrites files you did not choose to write. Because
+  every save records a version-history snapshot first, that re-normalization is
+  undoable per note from the history panel.
 
 ### Added
 - **Local version history** (ROADMAP Movement I.3). Every save now records a

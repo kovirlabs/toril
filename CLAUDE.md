@@ -35,15 +35,30 @@ the feature-by-feature record.
 - **PDF export** — deferred (§7); HTML export → browser "Save as PDF" is the manual path.
 - **Source / Typewriter / Focus edit modes** — *dropped as low-value* (user decision, 2026-05-26), not
   deferred-pending. Revisit only on explicit demand.
-- **On-device GUI verification** — every dialog/menu/webview flow is unverified here (this box has no
-  platform webview; the app crate can't even link). Logic layers are gated headlessly. Verify with
-  `pnpm tauri dev` on a webview-capable machine.
+- **Interactive GUI verification** — what is genuinely unverified is *interactive* behavior: dialogs,
+  menus, and webview flows that need a human driving a window (`pnpm tauri dev`). The **build is not
+  the obstacle** — the dev box has the WebKitGTK deps, so `cargo test --workspace` (app crate
+  included, it links and its tests run) and `cargo clippy --workspace --all-targets` are available
+  and **should be run**, not skipped. Don't assume the Rust side can't be compiled here; check before
+  concluding that. (On a box genuinely missing the webview deps, the fallback in §Commands applies.)
 - Tab switching does **not** preserve per-tab undo history (single shared editor, content swapped).
   Acceptable for now.
+- **An unused link reference definition is deleted on save.** `[ex]: https://example.com` with no
+  `[…][ex]` referencing it does not survive a round-trip: nothing in the ProseMirror doc records an
+  unreferenced definition, so remark cannot re-emit it. Pre-existing remark/Milkdown behavior, not
+  introduced by the canonical form. Pinned as `normalized.unusedLinkDefinition` in
+  `tests/roundtrip.test.ts` so it can't drift silently; not being fixed (it would mean carrying
+  unreferenced-definition state through the doc, §11).
 
-**Known trade-off:** formatting normalizes to Milkdown's canonical form on first save (tight→loose
-lists, `---`→`***`). It reformats whitespace but never drops content and is idempotent thereafter —
-relevant to Obsidian-vault diffs (§1).
+**Known trade-off:** Toril's canonical form (`src/editor/canonical.ts`) is `-` bullets and `---`
+thematic breaks, matching Obsidian — so most notes survive open→save untouched. Some constructs
+still reformat (setext headings, indented code blocks, `~~~` fences, two-space hard breaks, link
+reference definitions, `*`/`+`-authored bullets, `1)` ordered markers, over-indented nesting, bare
+URLs, and **CRLF line endings → LF**, which rewrites every line of a Windows-authored note); the
+`normalized` class in `tests/roundtrip.test.ts` is the authoritative list — each entry pinned to its
+exact output. The reformatting is idempotent and never drops *rendered* content; the one known
+exception is that an **unused link reference definition is deleted outright** (see the deferred list
+above). Relevant to Obsidian-vault diffs (§1).
 
 **HTML as a first-class editable format — shipped in v0.1.1-alpha.1.** Open/edit/save `.html`
 WYSIWYG alongside `.md`, motivated by AI assistants emitting rich HTML instead of Markdown. The editor
@@ -59,8 +74,9 @@ marks and `<div class="callout">`, `<details>`/`<summary>`, `<dl>`/`<dt>`/`<dd>`
 - **Toolbar / menu affordances** for the new constructs — they currently only enter the doc via HTML
   parsing, not via buttons. A UX increment.
 - **"Save As .html" dialog filter** — Rust `save_file_as` is currently Markdown-oriented.
-- **On-device GUI verification** of the HTML flows (no webview here) — open a real AI `.html` artifact,
-  edit, save, reopen; confirm the supported subset survives and unsupported markup is cleanly normalized.
+- **Interactive GUI verification** of the HTML flows (needs a human driving a window, §0) — open a real
+  AI `.html` artifact, edit, save, reopen; confirm the supported subset survives and unsupported markup
+  is cleanly normalized.
 - **Identity note:** HTML as first-class is a deliberate expansion of the "plain `.md`,
   Obsidian-compatible" pitch (§1) — keep that trade-off in mind.
 
@@ -86,8 +102,8 @@ pnpm tauri build      # production .exe + installer (Windows; see §9)
 pnpm test             # vitest — round-trip + toolbar + theme + export + tabs + security (jsdom)
 pnpm typecheck        # tsc --noEmit (TS strict)
 pnpm build            # tsc + vite build (frontend only)
-cd src-tauri && cargo test -p fsatomic -p vaultscan -p mdhtml -p mdrtf -p imgasset   # logic crates
-# (plain `cargo test` also builds the app crate → needs the webview toolchain)
+# logic crates — the same seven CI runs (plain `cargo test` also builds the app crate)
+cd src-tauri && cargo test -p fsatomic -p vaultscan -p mdhtml -p mdrtf -p imgasset -p trashbin -p snapshots
 cd src-tauri && cargo fmt --all && cargo clippy   # clean before commit (§10)
 ```
 
@@ -135,13 +151,29 @@ low-reputation. Before adding one, confirm it isn't flagged `deprecated` (npm / 
 publish history, and comes from a reputable publisher. If a feature's *only* viable dependency is
 unhealthy, **defer the feature** (note it in §0) rather than ship the bad dep.
 
-**One vendored exception — security-patched `glib`.** `src-tauri/third-party/glib/` is gtk-rs `glib`
+**Two patched dependencies — both recorded here, both with a removal condition.** Patching an
+upstream package is allowed only as a documented exception; each one must say what it changes, why,
+and when it goes away.
+
+**1. Security-patched `glib` (vendored).** `src-tauri/third-party/glib/` is gtk-rs `glib`
 0.18.5 vendored verbatim except a one-line fix for **GHSA-wrw7-89jp-8q8g** (a `VariantStrIter`
 NULL-deref), wired in via `[patch.crates-io]` in `src-tauri/Cargo.toml`. It exists only because Tauri's
 frozen gtk3 stack pins a vulnerable glib with no 0.18.x backport (glib 0.20 is incompatible). It is
 `exclude`d from the workspace (we never fmt/clippy/test upstream code), and CodeQL findings inside it
 are false positives. Don't edit it beyond the security patch; **remove the whole vendored crate** once
 Tauri moves off gtk3. Full rationale is in the `Cargo.toml` patch comment.
+
+**2. Correctness-patched `@milkdown/preset-commonmark` (pnpm patch).**
+`patches/@milkdown__preset-commonmark@7.21.1.patch`, wired in via `patchedDependencies` in
+`pnpm-workspace.yaml`. Two `toMarkdown` runners forward the list `spread` attribute to mdast as the
+**string** `"false"`, which is truthy — so every bullet list serialized *loose*, reformatting whole
+Obsidian vaults on save (a §3.2 round-trip defect, not a style preference). The patch coerces with
+`=== "true"`, matching what `ordered_list` and preset-gfm's task item already do. A local
+`extendSchema` override was tried first and rejected: it could not chain to the GFM-extended
+`list_item` and dropped task-list checkboxes. **Remove the patch** once Milkdown ships the fix
+upstream (the issue is drafted, not yet filed); the `preserved` fixtures in `tests/roundtrip.test.ts`
+keep the behavior honest either way. `patches/**` is `-text` in `.gitattributes` so the file is
+checked out byte-exact — CRLF-ifying it makes `pnpm install` fail to apply it on Windows.
 
 ### Why this stack (so it isn't second-guessed later)
 Inline WYSIWYG is the hard part of any markdown editor, and the mature engines for it live in the
@@ -233,7 +265,7 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 | Command | Args | Returns | Notes |
 |---|---|---|---|
 | `open_file` | `path` | `{ path, content }` | UTF-8 read |
-| `save_file` | `path, content` | `()` | **atomic** (temp + fsync + rename) — §3.1; also records a version-history snapshot (best-effort, additive) |
+| `save_file` | `path, content` | `()` | **atomic** (temp + fsync + rename) — §3.1; also records version-history snapshots of the pre-existing *and* new content (best-effort, additive) |
 | `save_file_as` | `content` | `path` | native dialog |
 | `open_folder` | `path` | `FileNode[]` | recursive `.md` tree |
 | `watch_folder` | `path` | event stream | external-change events (`notify` crate) |
@@ -275,8 +307,10 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 > per-note dir under `<app-config>/history/<hash(path)>/` — a `manifest.json` + gzip,
 > sha256-addressed blobs. It lives **outside the vault** (like recovery/session, §1) so it
 > never pollutes plain files or rides folder-sync. Capture is a **best-effort, additive**
-> side-effect of `save_file`/`save_file_as` (a failure never blocks a save, §3); on-save
-> content-dedup; **time-decay thinning** (keep-all <24h → hourly <7d → daily <30d → weekly,
+> side-effect of `save_file`/`save_file_as` (a failure never blocks a save, §3), taken on **both
+> sides** of the write — `snapshot_existing` records the bytes already on disk before they are
+> overwritten, so the first Toril save of an externally-authored note (the moment canonical-form
+> normalization lands) is itself undoable; content-dedup; **time-decay thinning** (keep-all <24h → hourly <7d → daily <30d → weekly,
 > always keeping oldest+newest). Byte-exact (raw-bytes addressing, §3.2). `rekey` carries a
 > note's history across a rename copy-then-delete (≥1 intact dir on power loss); the in-app
 > rename that calls it is Movement II.12. Restore snapshots the current state first, so it is
@@ -295,8 +329,8 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 > session restore, so it becomes the active tab); (3) `tauri-plugin-single-instance` forwards a
 > *subsequent* launch's argv to the running window as the `open-file` event instead of spawning a
 > duplicate. **macOS** delivers file-opens via `RunEvent::Opened`, not argv — not yet wired (Windows
-> is the focus, §1); add that handler when macOS becomes a target. All flows need on-device GUI
-> verification (no webview here, §0).
+> is the focus, §1); add that handler when macOS becomes a target. All flows need interactive GUI
+> verification — a human driving a window, not a missing toolchain (§0).
 
 ---
 
@@ -348,13 +382,27 @@ Phases 0–3 are complete and Phase 4 (polish) is in progress; the shipped detai
 
 **Gates (all green) — keep them green:**
 - **Atomic save:** `cargo test -p fsatomic` — interrupting a save leaves the original intact (§3.1).
-- **Round-trip:** `tests/roundtrip.test.ts` — real Milkdown in jsdom; CommonMark + GFM + emoji. Add
-  math + front-matter fixtures when those land (§3.2).
+- **Round-trip:** `tests/roundtrip.test.ts` — real Milkdown in jsdom, built through
+  `canonical.ts` so the gate tests the canon that ships. Three classes: `fixtures`
+  (canonical input is stable), `preserved` (human/Obsidian-authored input is **not**
+  rewritten), `normalized` (what we do rewrite, pinned to exact output). Add math +
+  front-matter fixtures when those land (§3.2).
 - **Toolbar round-trip:** `tests/toolbar.test.ts` — each command yields the same canonical markdown as
   typing the syntax, and asserts **no raw-markdown-text insertion** (§3.2).
 - **Export:** `cargo test -p mdhtml -p mdrtf` (render configs) + `tests/export.test.ts` (builder + the
   §3.3 sanitization chokepoint).
 - Plus `vaultscan`, `imgasset`, `theme`, `statusbar`, `search`, `security`, `tabs` suites.
+
+**CI runs these automatically** on every pull request and on pushes to `main`
+(`.github/workflows/ci.yml`): `pnpm typecheck` + `pnpm test` + `pnpm build`, and `cargo test` over the
+seven logic crates — each on **Ubuntu and Windows**, plus `cargo fmt --all --check` on Ubuntu. The
+Windows leg is not ceremony: `pnpm install --frozen-lockfile` is what applies the Milkdown patch, and
+`fsatomic` is the §3.1 gate whose replace-over-existing semantics differ from POSIX there.
+
+**What CI cannot cover — still yours to run:** interactive GUI flows (`pnpm tauri dev` — dialogs,
+menus, the reload prompt), macOS, the Tauri app crate, and `cargo clippy` (§10; excluded from CI
+because it lints the vendored `glib`, a path dependency that gets no `--cap-lints allow`). A green PR
+means the headless gates passed, not that the app was driven.
 
 **Remaining for Phase 4:** optional code-signing (removes the SmartScreen warning — see the
 code-signing memory) and on-device verification of GUI/Rust flows that can't be tested here.
@@ -368,6 +416,10 @@ Shortcut-reference panel deferred (the menu lists shortcuts).
 pnpm tauri dev          # development
 pnpm tauri build        # production -> .exe + installer
 ```
+
+> **Two workflows.** `.github/workflows/ci.yml` runs the headless gates on every PR and on pushes to
+> `main` (§8). `.github/workflows/release.yml` fires only on a `v*` tag and builds the installers —
+> it does **not** run tests, which is why CI exists separately.
 
 Output: `src-tauri/target/release/` (raw `.exe`) and `…/bundle/` (NSIS installer). In
 `tauri.conf.json`: `bundle.targets` is an explicit list (`nsis` on Windows; `app`/`dmg` on macOS;

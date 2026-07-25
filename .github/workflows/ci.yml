@@ -1,0 +1,110 @@
+name: CI
+
+# Run the CLAUDE.md §8 gates that don't need a human on every pull request.
+# `release.yml` only fires on a `v*` tag and never runs a test, so without this
+# every gate is a discipline rather than a guarantee.
+#
+# Design: docs/superpowers/specs/2026-07-25-ci-pr-gates-design.md
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Least privilege: these jobs only ever read the checkout. Without this the token
+# inherits the repository default, which can be read/write — `release.yml` scopes
+# itself to `contents: write` for the same reason, since it publishes.
+permissions:
+  contents: read
+
+# A force-push to a PR supersedes the run already in flight — cancel it rather
+# than paying for both.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    strategy:
+      # Never cancel the sibling platform: "does this break on Windows too?" is
+      # the one question the Windows leg exists to answer.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      # Load-bearing on Windows: this is the step that applies
+      # patches/@milkdown__preset-commonmark@7.21.1.patch. `.gitattributes` marks
+      # `patches/** -text` so Git-for-Windows' core.autocrlf can't CRLF-ify it —
+      # pnpm's patch parser splits on \n without stripping \r and would fail to
+      # apply. Nothing else verifies that.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      # tsc --noEmit never exercises the Vite bundle, so a broken vite.config.ts
+      # or a bad asset path would otherwise surface at `pnpm tauri build` — after
+      # a release tag is already pushed. Bundling is platform-independent.
+      - name: Build
+        if: matrix.os == 'ubuntu-latest'
+        run: pnpm build
+
+  crates:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: src-tauri
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+
+      # Named packages, NOT --workspace: that would pull in the Tauri app crate
+      # and with it WebKitGTK on Linux / WebView2 on Windows. These seven are
+      # split out (CLAUDE.md §4) precisely so their gates run without a webview.
+      #
+      # Windows matters here too: fsatomic is the §3.1 atomic-save gate and the
+      # one crate doing real filesystem syscalls, where replace-over-existing
+      # differs between rename(2) and MoveFileEx.
+      - name: Test logic crates
+        run: >
+          cargo test
+          -p fsatomic
+          -p vaultscan
+          -p mdhtml
+          -p mdrtf
+          -p imgasset
+          -p trashbin
+          -p snapshots
+
+      # `--all` covers workspace *members*, and the vendored glib is excluded
+      # from the workspace (§2) — so unlike clippy, this never touches upstream
+      # code. Clippy is deliberately left out; see the design doc §3.
+      - name: Check formatting
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo fmt --all --check

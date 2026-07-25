@@ -46,6 +46,24 @@ pub fn snapshot_on_save(app: &AppHandle, path: &str, content: &[u8]) {
     }
 }
 
+/// Best-effort snapshot of the content **currently on disk**, taken *before* a
+/// write replaces it. Additive (§3) exactly like `snapshot_on_save`: nothing here
+/// returns an error, so it can never block or fail the save that follows.
+///
+/// This is what makes the first Toril save of an externally-authored note
+/// undoable — without it, canonical-form normalization would be recorded with no
+/// pre-normalization version to go back to. A new file (nothing on disk) is
+/// skipped silently; content identical to the latest version is deduped by the
+/// snapshots crate.
+pub fn snapshot_before_write(app: &AppHandle, path: &str) {
+    let Ok(root) = history_root(app) else {
+        return;
+    };
+    if let Err(e) = store::snapshot_existing(&root, path, now_ms()) {
+        eprintln!("version-history: pre-save snapshot failed for {path}: {e}");
+    }
+}
+
 /// Versions of the note at `path`, newest first. Empty if none.
 #[tauri::command]
 pub fn list_history(app: AppHandle, path: String) -> Result<Vec<SnapshotMeta>, String> {
@@ -66,11 +84,10 @@ pub fn read_snapshot(app: AppHandle, path: String, hash: String) -> Result<Strin
 #[tauri::command]
 pub fn restore_snapshot(app: AppHandle, path: String, hash: String) -> Result<(), String> {
     let root = history_root(&app)?;
-    // Capture where we are before overwriting it. Best-effort: if the note is
-    // unreadable we still allow the restore to proceed.
-    if let Ok(current) = fsatomic::read_to_string(&path) {
-        let _ = store::snapshot(&root, &path, current.as_bytes(), now_ms());
-    }
+    // Capture where we are before overwriting it — the same pre-write capture the
+    // file commands do. Best-effort: if the note is unreadable we still allow the
+    // restore to proceed.
+    snapshot_before_write(&app, &path);
     let content = store::read(&root, &path, &hash).map_err(|e| e.to_string())?;
     fsatomic::atomic_write(&path, content.as_bytes()).map_err(|e| e.to_string())
 }
