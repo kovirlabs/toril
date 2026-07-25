@@ -10,9 +10,37 @@
 //!
 //! Extensions match the editor's CommonMark + GFM surface (tables, strikethrough,
 //! task lists, autolinks, footnotes) plus YAML front matter, which is parsed and
-//! excluded from the rendered body rather than dumped as text.
+//! excluded from the rendered body rather than dumped as text — but only for
+//! documents that actually open with front matter (`opens_with_front_matter`).
 
 use comrak::{Options, markdown_to_html};
+
+/// Whether `markdown` plausibly opens with a YAML front-matter block: a leading
+/// `---` delimiter line whose **next line is non-blank**.
+///
+/// This guard exists because comrak's `front_matter_delimiter` is unconditional —
+/// with it set, *any* document whose first line is `---` has everything up to the
+/// next `---` swallowed as front matter. Toril's canonical thematic break is `---`
+/// (`src/editor/canonical.ts`), so a note that opens with a horizontal rule and
+/// contains a later one would silently lose the content in between (§3). A `---`
+/// followed by a blank line (or by EOF) is a thematic break and never valid YAML
+/// front matter, so that shape is the reliable discriminator.
+///
+/// `---` immediately followed by non-blank text is still treated as front matter:
+/// it is indistinguishable from the real thing, and is what Obsidian and Jekyll
+/// read it as too. Toril never *writes* that shape — it surrounds rules with blank
+/// lines.
+///
+/// The same helper is duplicated in `mdrtf`. Ten dependency-free lines in each
+/// crate is cheaper than inventing a shared crate for one predicate, and both
+/// call sites carry their own regression tests.
+fn opens_with_front_matter(markdown: &str) -> bool {
+    let mut lines = markdown.lines();
+    if lines.next().map(str::trim_end) != Some("---") {
+        return false;
+    }
+    lines.next().is_some_and(|next| !next.trim().is_empty())
+}
 
 /// Render canonical markdown to an HTML body fragment (GFM + front matter).
 ///
@@ -25,8 +53,12 @@ pub fn to_html(markdown: &str) -> String {
     options.extension.tasklist = true;
     options.extension.autolink = true;
     options.extension.footnotes = true;
-    // YAML front matter: recognised and kept out of the rendered body.
-    options.extension.front_matter_delimiter = Some("---".to_string());
+    // YAML front matter: recognised and kept out of the rendered body — but only
+    // when the document really opens with one, so a leading `---` thematic break
+    // is not mistaken for a delimiter and its content dropped (§3).
+    if opens_with_front_matter(markdown) {
+        options.extension.front_matter_delimiter = Some("---".to_string());
+    }
     // Pass raw inline/block HTML through; the frontend sanitizes it (§3.3).
     options.render.r#unsafe = true;
     markdown_to_html(markdown, &options)
@@ -64,6 +96,32 @@ mod tests {
         let out = to_html("---\ntitle: secret\n---\n\n# Heading\n");
         assert!(out.contains("Heading"));
         assert!(!out.contains("title: secret")); // parsed, not dumped as text
+    }
+
+    #[test]
+    fn leading_thematic_break_does_not_swallow_the_document() {
+        // Regression: `---` is Toril's canonical thematic break, and an
+        // unconditional front_matter_delimiter read a doc opening with one as
+        // front matter — deleting everything up to the next `---` (§3).
+        let out = to_html("---\n\nBelow.\n\n---\n\nEnd.\n");
+        assert!(out.contains("Below."), "middle content dropped: {out:?}");
+        assert!(out.contains("End."));
+        assert_eq!(out.matches("<hr />").count(), 2);
+    }
+
+    #[test]
+    fn asterisk_rule_equivalent_is_unchanged() {
+        // Guards against over-correcting: the pre-branch canonical rule form must
+        // render exactly as it always did.
+        assert_eq!(
+            to_html("***\n\nBelow.\n\n***\n\nEnd.\n"),
+            "<hr />\n<p>Below.</p>\n<hr />\n<p>End.</p>\n"
+        );
+    }
+
+    #[test]
+    fn real_front_matter_is_still_stripped() {
+        assert_eq!(to_html("---\ntitle: T\n---\n\nBody.\n"), "<p>Body.</p>\n");
     }
 
     #[test]
