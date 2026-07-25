@@ -17,42 +17,44 @@ import { Editor, defaultValueCtx, rootCtx } from "@milkdown/kit/core";
 import { commonmark } from "@milkdown/kit/preset/commonmark";
 import { gfm } from "@milkdown/kit/preset/gfm";
 import { emoji } from "@milkdown/plugin-emoji";
+import { useCanonical } from "../src/editor/canonical";
 import { docToMarkdown } from "../src/editor/serializer";
 
 /** Parse `md` into a real editor doc, then serialize it back to markdown. */
 async function roundtrip(md: string): Promise<string> {
   const root = document.createElement("div");
   document.body.appendChild(root);
-  const editor = await Editor.make()
-    .config((ctx) => {
-      ctx.set(rootCtx, root);
-      ctx.set(defaultValueCtx, md);
-    })
-    .use(commonmark)
-    .use(gfm)
-    .use(emoji)
-    .create();
+  const editor = await useCanonical(
+    Editor.make()
+      .config((ctx) => {
+        ctx.set(rootCtx, root);
+        ctx.set(defaultValueCtx, md);
+      })
+      .use(commonmark)
+      .use(gfm)
+      .use(emoji),
+  ).create();
   const out = docToMarkdown(editor);
   await editor.destroy();
   root.remove();
   return out;
 }
 
-// Authored in Milkdown's canonical serialization. Notably Milkdown emits
-// *loose* lists (a blank line between items) and `***` for thematic breaks;
-// see `normalizes formatting without losing content` below for why that is safe.
+// Authored in Toril's canonical serialization (src/editor/canonical.ts): `-`
+// bullets and `---` thematic breaks, matching what Obsidian writes. Milkdown
+// still emits *loose* lists here; the `preserved` class added later covers tight.
 const fixtures: Record<string, string> = {
   headings: "# H1\n\n## H2\n\n### H3\n",
   inlineMarks: "A paragraph with **bold**, *italic*, and `inline code`.\n",
-  unorderedList: "* Item one\n\n* Item two\n",
-  nestedList: "* Parent\n\n  * Child\n\n  * Child two\n",
+  unorderedList: "- Item one\n\n- Item two\n",
+  nestedList: "- Parent\n\n  - Child\n\n  - Child two\n",
   orderedList: "1. First\n\n2. Second\n",
   blockquote: "> A quote.\n",
   codeFence: "```js\nconst x = 1\n```\n",
-  thematicBreak: "Above.\n\n***\n\nBelow.\n",
+  thematicBreak: "Above.\n\n---\n\nBelow.\n",
   link: "[example](https://example.com)\n",
   gfmTable: "| A | B |\n| - | - |\n| 1 | 2 |\n",
-  gfmTaskList: "* [ ] todo\n\n* [x] done\n",
+  gfmTaskList: "- [ ] todo\n\n- [x] done\n",
   gfmStrikethrough: "~~struck~~\n",
   // Phase 3: emoji canonical form is the unicode char (shortcodes normalize to it;
   // see the normalization test below). Math is deferred — its plugin is deprecated (§8).

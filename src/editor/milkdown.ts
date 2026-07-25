@@ -12,6 +12,7 @@ import { Plugin, PluginKey } from "@milkdown/kit/prose/state";
 import { emoji } from "@milkdown/plugin-emoji";
 import { nord } from "@milkdown/theme-nord";
 import { searchPlugin } from "../ui/search";
+import { useCanonical } from "./canonical";
 import { htmlConstructs } from "./html-constructs";
 
 /**
@@ -69,21 +70,23 @@ export interface CreateEditorOptions {
 /** Create and mount a Milkdown editor. Resolves once it is ready. */
 export function createEditor(options: CreateEditorOptions): Promise<Editor> {
   const { root, initial = "", onChange, onImagePaste } = options;
-  let editor = Editor.make()
-    .config((ctx) => {
-      ctx.set(rootCtx, root);
-      ctx.set(defaultValueCtx, initial);
-      if (onChange) {
-        ctx.get(listenerCtx).markdownUpdated(() => onChange());
-      }
-    })
-    .config(nord)
-    .use(commonmark)
-    .use(gfm)
-    .use(emoji)
-    .use(htmlConstructs)
-    .use(listener)
-    .use(searchPlugin());
+  let editor = useCanonical(
+    Editor.make()
+      .config((ctx) => {
+        ctx.set(rootCtx, root);
+        ctx.set(defaultValueCtx, initial);
+        if (onChange) {
+          ctx.get(listenerCtx).markdownUpdated(() => onChange());
+        }
+      })
+      .config(nord)
+      .use(commonmark)
+      .use(gfm)
+      .use(emoji)
+      .use(htmlConstructs)
+      .use(listener)
+      .use(searchPlugin()),
+  );
   if (onImagePaste) {
     editor = editor.use(imagePastePlugin(onImagePaste));
   }
