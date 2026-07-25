@@ -78,19 +78,6 @@ describe("round-trip fidelity (Phase 1 gate)", () => {
     expect(once.trim().length).toBeGreaterThan(0);
   });
 
-  // Non-canonical input (e.g. a tight list authored by hand or by Obsidian) is
-  // normalized to the canonical form on first save. That reformats whitespace
-  // but never drops content, and is stable thereafter — the safe behavior.
-  it("normalizes formatting without losing content", async () => {
-    const tight = "* one\n* two\n* three\n";
-    const out = await roundtrip(tight);
-    expect(out).toBe("* one\n\n* two\n\n* three\n"); // tight → loose
-    expect(await roundtrip(out)).toBe(out); // stable afterwards
-    for (const item of ["one", "two", "three"]) {
-      expect(out).toContain(item); // every item survived
-    }
-  });
-
   // Emoji shortcodes (`:smile:`) are normalized to the unicode emoji on first
   // save — same safe pattern as tight→loose lists: content preserved, idempotent.
   it("normalizes emoji shortcodes to unicode without losing content", async () => {

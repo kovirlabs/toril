@@ -11,3 +11,6 @@ overrides:
   # Milkdown pulls dompurify ^3.2.5 transitively; force the whole tree to the
   # patched 3.4.11 (clears the GHSA-* dompurify alerts). Our direct dep is also 3.4.11.
   dompurify@<3.4.11: 3.4.11
+
+patchedDependencies:
+  '@milkdown/preset-commonmark@7.21.1': patches/@milkdown__preset-commonmark@7.21.1.patch
