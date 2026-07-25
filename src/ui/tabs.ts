@@ -7,6 +7,19 @@
 /** Which canonical representation a tab's `content` is in (§3.2). */
 export type DocFormat = "markdown" | "html";
 
+/**
+ * Why a tab is blocked from writing, and the disk content that caused it.
+ *
+ * `theirs` is captured at detection time so a resolution can park the losing
+ * side without re-reading the file — a second read could race the sync daemon
+ * that wrote it.
+ */
+export interface DivergedState {
+  theirs: string;
+  reason: "conflict" | "error";
+  message: string;
+}
+
 export interface TabState {
   readonly id: string;
   /** Absolute path, or null for an unsaved "Untitled" document. */
@@ -20,6 +33,14 @@ export interface TabState {
   /** Determines which serializer loads/saves this tab. */
   format: DocFormat;
   dirty: boolean;
+  /**
+   * Exact bytes last read from / written to disk — the merge base for a
+   * three-way merge (ROADMAP I.4). Kept in memory only: it is always exactly
+   * right while the app runs, and needs no storage.
+   */
+  base: string;
+  /** Non-null while the tab is diverged from disk. Blocks all writes (§3). */
+  diverged: DivergedState | null;
 }
 
 export interface TabCallbacks {
@@ -77,6 +98,8 @@ export class TabManager {
       content: opts.content,
       format: opts.format ?? "markdown",
       dirty: false,
+      base: opts.content,
+      diverged: null,
     };
     this.items.push(tab);
     this.setActive(tab.id);
@@ -116,6 +139,18 @@ export class TabManager {
       tab.dirty = dirty;
       this.render();
     }
+  }
+
+  /** Record the bytes now on disk for this tab (open, save, reload, merge). */
+  setBase(id: string, base: string): void {
+    const tab = this.items.find((t) => t.id === id);
+    if (tab) tab.base = base;
+  }
+
+  /** Mark or clear divergence. While set, no write path may touch this tab. */
+  setDiverged(id: string, d: DivergedState | null): void {
+    const tab = this.items.find((t) => t.id === id);
+    if (tab) tab.diverged = d;
   }
 
   setPath(id: string, path: string, name: string): void {

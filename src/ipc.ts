@@ -234,6 +234,29 @@ export function clearRecovery(): Promise<void> {
   return invoke<void>("clear_recovery");
 }
 
+export type MergeOutcome = "unchanged" | "theirsOnly" | "merged" | "conflict";
+
+export interface MergeReport {
+  outcome: MergeOutcome;
+  /** The merged text. Present only for `"merged"`. */
+  content: string | null;
+  /** Bytes now on disk. Present for everything except `"unchanged"`. */
+  theirs: string | null;
+}
+
+/**
+ * Three-way merge the file at `path` against `base` and `mine`. Reads only —
+ * this never writes, so calling it is always safe (§5 contract).
+ */
+export function mergeExternal(path: string, base: string, mine: string): Promise<MergeReport> {
+  return invoke<MergeReport>("merge_external", { path, base, mine });
+}
+
+/** Park `content` beside `path` as a `… (conflict <ts>)` file. Returns its path. */
+export function writeConflictCopy(path: string, content: string): Promise<string> {
+  return invoke<string>("write_conflict_copy", { path, content });
+}
+
 /** One stored version of a note (mirrors Rust `snapshots::SnapshotMeta`, §5). */
 export interface SnapshotMeta {
   /** sha256 (hex) of the raw content — the version id. */

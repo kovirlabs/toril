@@ -84,4 +84,31 @@ describe("TabManager", () => {
     expect(h.tm.byPath("/notes/new.md")).toBe(a);
     expect(a.name).toBe("new.md");
   });
+
+  it("seeds base from the content a tab opened with", () => {
+    const tab = h.tm.open({ path: "/v/a.md", name: "a.md", content: "hello\n" });
+    expect(tab.base).toBe("hello\n");
+    expect(tab.diverged).toBeNull();
+  });
+
+  it("tracks base independently of the buffer", () => {
+    const tab = h.tm.open({ path: "/v/a.md", name: "a.md", content: "hello\n" });
+    tab.content = "hello edited\n";
+    expect(tab.base).toBe("hello\n"); // base is what disk had, not the buffer
+
+    h.tm.setBase(tab.id, "hello edited\n"); // as a save would
+    expect(tab.base).toBe("hello edited\n");
+  });
+
+  it("stores and clears divergence", () => {
+    const tab = h.tm.open({ path: "/v/a.md", name: "a.md", content: "x\n" });
+    h.tm.setDiverged(tab.id, {
+      theirs: "y\n",
+      reason: "conflict",
+      message: "changed on disk",
+    });
+    expect(tab.diverged?.theirs).toBe("y\n");
+    h.tm.setDiverged(tab.id, null);
+    expect(tab.diverged).toBeNull();
+  });
 });
