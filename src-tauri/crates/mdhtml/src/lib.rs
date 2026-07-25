@@ -33,8 +33,14 @@ use comrak::{Options, markdown_to_html};
 ///
 /// The same helper is duplicated in `mdrtf`. Ten dependency-free lines in each
 /// crate is cheaper than inventing a shared crate for one predicate, and both
-/// call sites carry their own regression tests.
+/// call sites carry their own regression tests. **Keep the two bodies identical** —
+/// a silent divergence between HTML and RTF export would be its own bug.
 fn opens_with_front_matter(markdown: &str) -> bool {
+    // A UTF-8 BOM is common in Windows-authored files (the primary platform, §1)
+    // and would otherwise make the first line `\u{feff}---`, hiding real front
+    // matter from the check below and dumping it into the export body. comrak
+    // itself tolerates the BOM, so only this predicate needs to skip it.
+    let markdown = markdown.strip_prefix('\u{feff}').unwrap_or(markdown);
     let mut lines = markdown.lines();
     if lines.next().map(str::trim_end) != Some("---") {
         return false;
@@ -122,6 +128,23 @@ mod tests {
     #[test]
     fn real_front_matter_is_still_stripped() {
         assert_eq!(to_html("---\ntitle: T\n---\n\nBody.\n"), "<p>Body.</p>\n");
+    }
+
+    #[test]
+    fn a_bom_does_not_hide_front_matter_from_the_guard() {
+        // Windows-authored files often carry a UTF-8 BOM; without skipping it the
+        // first line is "\u{feff}---" and real front matter lands in the body.
+        assert_eq!(
+            to_html("\u{feff}---\ntitle: T\n---\n\nBody.\n"),
+            "<p>Body.</p>\n"
+        );
+    }
+
+    #[test]
+    fn a_bom_does_not_widen_the_guard_onto_thematic_breaks() {
+        let out = to_html("\u{feff}---\n\nBelow.\n\n---\n\nEnd.\n");
+        assert!(out.contains("Below."), "middle content dropped: {out:?}");
+        assert!(out.contains("End."));
     }
 
     #[test]
