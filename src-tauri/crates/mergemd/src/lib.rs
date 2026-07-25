@@ -483,6 +483,57 @@ mod tests {
     }
 
     #[test]
+    fn same_line_edited_differently_conflicts() {
+        let base = "hello\n";
+        let mine = "hello mine\n";
+        let theirs = "hello theirs\n";
+        assert_eq!(merge3(base, mine, theirs), Divergence::Conflict);
+    }
+
+    #[test]
+    fn convergent_edit_merges_once() {
+        // Both sides made the SAME change — that is agreement, not conflict.
+        let base = "a\nb\n";
+        let same = "a\nB\n";
+        assert_eq!(
+            merge3(base, same, same),
+            Divergence::Merged("a\nB\n".to_string())
+        );
+    }
+
+    #[test]
+    fn two_inserts_at_the_same_position_conflict() {
+        let base = "a\nb\n";
+        let mine = "a\nMINE\nb\n";
+        let theirs = "a\nTHEIRS\nb\n";
+        assert_eq!(merge3(base, mine, theirs), Divergence::Conflict);
+    }
+
+    #[test]
+    fn crlf_lines_keep_their_terminators_through_a_merge() {
+        // A CRLF file edited on one line must come back CRLF everywhere, with
+        // only the edited line different. If terminators did not travel with
+        // their lines this would rewrite the whole file.
+        let base = "one\r\ntwo\r\nthree\r\n";
+        let mine = "one\r\ntwo EDITED\r\nthree\r\n";
+        let theirs = "one\r\ntwo\r\nthree\r\n";
+        // theirs == base here, so this is Unchanged — the interesting case is
+        // when theirs also moved:
+        assert_eq!(merge3(base, mine, theirs), Divergence::Unchanged);
+
+        let theirs2 = "one CHANGED\r\ntwo\r\nthree\r\n";
+        let merged = merge3(base, mine, theirs2);
+        match merged {
+            Divergence::Merged(text) => {
+                assert_eq!(text, "one CHANGED\r\ntwo EDITED\r\nthree\r\n");
+                assert!(!text.contains("\n\n"), "no stray bare newlines");
+                assert_eq!(text.matches("\r\n").count(), 3, "all three lines stay CRLF");
+            }
+            other => panic!("expected Merged, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn an_unterminated_final_line_is_still_allowed_to_merge() {
         // The control for the asymmetry: ending without a terminator is fine.
         // Only appending AFTER an unterminated line is forbidden.
