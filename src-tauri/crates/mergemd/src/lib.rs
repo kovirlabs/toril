@@ -697,7 +697,11 @@ mod tests {
             let at = rng.pick(v.len());
             match rng.pick(3) {
                 0 => v[at] = format!("{tag}-edit\n"),
-                1 => v.insert(at, format!("{tag}-ins\n")),
+                // `v.len()` is deliberately in range here: an insert must be able
+                // to land AFTER the last line. Without that, no generated case
+                // ever appends past an unterminated final line, so the fusion
+                // class stays unreachable and this property cannot see it.
+                1 => v.insert(rng.pick(v.len() + 1), format!("{tag}-ins\n")),
                 _ => {
                     v.remove(at);
                 }
