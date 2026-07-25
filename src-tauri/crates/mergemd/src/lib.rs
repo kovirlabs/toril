@@ -721,25 +721,52 @@ mod tests {
                 Divergence::Conflict => {}
                 Divergence::Unchanged | Divergence::TheirsOnly => {}
                 Divergence::Merged(out) => {
-                    // Every line either side introduced must survive. This is
-                    // the §3 guarantee: a clean merge loses nothing.
-                    for line in split_lines(&mine) {
-                        if !split_lines(&base).contains(&line) {
-                            assert!(
-                                out.contains(line),
-                                "case {case}: merged output dropped a line of MINE\n\
-                                 line: {line:?}\nmine: {mine:?}\ntheirs: {theirs:?}\nout: {out:?}"
-                            );
-                        }
+                    let base_l = split_lines(&base);
+                    let mine_l = split_lines(&mine);
+                    let theirs_l = split_lines(&theirs);
+                    let out_l = split_lines(&out);
+
+                    // 1. No fabricated lines. Every output line must be a WHOLE
+                    //    line from one of the three inputs. This is what catches
+                    //    fusion: a line glued from two others belongs to none of
+                    //    them, where a substring check would have accepted it.
+                    for line in &out_l {
+                        assert!(
+                            base_l.contains(line)
+                                || mine_l.contains(line)
+                                || theirs_l.contains(line),
+                            "case {case}: output contains a line present in no input\n\
+                             line: {line:?}\nmine: {mine:?}\ntheirs: {theirs:?}\nout: {out:?}"
+                        );
                     }
-                    for line in split_lines(&theirs) {
-                        if !split_lines(&base).contains(&line) {
-                            assert!(
-                                out.contains(line),
-                                "case {case}: merged output dropped a line of THEIRS\n\
-                                 line: {line:?}\nmine: {mine:?}\ntheirs: {theirs:?}\nout: {out:?}"
-                            );
-                        }
+
+                    // 2. Nothing either side introduced was dropped — compared as
+                    //    whole lines, not substrings.
+                    for line in mine_l.iter().filter(|l| !base_l.contains(l)) {
+                        assert!(
+                            out_l.contains(line),
+                            "case {case}: merged output dropped a line of MINE\n\
+                             line: {line:?}\nmine: {mine:?}\ntheirs: {theirs:?}\nout: {out:?}"
+                        );
+                    }
+                    for line in theirs_l.iter().filter(|l| !base_l.contains(l)) {
+                        assert!(
+                            out_l.contains(line),
+                            "case {case}: merged output dropped a line of THEIRS\n\
+                             line: {line:?}\nmine: {mine:?}\ntheirs: {theirs:?}\nout: {out:?}"
+                        );
+                    }
+
+                    // 3. A base line neither side deleted must still be there.
+                    for line in base_l
+                        .iter()
+                        .filter(|l| mine_l.contains(l) && theirs_l.contains(l))
+                    {
+                        assert!(
+                            out_l.contains(line),
+                            "case {case}: merged output dropped a base line both sides kept\n\
+                             line: {line:?}\nmine: {mine:?}\ntheirs: {theirs:?}\nout: {out:?}"
+                        );
                     }
                 }
             }
