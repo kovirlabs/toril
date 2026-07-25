@@ -51,8 +51,9 @@ no AI. That gap is this roadmap.
 > branches 1–3 are complete** (autosave + crash-recovery journal; safe-delete-to-trash;
 > local version history). Branches 4–5 and Movements II–V are unstarted.
 > **▶ Pick up at Movement I, branch 4 — `feat/sync-coexistence`.** It has an approved
-> design spec (`docs/superpowers/specs/2026-07-24-sync-coexistence-design.md`) and no
-> implementation code; its §7 still needs correcting after the precursor below.
+> design spec and no implementation code; its §7 still needs correcting after the
+> precursor below. The spec lives **on that branch**, not on `main`:
+> `docs/superpowers/specs/2026-07-24-sync-coexistence-design.md`.
 >
 > *Landed since, outside the movement ladder:* a serializer-normalization precursor
 > (canonical markdown now matches Obsidian — `-` bullets, `---` rules, tight lists
@@ -408,9 +409,10 @@ normalization here.
 
 - [ ] **On-device interactive verification** — the one verification *uniquely closeable
   on a webview-free box* (the TUI's whole reason to exist). Drive open→edit→`Ctrl-S`→
-  byte-exact in a real terminal; tick the MVP plan's manual smoke tests
-  (`docs/superpowers/plans/2026-07-05-toril-tui-mvp.md`, lines 1459–1462). No new
-  feature code — do this **first** when the track resumes.
+  byte-exact in a real terminal; tick the MVP plan's manual smoke tests (lines
+  1459–1462 of `docs/superpowers/plans/2026-07-05-toril-tui-mvp.md`, which lives on
+  the **`feat/toril-tui`** branch, not on `main`). No new feature code — do this
+  **first** when the track resumes.
 - [ ] **Delete → trash key** — wire a delete keybinding to the existing (tested but
   UI-less) `trashbin` crate. Small, high-value; makes the TUI the *first* surface for
   soft-delete. Refresh the tree after; keep the unsaved-changes guard.
