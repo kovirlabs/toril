@@ -72,6 +72,8 @@ pub fn run() {
             commands::snapshots::list_history,
             commands::snapshots::read_snapshot,
             commands::snapshots::restore_snapshot,
+            commands::sync::merge_external,
+            commands::sync::write_conflict_copy,
             take_launch_path,
         ])
         .run(tauri::generate_context!())
