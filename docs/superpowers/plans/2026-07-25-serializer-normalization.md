@@ -786,42 +786,29 @@ In `CHANGELOG.md`, under `## [Unreleased]`, add a `### Changed` section above th
   undoable per note from the history panel.
 ```
 
-- [ ] **Step 4: Update the sync-coexistence spec §7**
+> **Not here:** the sync-coexistence spec's §7 also needs correcting, but that
+> file (`docs/superpowers/specs/2026-07-24-sync-coexistence-design.md`) exists
+> only on `feat/sync-coexistence`, not on a branch cut from `main`. It is updated
+> in Task 6 Step 3, after the rebase.
 
-In `docs/superpowers/specs/2026-07-24-sync-coexistence-design.md` §7, make two changes.
-
-First, in the tier table, change the Tier 1 and Tier 2 "Fixable?" cells to record that they are done:
-
-```markdown
-| **1 — cosmetic** | ... | ... | **Done** — `fix/serializer-normalization` |
-| **2 — upstream bug** | ... | ... | **Done** — `fix/serializer-normalization` |
-```
-
-Second, the Tier 3 row's rationale is wrong as a blanket claim. It reads "ProseMirror's doc model is normalized; no node records its original syntax." Milkdown *does* record original syntax for emphasis and strong via `node.marker`. Replace that cell:
-
-```markdown
-| **3 — schema-level** | setext headings, indented code blocks, hard-break style, link references + definitions, escaping | These nodes record no original syntax — though Milkdown's `node.marker` mechanism shows it is extensible, at a cost we chose not to pay | **No** — see `2026-07-25-serializer-normalization-design.md` §4.4 |
-```
-
-- [ ] **Step 5: Verify nothing else references the old behavior**
+- [ ] **Step 4: Verify nothing else references the old behavior**
 
 Run: `grep -rn 'tight→loose\|tight->loose\|`---`→`\*\*\*`' CLAUDE.md README.md docs/ ROADMAP.md`
 Expected: no hits outside the two spec files' historical narrative sections. Fix any stragglers.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add CLAUDE.md CHANGELOG.md docs/superpowers/specs/2026-07-24-sync-coexistence-design.md
-git commit -m "docs: record the new canonical form and correct §7
+git add CLAUDE.md CHANGELOG.md
+git commit -m "docs: record the new canonical form
 
 CLAUDE.md's known-trade-off paragraph cited tight→loose lists and ---→***
 as the normalization; both are now false, so it is rewritten rather than
 appended to, and lists what actually still reformats.
 
-Corrects the sync-coexistence spec's Tier 3 rationale. It claimed no node
-records its original syntax, but Milkdown does exactly that for emphasis and
-strong via node.marker — the tier is 'not modelled today, extensible at a cost
-we chose not to pay', not 'impossible'."
+Adds the CHANGELOG entry for the behavior change, including that existing
+notes re-normalize lazily and that the rewrite is undoable per note via the
+existing snapshot history."
 ```
 
 ---
@@ -846,9 +833,38 @@ git checkout feat/sync-coexistence
 git rebase main
 ```
 
-`feat/sync-coexistence` contains only spec commits at this point, so conflicts are unlikely. If §7 conflicts, keep the version from `main` — Task 5 Step 4 already updated it.
+`feat/sync-coexistence` contains only spec commits at this point, so conflicts are unlikely. The spec and plan docs were cherry-picked onto the precursor branch, so git will recognise the identical patches and drop the duplicates.
 
-- [ ] **Step 3: Verify**
+- [ ] **Step 3: Correct the sync-coexistence spec §7**
+
+Now that the file is on the current branch, make two changes to
+`docs/superpowers/specs/2026-07-24-sync-coexistence-design.md` §7.
+
+First, in the tier table, change the Tier 1 and Tier 2 "Fixable?" cells to record that they are done:
+
+```markdown
+| **1 — cosmetic** | ... | ... | **Done** — `fix/serializer-normalization` |
+| **2 — upstream bug** | ... | ... | **Done** — `fix/serializer-normalization` |
+```
+
+Second, the Tier 3 row's rationale is wrong as a blanket claim. It reads "ProseMirror's doc model is normalized; no node records its original syntax." Milkdown *does* record original syntax for emphasis and strong via `node.marker`. Replace that cell:
+
+```markdown
+| **3 — schema-level** | setext headings, indented code blocks, hard-break style, link references + definitions, escaping | These nodes record no original syntax — though Milkdown's `node.marker` mechanism shows it is extensible, at a cost we chose not to pay | **No** — see `2026-07-25-serializer-normalization-design.md` §4.4 |
+```
+
+Then commit:
+
+```bash
+git add docs/superpowers/specs/2026-07-24-sync-coexistence-design.md
+git commit -m "docs(specs): mark §7 tiers 1-2 resolved, correct tier 3 rationale
+
+Tier 3 claimed no node records its original syntax, but Milkdown does exactly
+that for emphasis and strong via node.marker — the tier is 'not modelled today,
+extensible at a cost we chose not to pay', not 'impossible'."
+```
+
+- [ ] **Step 4: Verify**
 
 ```bash
 pnpm test && pnpm typecheck
@@ -857,7 +873,7 @@ git log --oneline main..feat/sync-coexistence
 
 Expected: all tests pass; the log shows only the sync-coexistence spec commits.
 
-- [ ] **Step 4: On-device verification**
+- [ ] **Step 5: On-device verification**
 
 The change is pure logic and fully gated headlessly, so the risk is low — but it changes what gets written to the user's files, and no gate exercises the real save path. Confirm on a webview-capable machine (this box qualifies; see the dev-server-environment notes):
 
