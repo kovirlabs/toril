@@ -191,10 +191,12 @@ The seven cases are re-created as real fixtures in Task 3. This file is scaffold
 
 - [ ] **Step 6: Record the decision**
 
-If path B, the `pnpm patch` produced `patches/@milkdown__preset-commonmark@7.21.1.patch` and a `pnpm.patchedDependencies` entry in `package.json` — commit those. If path A, there is nothing to commit; record the decision in the Task 2 commit body instead and skip this step.
+If path B, the `pnpm patch` produced `patches/@milkdown__preset-commonmark@7.21.1.patch` plus a `patchedDependencies` entry — commit those. If path A, there is nothing to commit; record the decision in the Task 2 commit body instead and skip this step.
+
+> **Where `patchedDependencies` lives depends on your pnpm version.** Older pnpm writes it to `package.json` under a `pnpm` key; current pnpm writes it to `pnpm-workspace.yaml`. Check which file actually changed (`git status`) and commit that one rather than assuming.
 
 ```bash
-git add patches package.json pnpm-lock.yaml
+git add patches pnpm-workspace.yaml pnpm-lock.yaml
 git commit -m "fix(deps): patch Milkdown list spread coercion
 
 The extendSchema override could not chain to the GFM-extended list_item
@@ -446,7 +448,9 @@ marker, and replacing it would silently rewrite _italic_ to *italic*."
 
 ## Task 3: Tight-list fix and the preservation gate
 
-Fixes Tier 2 and adds the fixture class that would have caught it.
+Adds the fixture class that would have caught the Tier 2 bug.
+
+> **The spike chose path B.** An `extendSchema` override could not chain to the GFM-extended `list_item` and dropped task-list checkboxes, so Tier 2 is fixed by `patches/@milkdown__preset-commonmark@7.21.1.patch`, committed in Task 1. **Take Step 4 (path B), not Step 4 (path A)** — no schema override is written in this task. Your work here is the preservation gate.
 
 **Files:**
 - Modify: `src/editor/canonical.ts` (path A only)
@@ -456,9 +460,17 @@ Fixes Tier 2 and adds the fixture class that would have caught it.
 - Consumes: `useCanonical(editor)` from Task 2; the path A/B decision from Task 1.
 - Produces: a `preserved` fixture record in `roundtrip.test.ts` that later tasks extend.
 
-- [ ] **Step 1: Delete the test that asserts the bug**
+- [ ] **Step 1: Confirm the bug-asserting test is already gone**
 
-In `tests/roundtrip.test.ts`, delete the whole `it("normalizes formatting without losing content", ...)` block (including its leading comment, currently around lines 81-92). Its assertion — `tight → loose` — is the bug written down as a requirement, and this task makes it false. Deleting it here rather than later is what keeps this task's commit green; tight lists are covered by `preserved.tightBullets` below.
+The `it("normalizes formatting without losing content", ...)` block — whose assertion was `tight → loose`, the bug written down as a requirement — was deleted in **Task 1**, because path B's `pnpm patch` fixes tight lists at the dependency level and therefore falsified it there.
+
+Verify it is absent and move on; do not re-add or recreate it:
+
+```bash
+grep -n "normalizes formatting without losing content" tests/roundtrip.test.ts || echo "already removed — correct"
+```
+
+> Had the spike chosen path A, the fix would have landed in this task and the deletion would have belonged here. It did not — record that as context, not as work.
 
 - [ ] **Step 2: Write the failing test**
 
