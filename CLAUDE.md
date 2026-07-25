@@ -74,8 +74,9 @@ marks and `<div class="callout">`, `<details>`/`<summary>`, `<dl>`/`<dt>`/`<dd>`
 - **Toolbar / menu affordances** for the new constructs — they currently only enter the doc via HTML
   parsing, not via buttons. A UX increment.
 - **"Save As .html" dialog filter** — Rust `save_file_as` is currently Markdown-oriented.
-- **On-device GUI verification** of the HTML flows (no webview here) — open a real AI `.html` artifact,
-  edit, save, reopen; confirm the supported subset survives and unsupported markup is cleanly normalized.
+- **Interactive GUI verification** of the HTML flows (needs a human driving a window, §0) — open a real
+  AI `.html` artifact, edit, save, reopen; confirm the supported subset survives and unsupported markup
+  is cleanly normalized.
 - **Identity note:** HTML as first-class is a deliberate expansion of the "plain `.md`,
   Obsidian-compatible" pitch (§1) — keep that trade-off in mind.
 
@@ -328,8 +329,8 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 > session restore, so it becomes the active tab); (3) `tauri-plugin-single-instance` forwards a
 > *subsequent* launch's argv to the running window as the `open-file` event instead of spawning a
 > duplicate. **macOS** delivers file-opens via `RunEvent::Opened`, not argv — not yet wired (Windows
-> is the focus, §1); add that handler when macOS becomes a target. All flows need on-device GUI
-> verification (no webview here, §0).
+> is the focus, §1); add that handler when macOS becomes a target. All flows need interactive GUI
+> verification — a human driving a window, not a missing toolchain (§0).
 
 ---
 
