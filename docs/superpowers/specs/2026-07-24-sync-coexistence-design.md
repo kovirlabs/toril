@@ -284,11 +284,11 @@ the real `serializer.ts`). The blanket claim in CLAUDE.md §0 — "a cost of the
 WYSIWYG trade-off" — turns out to cover three different causes with very
 different price tags:
 
-| Tier | Constructs | Cause | Fixable? |
+| Tier | Constructs | Cause | Status |
 |---|---|---|---|
-| **1 — cosmetic** | `*` vs `-` bullets, `***` vs `---`, ` ``` ` vs `~~~`, table cell padding | `remark-stringify` output options | **Yes** — `remarkStringifyOptionsCtx`, ~5 lines |
-| **2 — upstream bug** | tight→loose lists | Milkdown coercion slip (below) | **Yes** — local `extendSchema` override |
-| **3 — schema-level** | setext headings, indented code blocks, hard-break style, link references + definitions, escaping | ProseMirror's doc model is normalized; no node records its original syntax | **No** — would mean carrying original-markup attrs through every node, against CLAUDE.md §11 |
+| **1 — cosmetic** | `*` vs `-` bullets, `***` vs `---`, table cell padding | `remark-stringify` output options | **Done** — `fix/serializer-normalization` (PR #25) |
+| **2 — upstream bug** | tight→loose lists | Milkdown coercion slip (below) | **Done** — same branch, via a pinned `pnpm patch` |
+| **3 — not modelled** | setext headings, indented code blocks, fence char, hard-break style, link references + definitions, escaping, **CRLF→LF** | These nodes carry no record of their original syntax — though Milkdown's `node.marker` mechanism shows it *is* extensible, at a cost we chose not to pay | **No** — see `2026-07-25-serializer-normalization-design.md` §4.4 |
 
 **Tier 2 is a genuine bug, not a design cost.** Tightness *is* modelled — the
 parser stores `spread` correctly — but two of the four `toMarkdown` sites
@@ -302,27 +302,40 @@ state.openNode("list", undefined, { ordered: false, spread: node.attrs.spread })
 spread: node.attrs.spread === "true"
 ```
 
-A local override restores tight lists, nesting, and `---` byte-stably and
-idempotently. **Caveat found the hard way:** overriding `list_item.toMarkdown`
-naively clobbers GFM's task-list handling and silently drops `- [ ]` checkboxes
-— a §3 data-loss bug. Any fix must preserve `checked` and gate on it.
+A local `extendSchema` override was tried first and **rejected**: it could not
+chain to the GFM-extended `list_item` and silently dropped `- [ ]` checkboxes —
+a §3 data-loss bug. Tier 2 therefore ships as
+`patches/@milkdown__preset-commonmark@7.21.1.patch`, a pinned `pnpm patch` with
+a documented removal condition (CLAUDE.md §2).
 
-**Decision — out of scope for this branch.** Tiers 1 + 2 change the canonical
-serialization, which means rewriting every fixture in `tests/roundtrip.test.ts`
-and re-normalizing users' already-saved notes once more. That is its own change
-with its own gate, and folding it in here would make both harder to review. It
-belongs on a precursor branch (`fix/serializer-normalization`) that this branch
-rebases onto, so the merge base starts clean.
+**Status: the precursor landed** (`fix/serializer-normalization`, PR #25, merged
+2026-07-25) and this branch is rebased onto it. Toril's canonical form is now
+`-` bullets and `---` thematic breaks, matching Obsidian, and tight lists survive
+a round-trip. The single largest source of phantom conflicts — every bullet line
+in a vault reformatting on first save — is gone.
 
-**Residual limitation after that precursor lands:** Tier 3 only — rare,
-localized constructs rather than every bullet line in the vault. That is the
-honest remaining cost of the WYSIWYG trade-off.
+**What remains, and what it means for the merge.** The residual normalizations
+are now pinned to exact outputs by the `normalized` fixture class in
+`tests/roundtrip.test.ts`, so this branch can reason about them from tests rather
+than prose. Two of them matter more than the rest:
+
+- **CRLF → LF rewrites every line of the file.** This is the worst case for a
+  line-based 3-way merge, and Windows is the primary platform (§1) — a note
+  authored on Windows, or arriving through a sync client that preserves CRLF,
+  will diff at 100% on its first Toril save. §3's merge cannot rescue that; the
+  **pre-save divergence check is what protects the user here**, since it stops
+  the write before it happens rather than trying to merge afterwards. Worth an
+  explicit test fixture when the merge core is built.
+- **An unused link reference definition is deleted outright** (`[ex]: …` with no
+  `[…][ex]` referencing it). Pre-existing remark behavior, not introduced by the
+  precursor, and the one case where reformatting actually drops bytes rather than
+  moving them. Tracked in CLAUDE.md §0.
 
 > The Tier 2 coercion bug affects every Milkdown consumer and has a second,
 > sharper symptom: `schema.nodeFromJSON()` **throws** on any document containing
-> a list, because the attrs declare `validate: "boolean"` while the parser
-> stores strings. An upstream report + patch is drafted for the Milkdown
-> maintainers.
+> a list, because the attrs declare `validate: "boolean"` while the parser stores
+> strings. An upstream report and patch are drafted but **not yet filed** — until
+> they are, nothing signals when the pinned patch can be dropped.
 
 ---
 
