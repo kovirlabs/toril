@@ -38,6 +38,9 @@ fn split_lines(s: &str) -> Vec<&str> {
 }
 
 use similar::{Algorithm, DiffOp, capture_diff_slices};
+use std::io;
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// One side's edit, expressed in **base line coordinates**: base lines
 /// `[base_start, base_end)` are replaced by `lines`.
@@ -345,9 +348,73 @@ pub fn merge3(base: &str, mine: &str, theirs: &str) -> Divergence {
     Divergence::Merged(out)
 }
 
+/// Format `now` as `YYYY-MM-DD HH-MM-SS` in UTC, using dashes throughout so the
+/// result is a legal filename on Windows (§3.4).
+fn stamp(now: SystemTime) -> String {
+    let secs = now
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0) as i64;
+
+    // Civil-date conversion from days since the Unix epoch (Howard Hinnant's
+    // algorithm). Avoids a date dependency for one format string (§2).
+    let days = secs.div_euclid(86_400);
+    let rem = secs.rem_euclid(86_400);
+    let (hh, mm, ss) = (rem / 3600, (rem % 3600) / 60, rem % 60);
+
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+
+    format!("{y:04}-{m:02}-{d:02} {hh:02}-{mm:02}-{ss:02}")
+}
+
+/// Pick an unused `<stem> (conflict <ts>)<.ext>` path beside `original`.
+///
+/// Never returns a path that already exists: a conflict file is user data, so a
+/// collision gets a `-2`, `-3`… suffix rather than an overwrite (§3.4).
+pub fn unique_conflict_path(original: &Path, now: SystemTime) -> io::Result<PathBuf> {
+    let dir = original.parent().unwrap_or(Path::new("."));
+    let stem = original
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("note");
+    let ext = original.extension().and_then(|s| s.to_str());
+    let ts = stamp(now);
+
+    for n in 1..1000 {
+        let suffix = if n == 1 {
+            String::new()
+        } else {
+            format!("-{n}")
+        };
+        let name = match ext {
+            Some(e) => format!("{stem} (conflict {ts}{suffix}).{e}"),
+            None => format!("{stem} (conflict {ts}{suffix})"),
+        };
+        let candidate = dir.join(name);
+        if !candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        "exhausted conflict-file name candidates",
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::time::Duration;
 
     #[test]
     fn splits_lines_keeping_terminators() {
@@ -544,5 +611,61 @@ mod tests {
             merge3(base, mine, theirs),
             Divergence::Merged("a CHANGED\nb CHANGED".to_string())
         );
+    }
+
+    fn at(secs: u64) -> SystemTime {
+        UNIX_EPOCH + Duration::from_secs(secs)
+    }
+
+    #[test]
+    fn conflict_path_is_beside_the_original_with_a_windows_safe_stamp() {
+        let dir = std::env::temp_dir().join(format!("mergemd-name-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let original = dir.join("note.md");
+
+        let p = unique_conflict_path(&original, at(1_800_000_000)).unwrap();
+        let name = p.file_name().unwrap().to_str().unwrap();
+
+        assert!(
+            p.parent() == original.parent(),
+            "must sit beside the original"
+        );
+        assert!(name.starts_with("note (conflict "), "got {name}");
+        assert!(name.ends_with(").md"), "extension preserved: {name}");
+        assert!(!name.contains(':'), "colons are illegal on Windows: {name}");
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn conflict_path_preserves_an_html_extension() {
+        let dir = std::env::temp_dir().join(format!("mergemd-html-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let p = unique_conflict_path(&dir.join("page.html"), at(1_800_000_000)).unwrap();
+        assert!(
+            p.file_name().unwrap().to_str().unwrap().ends_with(").html"),
+            "a parked .html must stay .html"
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn conflict_path_never_overwrites_an_existing_conflict_file() {
+        let dir = std::env::temp_dir().join(format!("mergemd-collide-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let original = dir.join("note.md");
+
+        let first = unique_conflict_path(&original, at(1_800_000_000)).unwrap();
+        fs::write(&first, b"parked").unwrap();
+
+        // Same timestamp, so the plain name is taken.
+        let second = unique_conflict_path(&original, at(1_800_000_000)).unwrap();
+        assert_ne!(first, second, "must not hand back an occupied path");
+        assert!(
+            second.file_name().unwrap().to_str().unwrap().contains("-2"),
+            "expected a -2 suffix, got {second:?}"
+        );
+
+        fs::remove_dir_all(&dir).ok();
     }
 }
