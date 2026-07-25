@@ -41,8 +41,11 @@ the feature-by-feature record.
 - Tab switching does **not** preserve per-tab undo history (single shared editor, content swapped).
   Acceptable for now.
 
-**Known trade-off:** formatting normalizes to Milkdown's canonical form on first save (tight→loose
-lists, `---`→`***`). It reformats whitespace but never drops content and is idempotent thereafter —
+**Known trade-off:** Toril's canonical form (`src/editor/canonical.ts`) is `-` bullets and `---`
+thematic breaks, matching Obsidian — so most notes survive open→save untouched. What still
+reformats: setext headings, indented code blocks, `~~~` fences, two-space hard breaks, link
+reference definitions, and `*`-authored bullets/rules. Each is pinned to an exact expected output
+by the `normalized` class in `tests/roundtrip.test.ts`. It never drops content and is idempotent —
 relevant to Obsidian-vault diffs (§1).
 
 **HTML as a first-class editable format — shipped in v0.1.1-alpha.1.** Open/edit/save `.html`
@@ -348,8 +351,11 @@ Phases 0–3 are complete and Phase 4 (polish) is in progress; the shipped detai
 
 **Gates (all green) — keep them green:**
 - **Atomic save:** `cargo test -p fsatomic` — interrupting a save leaves the original intact (§3.1).
-- **Round-trip:** `tests/roundtrip.test.ts` — real Milkdown in jsdom; CommonMark + GFM + emoji. Add
-  math + front-matter fixtures when those land (§3.2).
+- **Round-trip:** `tests/roundtrip.test.ts` — real Milkdown in jsdom, built through
+  `canonical.ts` so the gate tests the canon that ships. Three classes: `fixtures`
+  (canonical input is stable), `preserved` (human/Obsidian-authored input is **not**
+  rewritten), `normalized` (what we do rewrite, pinned to exact output). Add math +
+  front-matter fixtures when those land (§3.2).
 - **Toolbar round-trip:** `tests/toolbar.test.ts` — each command yields the same canonical markdown as
   typing the syntax, and asserts **no raw-markdown-text insertion** (§3.2).
 - **Export:** `cargo test -p mdhtml -p mdrtf` (render configs) + `tests/export.test.ts` (builder + the
