@@ -1,57 +1,73 @@
 # Toril
 
-> **The bull, penned.** A MarkText-style WYSIWYG markdown editor — your markdown
-> renders *in place* as you type, with no separate preview pane.
+Toril is a desktop markdown editor. Your markdown renders in place as you type —
+there is no separate preview pane — and your files stay plain `.md` in ordinary
+folders, so a workspace can be a live Obsidian vault.
 
-Toril is a small, fast desktop markdown editor built on **Tauri 2 + TypeScript +
-Milkdown**. Files are plain `.md` in ordinary folders, so a workspace can be a
-live Obsidian vault — no proprietary container, no lock-in.
+It is built on Tauri 2, TypeScript, and Milkdown. The primary platform is
+**Windows**; macOS and Linux build from the same stack and get less testing.
 
 <p align="center">
   <img src="./media/UI-Screenshot_2026-06-21.png" alt="Toril editing a Markdown document with inline WYSIWYG rendering" width="90%">
 </p>
 
-**Primary platform: Windows.** macOS and Linux build from the same stack but are
-not the current focus.
-
-> ⚠️ **Status: beta.** The core editor and the surrounding workflow are in place
-> (build phases 0–3 complete; phase 4 polish in progress). Prebuilt installers are
-> available in
-> **[v1.0.0-beta.1](https://github.com/kovirlabs/toril/releases/latest)** — it's
-> still pre-1.0 in spirit, so expect the occasional rough edge and keep backups of
-> important notes.
+> **Status: beta.** The editor and the workflow around it work. It is pre-1.0, so
+> expect rough edges and keep backups of anything important. Installers:
+> **[v1.0.0-beta.1](https://github.com/kovirlabs/toril/releases/latest)**.
+>
+> `main` has moved ahead of that release — autosave and crash recovery, local
+> version history, and safer defaults for Obsidian-shared folders have landed
+> since. See [CHANGELOG.md](./CHANGELOG.md) for what is waiting on the next build.
 
 ---
 
-## Features
+## What it does
 
-- **Inline WYSIWYG** — CommonMark + GitHub Flavored Markdown (tables, task lists,
-  strikethrough, footnotes) + emoji shortcodes, rendered in place as you type.
-- **HTML as a first-class format** — open, edit, and save `.html`/`.htm` documents
-  WYSIWYG alongside `.md`, with the markup sanitized on load.
-- **Atomic saves** — every write is temp-file + fsync + rename, so a crash
-  mid-save can never corrupt an existing note.
-- **Workspace sidebar + multi-document tabs** with an external-change file watcher
-  (so editing a folder that's also an Obsidian vault stays in sync).
-- **Session memory** — reopens your last folder and files on launch.
-- **Themes** — System / Light / Dark.
+This is what the current installer gives you.
+
+- **Inline WYSIWYG editing** — CommonMark and GitHub Flavored Markdown (tables,
+  task lists, strikethrough, footnotes), plus emoji shortcodes, rendered as you
+  type.
+- **HTML as a first-class format** — open, edit, and save `.html`/`.htm`
+  documents in the same editor, sanitized on load.
+- **Atomic saves** — every write is temp-file, fsync, then rename. A crash
+  mid-save cannot corrupt an existing note.
+- **Workspace sidebar and multi-document tabs**, with a file watcher that
+  notices changes made outside the editor.
+- **Session memory** — reopens your last folder and files.
 - **Export** to HTML and RTF.
-- **Clipboard image paste** — pasted images are saved beside the document.
-- **Formatting toolbar, status bar** (word/char count + reading time), and a
-  native app menu.
-- **Quality-of-life** — Find & Replace, Save All, toggle sidebar, an
-  unsaved-changes close guard, and opening files via double-click / "Open with".
+- **Clipboard image paste** — pasted images are written beside the document.
+- **Themes** (System / Light / Dark), a formatting toolbar, a status bar with
+  word and character count, and a native menu.
+- **Find and Replace, Save All**, an unsaved-changes guard on close, and opening
+  files by double-click or "Open with".
 
-> Not yet: Math (KaTeX), PDF export, and in-editor YAML front matter — see
-> [CLAUDE.md](./CLAUDE.md) for the current status of each.
+## What it doesn't do
+
+Some of this is deliberate and permanent; some is just not built yet. The
+distinction matters, so they are listed separately.
+
+**By design:**
+
+- No account, no cloud sync, no backend, no telemetry. Toril does not phone home.
+- No proprietary container or sidecar database — stop using Toril tomorrow and
+  every note is still a `.md` file you can open in anything.
+- No plugin system, and no plans for one.
+- No mobile app.
+
+**Not yet built:**
+
+- Math rendering (KaTeX), PDF export, and in-editor YAML front matter.
+- Global search across a vault, wikilinks, and backlinks.
+- Signed installers, so Windows SmartScreen and macOS Gatekeeper warn on first
+  run. That is expected for an unsigned build, not a sign of a problem.
 
 ---
 
 ## Download
 
-Prebuilt installers for the latest beta are on the
-**[releases page](https://github.com/kovirlabs/toril/releases/latest)**. Grab the
-one for your platform:
+Installers are on the
+**[releases page](https://github.com/kovirlabs/toril/releases/latest)**.
 
 | Platform | Download |
 |---|---|
@@ -62,120 +78,110 @@ one for your platform:
 | **Linux** (Debian/Ubuntu) | [`Toril_1.0.0-beta.1_amd64.deb`](https://github.com/kovirlabs/toril/releases/download/v1.0.0-beta.1/Toril_1.0.0-beta.1_amd64.deb) |
 | **Linux** (Fedora/RHEL) | [`Toril-1.0.0-beta.1-1.x86_64.rpm`](https://github.com/kovirlabs/toril/releases/download/v1.0.0-beta.1/Toril-1.0.0-beta.1-1.x86_64.rpm) |
 
-Prefer to compile it yourself? See [Building from source](#running-from-source-development).
+<details>
+<summary><b>Installing on Windows</b></summary>
 
-## Installing on Windows
+Download `Toril_1.0.0-beta.1_x64-setup.exe` and run it. It installs per-user, so
+there is no administrator prompt:
 
-Download **`Toril_1.0.0-beta.1_x64-setup.exe`** above and double-click it. It
-performs a per-user install — no administrator rights needed:
+- Copies the app into `%LOCALAPPDATA%\Toril`.
+- Adds a Start Menu entry, and offers a Desktop shortcut during setup.
+- Registers in **Apps & features** for clean uninstallation.
 
-- Copies the app into **`%LOCALAPPDATA%\Toril`** (i.e.
-  `C:\Users\<you>\AppData\Local\Toril`) — no admin prompt.
-- Adds a **Start Menu** entry, and offers a **Desktop shortcut** checkbox during
-  setup.
-- Registers an entry in **Apps & features** for clean uninstallation.
+On first run, SmartScreen may say "Windows protected your PC" because the build
+is unsigned. Choose **More info → Run anyway**.
 
-> **SmartScreen note:** the build is unsigned, so on first run Windows
-> SmartScreen may warn "Windows protected your PC." Click **More info →
-> Run anyway**. This is expected for an unsigned personal build, not a problem
-> with the app.
+To uninstall: **Settings → Apps → Installed apps → Toril → Uninstall**, or run
+the uninstaller in `%LOCALAPPDATA%\Toril`.
 
-### Uninstalling
+</details>
 
-Use **Settings → Apps → Installed apps → Toril → Uninstall**, or run the
-uninstaller in `%LOCALAPPDATA%\Toril`.
+<details>
+<summary><b>Installing on macOS and Linux</b></summary>
 
-## Installing on macOS / Linux
+**macOS:** open the `.dmg` and drag Toril to Applications. The build is unsigned,
+so the first launch needs **right-click → Open** (or *System Settings → Privacy &
+Security → Open Anyway*).
 
-- **macOS:** open the `.dmg` and drag **Toril** to Applications. The build is
-  unsigned, so the first launch needs **right-click → Open** (or *System Settings
-  → Privacy & Security → Open Anyway*) to get past Gatekeeper.
-- **Linux:** the `.AppImage` is portable — `chmod +x Toril_1.0.0-beta.1_amd64.AppImage`
-  and run it. Or install the `.deb`
-  (`sudo apt install ./Toril_1.0.0-beta.1_amd64.deb`) / `.rpm`
-  (`sudo dnf install ./Toril-1.0.0-beta.1-1.x86_64.rpm`).
+**Linux:** the AppImage is portable —
+`chmod +x Toril_1.0.0-beta.1_amd64.AppImage` and run it. Or install the `.deb`
+(`sudo apt install ./Toril_1.0.0-beta.1_amd64.deb`) or `.rpm`
+(`sudo dnf install ./Toril-1.0.0-beta.1-1.x86_64.rpm`).
 
----
-
-## Roadmap
-
-> **The bull, penned — now learning to roam.** Toril is a solid single-document
-> editor today; the plan is to grow it into a notes **system** you live in: the
-> local-first, plain-files, AI-native writing tool you defect to when you outgrow
-> Apple Notes.
-
-The work is organized into five movements, sequenced by one rule — **trust before
-reach**: the data-safety floor ships before the differentiators, and the AI layer
-stands on top of it.
-
-```mermaid
-flowchart TD
-    Now["<b>Now · v1.0.0-beta.1</b><br/>Inline WYSIWYG editor · atomic I/O<br/>tabs · file watcher · HTML/RTF export · themes"]
-    I["<b>Movement I — Trust Foundation</b><br/>autosave + crash recovery · safe-delete trash<br/>local version history · sync coexistence · code signing"]
-    II["<b>Movement II — Notes System</b><br/>global vault search · command palette<br/>wikilinks · backlinks · tags · outline · file ops"]
-    III["<b>Movement III — Writing Craft</b><br/>code highlighting · KaTeX · Mermaid<br/>focus / typewriter modes · stats · daily notes"]
-    IV["<b>Movement IV — The AI Wedge</b><br/>AI assist panel (BYO key + Ollama)<br/>chat-with-your-vault (local RAG) · AI organization · MCP bridge"]
-    V["<b>Movement V — Reach</b><br/>per-tab undo · large-vault perf · a11y / i18n<br/>encrypted notes · mobile (iOS / Android)"]
-    Now --> I --> II --> III --> IV --> V
-
-    classDef done fill:#dafbe1,stroke:#2da44e,color:#0a0a0a;
-    classDef step fill:#eef2ff,stroke:#6e7bff,color:#0a0a0a;
-    classDef ai fill:#fff4e5,stroke:#fb8500,color:#0a0a0a;
-    class Now done;
-    class I,II,III,V step;
-    class IV ai;
-```
-
-| Movement | Focus | Milestone |
-|---|---|---|
-| **I — Trust Foundation** | Make it safe to live in | *"Safe to live in"* |
-| **II — Notes System** | The daily-driver core | *"A real notes system"* — first beta |
-| **III — Writing Craft** | Win the focus-writer fight | *"A joy to write in"* |
-| **IV — The AI Wedge** | The unfair advantage | *"Your notes, with Claude inside"* |
-| **V — Reach** | Scale, polish, and the mobile bet | **v1.0** — *"for everyone who outgrew their notes app"* |
-
-The full branch-by-branch plan — goals, gates, new crates, and open decisions —
-lives in **[ROADMAP.md](./ROADMAP.md)**.
+</details>
 
 ---
 
-## Running from source (development)
+## Where it's going
 
-To run the app live with hot-reload instead of installing:
+Current work is a data-safety floor: autosave and crash recovery, version
+history, safe delete, and coexisting cleanly with folders that Obsidian or a sync
+client is also writing to. The features that make it a notes system — vault
+search, wikilinks, backlinks — come after that, on the principle that a tool you
+keep notes in has to be trustworthy before it is clever.
 
-```powershell
+An AI assist layer is planned further out, built around your own API key or a
+local model. None of it is written yet, and nothing in Toril talks to a network
+today.
+
+The branch-by-branch plan is in **[ROADMAP.md](./ROADMAP.md)**.
+
+---
+
+## Building from source
+
+```bash
 pnpm install
-pnpm tauri dev
+pnpm tauri dev      # run with hot reload
+pnpm tauri build    # produce installers
 ```
 
-The first run compiles the Rust backend, so it takes a while; subsequent runs are
-fast.
+The first run compiles the Rust backend and takes a while; later runs are fast.
 
-### Building on macOS / Linux
+Platform build dependencies:
 
-The same `pnpm tauri build` works, with platform build dependencies:
-
+- **Windows:** Microsoft C++ Build Tools (MSVC) and the WebView2 runtime
+  (preinstalled on Windows 11).
 - **macOS:** Xcode Command Line Tools (`xcode-select --install`).
-- **Linux:** WebKitGTK and friends, e.g. on Debian/Ubuntu:
+- **Linux:**
   ```bash
   sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
     libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev pkg-config
   ```
 
----
-
 ## Development reference
 
 | Task | Command |
 |---|---|
-| Run the app (dev) | `pnpm tauri dev` |
-| Build app + installers | `pnpm tauri build` |
-| Frontend type-check | `pnpm typecheck` |
+| Run the app | `pnpm tauri dev` |
+| Build app and installers | `pnpm tauri build` |
+| Frontend tests | `pnpm test` |
+| Type-check | `pnpm typecheck` |
 | Frontend build only | `pnpm build` |
-| Frontend tests (round-trip, tabs) | `pnpm test` |
-| Backend logic tests | `cd src-tauri && cargo test -p fsatomic -p vaultscan -p mdhtml -p mdrtf -p imgasset` |
+| Backend logic tests | `cd src-tauri && cargo test -p fsatomic -p vaultscan -p mdhtml -p mdrtf -p imgasset -p trashbin -p snapshots` |
+| Formatting and lints | `cd src-tauri && cargo fmt --all && cargo clippy` |
 
-The architecture, data-safety rules, command contract, and build milestones live
-in **[CLAUDE.md](./CLAUDE.md)**; the forward plan (branch-by-branch, with adoption
-guidance) in **[ROADMAP.md](./ROADMAP.md)**; brand and theming in
-**[BRAND.md](./BRAND.md)**.
+CI runs the frontend suite, the type-check, the build, and the backend logic
+tests on Ubuntu and Windows for every pull request. The Rust logic crates are
+deliberately kept out of the app crate so they build and test without a system
+webview.
+
+[CONTRIBUTING.md](./CONTRIBUTING.md) covers setup and the rules a change has to
+follow. [CLAUDE.md](./CLAUDE.md) is the authoritative design document —
+architecture, the data-safety contract, and the backend command contract.
+[SECURITY.md](./SECURITY.md) covers the threat model and how to report a
+vulnerability.
+
+---
+
+## The name
+
+In Spanish bullfighting, *el toril* is the pen where the bull waits before it
+charges into the ring — a nod to Tauri (the bull) and to writing (the pen), with
+the bull-in-a-china-shop joke built in. The editor is the bull, safely penned,
+doing delicate work. Brand and theming notes are in [BRAND.md](./BRAND.md).
+
+## License
+
+[Apache License 2.0](./LICENSE). Contributions are welcome and there is no CLA —
+see [CONTRIBUTING.md](./CONTRIBUTING.md).
