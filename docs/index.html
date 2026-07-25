@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- HTTPS safety net: auto-upgrade any http subresource so the page is never mixed-content -->
 <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
-<title>Toril — Markdown, with a steady hand</title>
-<meta name="description" content="Toril is a native, memory-safe WYSIWYG markdown editor. Type Markdown and watch it render live, while every note stays plain, portable text. Built on Tauri + Rust.">
+<title>Toril — a desktop markdown editor</title>
+<meta name="description" content="Toril is a desktop markdown editor. Your markdown renders in place as you type, and your files stay plain .md in ordinary folders. Built on Tauri, Rust, and Milkdown.">
 <meta name="theme-color" content="#08171E">
 <meta name="robots" content="index, follow">
 <meta name="author" content="Toril">
@@ -15,8 +15,8 @@
 
 <!-- Social card (absolute URLs required — scrapers can't resolve relative paths) -->
 <meta property="og:site_name" content="Toril">
-<meta property="og:title" content="Toril — Markdown, with a steady hand">
-<meta property="og:description" content="A native WYSIWYG markdown editor. The bull, penned.">
+<meta property="og:title" content="Toril — a desktop markdown editor">
+<meta property="og:description" content="Markdown that renders in place as you type. Files stay plain .md in ordinary folders.">
 <meta property="og:url" content="https://toril.ink/">
 <meta property="og:image" content="https://toril.ink/Toril_Icon.png">
 <meta property="og:image:alt" content="The Toril icon — a bull's head fused with a fountain-pen nib.">
@@ -26,8 +26,8 @@
 <meta property="og:type" content="website">
 <meta property="og:locale" content="en_US">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Toril — Markdown, with a steady hand">
-<meta name="twitter:description" content="A native WYSIWYG markdown editor. The bull, penned.">
+<meta name="twitter:title" content="Toril — a desktop markdown editor">
+<meta name="twitter:description" content="Markdown that renders in place as you type. Files stay plain .md in ordinary folders.">
 <meta name="twitter:image" content="https://toril.ink/Toril_Icon.png">
 <meta name="twitter:image:alt" content="The Toril icon — a bull's head fused with a fountain-pen nib.">
 
@@ -39,11 +39,11 @@
   "name": "Toril",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "Windows, macOS, Linux",
-  "description": "Toril is a native, memory-safe WYSIWYG markdown editor. Type Markdown and watch it render live, while every note stays plain, portable text. Built on Tauri + Rust.",
+  "description": "Toril is a desktop markdown editor. Your markdown renders in place as you type, and your files stay plain .md in ordinary folders. Built on Tauri, Rust, and Milkdown.",
   "url": "https://toril.ink/",
   "image": "https://toril.ink/Toril_Icon.png",
   "downloadUrl": "https://github.com/kovirlabs/toril/releases/latest",
-  "softwareVersion": "0.1.0-alpha.1",
+  "softwareVersion": "1.0.0-beta.1",
   "isAccessibleForFree": true,
   "license": "https://github.com/kovirlabs/toril/blob/main/LICENSE",
   "offers": {
@@ -54,7 +54,8 @@
 }
 </script>
 
-<link rel="icon" type="image/png" href="Toril_Icon.png">
+<!-- 384px mark for the page; the full-size icon is kept for og:image only -->
+<link rel="icon" type="image/png" href="Toril_Mark.png">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -175,6 +176,14 @@ h2{font-family:var(--font-display);font-weight:600;font-size:clamp(2rem,5vw,2.9r
 .intro h2{font-size:clamp(1.8rem,4.4vw,2.6rem)}
 .intro .lead{margin:0 auto;color:var(--text-muted)}
 
+/* ============ SCREENSHOT ============ */
+.shot{padding:0 0 96px}
+.shot figure{margin:0}
+.shot img{width:100%;height:auto;display:block;border-radius:var(--radius);
+  border:1px solid var(--border);box-shadow:0 30px 70px -30px rgba(2,41,62,.9)}
+.shot figcaption{margin-top:14px;text-align:center;font-family:var(--font-mono);
+  font-size:.82rem;color:var(--text-dim)}
+
 /* ============ FEATURES ============ */
 .feat-head{text-align:center;max-width:680px;margin:0 auto 56px}
 .feat-head .lead{margin:0 auto}
@@ -193,6 +202,23 @@ h2{font-family:var(--font-display);font-weight:600;font-size:clamp(2rem,5vw,2.9r
 .card code{font-family:var(--font-mono);font-size:.85em;background:var(--surface-2);
   padding:1px 6px;border-radius:5px;color:var(--pale-tint)}
 
+/* ============ LIMITS (the honest half) ============ */
+.limits .wrap{max-width:1000px}
+.limits .feat-head{margin-bottom:44px}
+.limits .grid{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+.limits .card{background:var(--surface);border-top-width:3px}
+.limits .card.design{border-top-color:var(--cyan-soft)}
+.limits .card.pending{border-top-color:var(--gold)}
+.limits .card:hover{transform:none;box-shadow:none;border-color:var(--border)}
+.limits .card.design:hover{border-top-color:var(--cyan-soft)}
+.limits .card.pending:hover{border-top-color:var(--gold)}
+.limits ul{list-style:none;margin-top:4px}
+.limits li{position:relative;padding-left:22px;margin-bottom:12px;
+  font-size:.98rem;color:var(--text-muted)}
+.limits li::before{position:absolute;left:0;top:-1px;font-family:var(--font-mono);font-size:1rem}
+.limits .design li::before{content:"—";color:var(--cyan-soft)}
+.limits .pending li::before{content:"+";color:var(--gold)}
+
 /* ============ WHY (editorial band) ============ */
 .why{background:linear-gradient(150deg,#0A3D47,#072733 70%,#08171E);
   border-top:1px solid var(--border);border-bottom:1px solid var(--border);position:relative;overflow:hidden}
@@ -203,6 +229,9 @@ h2{font-family:var(--font-display);font-weight:600;font-size:clamp(2rem,5vw,2.9r
 .why h2{color:var(--ink-white)}
 .why p{font-size:1.2rem;color:var(--pale-tint);margin-bottom:16px}
 .why .pen{font-family:var(--font-display);font-style:italic;color:var(--gold)}
+/* the name story is an aside now, not the argument — keep it subordinate */
+.why p.note{font-size:1rem;color:var(--text-dim);margin-top:26px;
+  padding-top:20px;border-top:1px solid rgba(30,67,80,.7)}
 
 /* ============ BUILT-ON ============ */
 .builton{text-align:center}
@@ -262,10 +291,11 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:54px 0 40
 <!-- NAV -->
 <nav>
   <div class="wrap nav-in">
-    <a class="brand" href="#top"><img src="Toril_Icon.png" alt="Toril icon">Toril</a>
+    <a class="brand" href="#top"><img src="Toril_Mark.png" width="30" height="30" alt="">Toril</a>
     <div class="nav-links">
       <a href="#features">Features</a>
-      <a href="#why">Why Toril</a>
+      <a href="#limits">Limits</a>
+      <a href="#why">Roadmap</a>
       <a href="https://github.com/kovirlabs/toril" target="_blank" rel="noopener">GitHub</a>
       <button class="theme-toggle" id="themeToggle" aria-label="Toggle light and dark theme">
         <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
@@ -283,23 +313,35 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:54px 0 40
   <span class="bracket tr">( )</span>
   <div class="hero-in">
     <div class="eyebrow">Markdown editor · Tauri + Rust</div>
-    <img class="mark" src="Toril_Icon.png" alt="Toril — a bull's head fused with a fountain-pen nib">
+    <img class="mark" src="Toril_Mark.png" width="148" height="148" fetchpriority="high"
+         alt="Toril — a bull's head fused with a fountain-pen nib">
     <h1>Toril</h1>
-    <div class="tag">The bull, penned.</div>
-    <p class="sub">A native, memory-safe markdown editor that renders as you type — and keeps every note as plain, portable text.</p>
+    <div class="tag">A desktop markdown editor.</div>
+    <p class="sub">Your markdown renders in place as you type — no separate preview pane — and your files stay plain <code>.md</code> in ordinary folders, so a workspace can be a live Obsidian vault.</p>
     <div class="hero-cta">
       <a class="btn btn-gold" href="#download">Download</a>
       <a class="btn btn-ghost" href="https://github.com/kovirlabs/toril" target="_blank" rel="noopener">View on GitHub</a>
     </div>
-    <div class="hero-note">Free &amp; open source · Windows · macOS · Linux</div>
+    <div class="hero-note">Free &amp; open source · Apache-2.0 · beta · Windows, macOS, Linux</div>
   </div>
 </header>
 
 <!-- INTRO -->
 <section class="intro">
   <div class="wrap reveal">
-    <h2>Powerful underneath, gentle on the page.</h2>
-    <p class="lead">Toril runs on a bull — the Tauri engine, in Rust — but it handles your words like fine china. Write Markdown and watch it become the finished page, live, with nothing breaking and nothing in your way.</p>
+    <h2>It is a tool, and it does one job.</h2>
+    <p class="lead">Toril edits markdown. The editing surface is the rendered surface, so there is no split pane and nothing to keep in sync. It is built on Tauri and Rust, which means a native binary rather than a bundled browser. It is beta software: the editor works and is used daily, and there are still rough edges. Keep backups of anything important.</p>
+  </div>
+</section>
+
+<!-- SCREENSHOT -->
+<section class="shot">
+  <div class="wrap reveal">
+    <figure>
+      <img src="UI-Screenshot.png" width="2188" height="1824" loading="lazy" decoding="async"
+           alt="Toril editing a Markdown document: a workspace sidebar on the left, a document tab bar, and headings, lists and code rendered inline in the editor.">
+      <figcaption>Toril editing a document — the rendered surface is the editing surface.</figcaption>
+    </figure>
   </div>
 </section>
 
@@ -308,8 +350,8 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:54px 0 40
   <div class="wrap">
     <div class="feat-head reveal">
       <div class="kicker">What's inside</div>
-      <h2>Everything you need to write. Nothing you don't.</h2>
-      <p class="lead">A focused editor with the WYSIWYG feel of MarkText, built native and local-first.</p>
+      <h2>What the current build does</h2>
+      <p class="lead">This is what you get when you download it today. Anything not listed here is either deliberately absent or not written yet — both are covered further down.</p>
     </div>
     <div class="grid">
 
@@ -321,46 +363,76 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:54px 0 40
 
       <div class="card reveal">
         <div class="ico"><svg viewBox="0 0 24 24"><path d="M5 7h14M9 5l-1.5 14M16.5 5L15 19"/><path d="M14 14h6M17 11v6"/></svg></div>
-        <h3>GFM &amp; math</h3>
-        <p>Tables, task lists, footnotes, strikethrough, and KaTeX math — all rendered inline as you go.</p>
+        <h3>CommonMark and GFM</h3>
+        <p>Tables, task lists, footnotes, and strikethrough, plus emoji shortcodes — rendered inline as you type.</p>
       </div>
 
       <div class="card reveal">
         <div class="ico"><svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg></div>
-        <h3>Three writing modes</h3>
-        <p>Switch between Source, Typewriter, and Focus — from raw control to distraction-free flow.</p>
+        <h3>HTML, not just Markdown</h3>
+        <p>Open, edit, and save <code>.html</code> files in the same editor. Markup is sanitized as it loads, so nothing in a file can run.</p>
       </div>
 
       <div class="card reveal">
         <div class="ico"><svg viewBox="0 0 24 24"><path d="M8 4c-2 0-3 1-3 4s1 4-2 4c3 0 2 1 2 4s1 4 3 4M16 4c2 0 3 1 3 4s-1 4 2 4c-3 0-2 1-2 4s-1 4-3 4"/></svg></div>
         <h3>Plain text, portable</h3>
-        <p>Your notes are ordinary <code>.md</code> files in ordinary folders. Obsidian-vault friendly. No lock-in, ever.</p>
+        <p>Your notes are ordinary <code>.md</code> files in ordinary folders. Stop using Toril tomorrow and every note still opens in anything.</p>
       </div>
 
       <div class="card reveal">
         <div class="ico"><svg viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4"/><path d="M5 19h14"/></svg></div>
-        <h3>Export anywhere</h3>
-        <p>One click to clean, standalone HTML or print-perfect PDF — math and code highlighting intact.</p>
+        <h3>Export to HTML and RTF</h3>
+        <p>A standalone HTML document with the active theme inlined, or RTF for a word processor.</p>
       </div>
 
       <div class="card reveal">
         <div class="ico"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M5 17l4.5-4.5L13 16l3-3 3 3"/></svg></div>
-        <h3>Paste images instantly</h3>
-        <p>Drop an image from your clipboard — Toril files it into your assets folder and links it for you.</p>
+        <h3>Paste images</h3>
+        <p>Paste an image from your clipboard and Toril writes it beside the document, then links it.</p>
       </div>
 
       <div class="card reveal">
-        <div class="ico"><svg viewBox="0 0 24 24"><path d="M13 2L4.5 13H11l-1 9 9.5-13H13l0-7z"/></svg></div>
-        <h3>Native &amp; fast</h3>
-        <p>Built on Tauri and Rust: a small binary, quick cold start, and a light memory footprint.</p>
+        <div class="ico"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M9 5v14"/><path d="M12 9h6M12 13h4"/></svg></div>
+        <h3>Sidebar, tabs, file watcher</h3>
+        <p>A workspace tree and multiple open documents, with a watcher that notices edits made outside the editor. It reopens your last folder and files on launch.</p>
       </div>
 
       <div class="card reveal">
         <div class="ico"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg></div>
-        <h3>Safe &amp; private</h3>
-        <p>Memory-safe Rust core, atomic saves, local-first. Your writing never leaves your machine.</p>
+        <h3>Atomic saves</h3>
+        <p>Every write is a temp file, an fsync, then a rename — so a crash mid-save cannot corrupt an existing note. Nothing is sent anywhere; there is no account and no telemetry.</p>
       </div>
 
+    </div>
+  </div>
+</section>
+
+<!-- WHAT IT DOESN'T DO -->
+<section class="intro limits" id="limits">
+  <div class="wrap reveal">
+    <div class="feat-head">
+      <div class="kicker">Just as important</div>
+      <h2>What it doesn't do</h2>
+      <p class="lead">Some of this is deliberate and permanent. Some is simply not built yet. The difference matters, so they are listed apart.</p>
+    </div>
+    <div class="grid">
+      <div class="card design reveal">
+        <h3>By design</h3>
+        <ul>
+          <li>No account, no cloud sync, no backend, no telemetry — Toril does not phone home.</li>
+          <li>No proprietary container or sidecar database.</li>
+          <li>No plugin system, and none planned.</li>
+          <li>No mobile app.</li>
+        </ul>
+      </div>
+      <div class="card pending reveal">
+        <h3>Not yet built</h3>
+        <ul>
+          <li>Math rendering (KaTeX), PDF export, and in-editor YAML front matter.</li>
+          <li>Search across a whole vault, wikilinks, and backlinks.</li>
+          <li>Signed installers — Windows SmartScreen and macOS Gatekeeper warn on first run. That is expected for an unsigned build, not a sign of a problem.</li>
+        </ul>
+      </div>
     </div>
   </div>
 </section>
@@ -369,17 +441,18 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:54px 0 40
 <section class="why" id="why">
   <div class="watermark" aria-hidden="true">¶</div>
   <div class="wrap reveal">
-    <div class="kicker">Why "Toril"</div>
-    <h2>The bull, contained.</h2>
-    <p>In the Spanish bullring, <span class="pen">el toril</span> is the pen where the bull waits before it charges — power, held with a steady hand.</p>
-    <p>That's the editor. The Tauri bull, penned, doing delicate work instead of wrecking the china shop. And <span class="pen">"pen,"</span> of course, is where you write.</p>
+    <div class="kicker">Where it's going</div>
+    <h2>Data safety first, then features.</h2>
+    <p>Current work is a floor to stand on: autosave and crash recovery, local version history, safe delete, and coexisting cleanly with folders that Obsidian or a sync client is also writing to. Search, wikilinks, and backlinks come after that — a tool you keep notes in has to be trustworthy before it is clever.</p>
+    <p>An AI assist layer is planned further out, built around your own API key or a local model. None of it is written yet, and nothing in Toril talks to a network today.</p>
+    <p class="note">The name: in the Spanish bullring, <span class="pen">el toril</span> is the pen where the bull waits before it charges — a nod to Tauri (the bull) and to writing (the pen).</p>
   </div>
 </section>
 
 <!-- BUILT ON -->
 <section class="builton">
   <div class="wrap reveal">
-    <div class="kicker">Built on a tight, mature stack</div>
+    <div class="kicker">Built on</div>
     <div class="stack">
       <span class="pill"><b>Tauri</b> · native shell</span>
       <span class="pill"><b>Rust</b> · core &amp; file I/O</span>
@@ -392,13 +465,13 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:54px 0 40
 <!-- FINAL CTA -->
 <section class="final" id="download">
   <div class="wrap reveal">
-    <h2>Start writing.</h2>
-    <p>Download the latest alpha, or build it from source. Plain text in, finished pages out.</p>
+    <h2>Download</h2>
+    <p>Installers for Windows, macOS, and Linux are on the releases page, or you can build it from source. It's free, Apache-2.0, and there's nothing to sign up for.</p>
     <div class="hero-cta">
-      <a class="btn btn-gold" href="https://github.com/kovirlabs/toril/releases" target="_blank" rel="noopener">Download</a>
-      <a class="btn btn-ghost" href="https://github.com/kovirlabs/toril" target="_blank" rel="noopener">Build from source</a>
+      <a class="btn btn-gold" href="https://github.com/kovirlabs/toril/releases/latest" target="_blank" rel="noopener">Download</a>
+      <a class="btn btn-ghost" href="https://github.com/kovirlabs/toril#building-from-source" target="_blank" rel="noopener">Build from source</a>
     </div>
-    <p class="dl-other">Windows, macOS &amp; Linux on the releases page · alpha — expect rough edges</p>
+    <p class="dl-other">v1.0.0-beta.1 · Windows is the primary platform; macOS and Linux build from the same stack and get less testing</p>
   </div>
 </section>
 
@@ -406,15 +479,15 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:54px 0 40
 <footer>
   <div class="wrap foot-in">
     <div class="foot-brand">
-      <a class="brand" href="#top"><img src="Toril_Icon.png" alt="Toril icon">Toril</a>
-      <p>Plain text. Serious craft. A WYSIWYG markdown editor that treats your words like fine china.</p>
+      <a class="brand" href="#top"><img src="Toril_Mark.png" width="30" height="30" alt="">Toril</a>
+      <p>A desktop markdown editor. Your files stay plain <code>.md</code> in ordinary folders.</p>
     </div>
     <div class="foot-links">
       <div class="foot-col">
         <h4>Product</h4>
         <a href="#features">Features</a>
+        <a href="#limits">What it doesn't do</a>
         <a href="#download">Download</a>
-        <a href="#why">Why Toril</a>
       </div>
       <div class="foot-col">
         <h4>Project</h4>
@@ -424,7 +497,7 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:54px 0 40
       </div>
     </div>
   </div>
-  <div class="wrap"><div class="copy">© <span id="year"></span> Toril · Open source · Made with a steady hand.</div></div>
+  <div class="wrap"><div class="copy">© <span id="year"></span> Toril · Open source · Apache-2.0</div></div>
 </footer>
 
 <script>
