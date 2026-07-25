@@ -190,6 +190,31 @@ pub fn snapshot(root: &Path, note_path: &str, content: &[u8], now_ms: u64) -> io
     Ok(Outcome::Stored { hash })
 }
 
+/// Snapshot the bytes **currently on disk** at `note_path`, for a caller that is
+/// about to overwrite them.
+///
+/// Without this, the first Toril save of a note authored elsewhere (Obsidian, a
+/// text editor) would record only the *new* content, leaving the original — the
+/// version the user would most want back, e.g. after canonical-form normalization
+/// — with no entry in history at all (§3).
+///
+/// `Ok(None)` means there was nothing to capture: no file at `note_path` yet, i.e.
+/// a brand-new note. Other read errors are returned so the caller can log them;
+/// **every** outcome must be treated as non-fatal, because history is additive and
+/// may never block or fail a save.
+///
+/// Dedup is `snapshot`'s: when the latest recorded version already equals the
+/// on-disk bytes — the common case of re-saving an unchanged note — nothing is
+/// written, so repeated saves cannot accumulate duplicates.
+pub fn snapshot_existing(root: &Path, note_path: &str, now_ms: u64) -> io::Result<Option<Outcome>> {
+    let content = match std::fs::read(note_path) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    snapshot(root, note_path, &content, now_ms).map(Some)
+}
+
 /// Versions for `note_path`, **newest first** (for the history panel). A missing
 /// or corrupt manifest yields an empty list — never an error that could brick the
 /// UI.
@@ -398,6 +423,53 @@ mod tests {
         // Only two distinct blobs (A, B) despite three versions.
         let blobs = note_dir(tmp.path(), NOTE).join(BLOBS);
         assert_eq!(fs::read_dir(&blobs).unwrap().count(), 2);
+    }
+
+    #[test]
+    fn pre_write_snapshot_keeps_the_content_that_was_on_disk() {
+        // The save sequence for a note Toril has never written before: capture
+        // what is on disk, write the new content, snapshot that. The *original*
+        // must stay retrievable — this is what makes normalization undoable (§3).
+        let tmp = TempDir::new("prewrite");
+        let note = tmp.path().join("existing.md");
+        let note_str = note.to_string_lossy().into_owned();
+        fs::write(&note, b"A").unwrap();
+
+        let Some(Outcome::Stored { hash: a }) =
+            snapshot_existing(tmp.path(), &note_str, 1).unwrap()
+        else {
+            panic!("expected the pre-existing content to be stored");
+        };
+        fs::write(&note, b"B").unwrap();
+        snapshot(tmp.path(), &note_str, b"B", 2).unwrap();
+
+        assert_eq!(read(tmp.path(), &note_str, &a).unwrap(), "A");
+        assert_eq!(list(tmp.path(), &note_str).len(), 2);
+    }
+
+    #[test]
+    fn pre_write_snapshot_of_a_new_file_is_a_silent_no_op() {
+        let tmp = TempDir::new("prewrite-new");
+        let note = tmp.path().join("not-yet.md").to_string_lossy().into_owned();
+        assert_eq!(snapshot_existing(tmp.path(), &note, 1).unwrap(), None);
+        assert!(list(tmp.path(), &note).is_empty());
+    }
+
+    #[test]
+    fn pre_write_snapshot_does_not_duplicate_an_unchanged_note() {
+        // Save the same content twice: the second save's pre-write capture matches
+        // the latest version, so it is skipped rather than stored again.
+        let tmp = TempDir::new("prewrite-dedup");
+        let note = tmp.path().join("same.md");
+        let note_str = note.to_string_lossy().into_owned();
+        fs::write(&note, b"A").unwrap();
+        snapshot(tmp.path(), &note_str, b"A", 1).unwrap();
+
+        assert_eq!(
+            snapshot_existing(tmp.path(), &note_str, 2).unwrap(),
+            Some(Outcome::Skipped)
+        );
+        assert_eq!(list(tmp.path(), &note_str).len(), 1);
     }
 
     #[test]
