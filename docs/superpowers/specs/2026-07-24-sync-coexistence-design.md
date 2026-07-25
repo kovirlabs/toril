@@ -274,12 +274,55 @@ DOM so the gate runs headlessly (§8):
 
 ## 7. Known limitation — normalization inflates the conflict rate
 
-Milkdown normalizes formatting on first save (tight→loose lists, `---`→`***`;
-CLAUDE.md §0). A buffer normalized by Toril and a file written by Obsidian can
-therefore differ on lines *neither human edited*, which raises the conflict rate
-on the first save of an externally-authored note. Line-based merge cannot see
-through this. It is a cost of the WYSIWYG normalization trade-off, not something
-this branch can fix — recorded here so it is not rediscovered as a bug.
+Milkdown reformats on first save, so a buffer normalized by Toril and a file
+written by Obsidian can differ on lines *neither human edited*. Line-based merge
+cannot see through that, which raises the conflict rate on the first save of an
+externally-authored note.
+
+**This was measured, not assumed** (2026-07-25, Milkdown 7.21.1, probe against
+the real `serializer.ts`). The blanket claim in CLAUDE.md §0 — "a cost of the
+WYSIWYG trade-off" — turns out to cover three different causes with very
+different price tags:
+
+| Tier | Constructs | Cause | Fixable? |
+|---|---|---|---|
+| **1 — cosmetic** | `*` vs `-` bullets, `***` vs `---`, ` ``` ` vs `~~~`, table cell padding | `remark-stringify` output options | **Yes** — `remarkStringifyOptionsCtx`, ~5 lines |
+| **2 — upstream bug** | tight→loose lists | Milkdown coercion slip (below) | **Yes** — local `extendSchema` override |
+| **3 — schema-level** | setext headings, indented code blocks, hard-break style, link references + definitions, escaping | ProseMirror's doc model is normalized; no node records its original syntax | **No** — would mean carrying original-markup attrs through every node, against CLAUDE.md §11 |
+
+**Tier 2 is a genuine bug, not a design cost.** Tightness *is* modelled — the
+parser stores `spread` correctly — but two of the four `toMarkdown` sites
+forward the attribute as the **string** `"false"`, which is truthy, so every
+bullet list serializes loose:
+
+```js
+// bullet_list — forwards the raw string  ❌
+state.openNode("list", undefined, { ordered: false, spread: node.attrs.spread })
+// ordered_list — coerces  ✅  (which is why tight ordered lists already survive)
+spread: node.attrs.spread === "true"
+```
+
+A local override restores tight lists, nesting, and `---` byte-stably and
+idempotently. **Caveat found the hard way:** overriding `list_item.toMarkdown`
+naively clobbers GFM's task-list handling and silently drops `- [ ]` checkboxes
+— a §3 data-loss bug. Any fix must preserve `checked` and gate on it.
+
+**Decision — out of scope for this branch.** Tiers 1 + 2 change the canonical
+serialization, which means rewriting every fixture in `tests/roundtrip.test.ts`
+and re-normalizing users' already-saved notes once more. That is its own change
+with its own gate, and folding it in here would make both harder to review. It
+belongs on a precursor branch (`fix/serializer-normalization`) that this branch
+rebases onto, so the merge base starts clean.
+
+**Residual limitation after that precursor lands:** Tier 3 only — rare,
+localized constructs rather than every bullet line in the vault. That is the
+honest remaining cost of the WYSIWYG trade-off.
+
+> The Tier 2 coercion bug affects every Milkdown consumer and has a second,
+> sharper symptom: `schema.nodeFromJSON()` **throws** on any document containing
+> a list, because the attrs declare `validate: "boolean"` while the parser
+> stores strings. An upstream report + patch is drafted for the Milkdown
+> maintainers.
 
 ---
 
