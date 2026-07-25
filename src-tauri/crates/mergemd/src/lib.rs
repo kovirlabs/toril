@@ -49,46 +49,80 @@ struct Change {
 }
 
 /// Project a diff of `base → other` into base-coordinate changes.
-fn changes(base: &[&str], other: &[&str]) -> Vec<Change> {
+///
+/// Positions are derived from a **running cursor**, advanced by list order —
+/// never from a `DiffOp`'s own `old_index` field. `capture_diff_slices` can
+/// emit an `Insert` whose `old_index` is stale: e.g. `base = ["a\n","b\n"]`,
+/// `other = ["b\n","b\n","a\n"]` produces
+/// `[Delete{old_index:0,old_len:1}, Equal{old_index:1,len:1},
+/// Insert{old_index:1,new_len:2}]` — the `Insert` reports `old_index: 1`,
+/// the *start* of the `Equal` that precedes it in the list and consumes
+/// `base[1..2]`, not the position after it. Trusting that field anchors the
+/// insert before the kept line instead of after it, scrambling the output
+/// even though the two surviving (non-`Equal`) changes never numerically
+/// overlap — so a sort-and-check over the filtered list can't see this; the
+/// information was in the dropped `Equal`. A cursor that only advances via
+/// each op's own `old_len`, replayed in the list's own order, doesn't have
+/// that blind spot: it is exactly the position "how much of `base` has this
+/// op list consumed so far", which is what an `Insert` is anchored to.
+fn changes(base: &[&str], other: &[&str]) -> Option<Vec<Change>> {
     let mut out = Vec::new();
+    let mut cursor = 0usize;
     for op in capture_diff_slices(Algorithm::Myers, base, other) {
         match op {
-            DiffOp::Equal { .. } => {}
-            DiffOp::Delete {
-                old_index, old_len, ..
-            } => out.push(Change {
-                base_start: old_index,
-                base_end: old_index + old_len,
-                lines: Vec::new(),
-            }),
+            DiffOp::Equal { len, .. } => {
+                cursor += len;
+            }
+            DiffOp::Delete { old_len, .. } => {
+                out.push(Change {
+                    base_start: cursor,
+                    base_end: cursor + old_len,
+                    lines: Vec::new(),
+                });
+                cursor += old_len;
+            }
             DiffOp::Insert {
-                old_index,
-                new_index,
-                new_len,
-            } => out.push(Change {
-                base_start: old_index,
-                base_end: old_index,
-                lines: other[new_index..new_index + new_len]
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect(),
-            }),
+                new_index, new_len, ..
+            } => {
+                out.push(Change {
+                    base_start: cursor,
+                    base_end: cursor,
+                    lines: other[new_index..new_index + new_len]
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect(),
+                });
+            }
             DiffOp::Replace {
-                old_index,
                 old_len,
                 new_index,
                 new_len,
-            } => out.push(Change {
-                base_start: old_index,
-                base_end: old_index + old_len,
-                lines: other[new_index..new_index + new_len]
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect(),
-            }),
+                ..
+            } => {
+                out.push(Change {
+                    base_start: cursor,
+                    base_end: cursor + old_len,
+                    lines: other[new_index..new_index + new_len]
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect(),
+                });
+                cursor += old_len;
+            }
         }
     }
-    out
+    // Defense in depth: a cursor that only ever advances makes `out` already
+    // non-decreasing by construction, so this should be a no-op. Keep it as
+    // a structural check anyway — if some future op variant or algorithm
+    // change breaks that invariant, fail closed instead of emitting a
+    // scramble.
+    out.sort_by_key(|c| (c.base_start, c.base_end));
+    for pair in out.windows(2) {
+        if pair[1].base_start < pair[0].base_end {
+            return None;
+        }
+    }
+    Some(out)
 }
 
 /// Do two changes touch the same region?
@@ -147,8 +181,12 @@ pub fn merge3(base: &str, mine: &str, theirs: &str) -> Divergence {
     }
 
     let base_lines = split_lines(base);
-    let mine_changes = changes(&base_lines, &split_lines(mine));
-    let theirs_changes = changes(&base_lines, &split_lines(theirs));
+    let (Some(mine_changes), Some(theirs_changes)) = (
+        changes(&base_lines, &split_lines(mine)),
+        changes(&base_lines, &split_lines(theirs)),
+    ) else {
+        return Divergence::Conflict;
+    };
 
     let mut out = String::new();
     let mut pos = 0usize; // how much of base has been emitted, in base lines
@@ -186,6 +224,12 @@ pub fn merge3(base: &str, mine: &str, theirs: &str) -> Divergence {
 
         // Flush unchanged base lines up to the cluster's start.
         while pos < envelope.base_start {
+            // A line without a terminator can only be the last line of a
+            // file. Appending after one would fuse it with what follows,
+            // producing a line neither input wrote — refuse instead.
+            if !out.is_empty() && !out.ends_with('\n') {
+                return Divergence::Conflict;
+            }
             out.push_str(base_lines[pos]);
             pos += 1;
         }
@@ -249,20 +293,33 @@ pub fn merge3(base: &str, mine: &str, theirs: &str) -> Divergence {
                 if a != b {
                     return Divergence::Conflict;
                 }
+                if !out.is_empty() && !out.ends_with('\n') {
+                    return Divergence::Conflict;
+                }
                 out.push_str(&a);
             }
-            (true, false) => out.push_str(&render(
-                &base_lines,
-                &mine_changes[i..mi],
-                envelope.base_start,
-                envelope.base_end,
-            )),
-            (false, true) => out.push_str(&render(
-                &base_lines,
-                &theirs_changes[j..tj],
-                envelope.base_start,
-                envelope.base_end,
-            )),
+            (true, false) => {
+                if !out.is_empty() && !out.ends_with('\n') {
+                    return Divergence::Conflict;
+                }
+                out.push_str(&render(
+                    &base_lines,
+                    &mine_changes[i..mi],
+                    envelope.base_start,
+                    envelope.base_end,
+                ));
+            }
+            (false, true) => {
+                if !out.is_empty() && !out.ends_with('\n') {
+                    return Divergence::Conflict;
+                }
+                out.push_str(&render(
+                    &base_lines,
+                    &theirs_changes[j..tj],
+                    envelope.base_start,
+                    envelope.base_end,
+                ));
+            }
             (false, false) => {
                 // Unreachable: the seed above always advances `mi` or `tj`
                 // immediately. Kept as a safe bail rather than an
@@ -278,6 +335,9 @@ pub fn merge3(base: &str, mine: &str, theirs: &str) -> Divergence {
     }
 
     while pos < base_lines.len() {
+        if !out.is_empty() && !out.ends_with('\n') {
+            return Divergence::Conflict;
+        }
         out.push_str(base_lines[pos]);
         pos += 1;
     }
@@ -394,6 +454,44 @@ mod tests {
         assert_eq!(
             merge3(base, mine, theirs),
             Divergence::Merged("M\nZ\n".to_string())
+        );
+    }
+
+    #[test]
+    fn an_identical_edit_is_never_scrambled() {
+        // Regression: diff ops came back out of base order and the projection
+        // reordered content. Both sides made the SAME edit — the only correct
+        // answers are that edit, or Conflict. Never a permutation of it.
+        let base = "a\nb\n";
+        let same = "b\nb\na\n";
+        match merge3(base, same, same) {
+            Divergence::Merged(text) => assert_eq!(text, same),
+            Divergence::Conflict => {}
+            other => panic!("expected Merged(same) or Conflict, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_unterminated_last_line_never_fuses_with_the_other_side() {
+        // Regression: produced "a\nb\ncd\n" — the line "cd" exists in neither
+        // input. Conflict is the only safe answer here.
+        let base = "a\nb\nc\n";
+        let mine = "a\nb\nc";
+        let theirs = "a\nb\nc\nd\n";
+        assert_eq!(merge3(base, mine, theirs), Divergence::Conflict);
+        assert_eq!(merge3(base, theirs, mine), Divergence::Conflict);
+    }
+
+    #[test]
+    fn an_unterminated_final_line_is_still_allowed_to_merge() {
+        // The control for the asymmetry: ending without a terminator is fine.
+        // Only appending AFTER an unterminated line is forbidden.
+        let base = "a\nb";
+        let mine = "a CHANGED\nb";
+        let theirs = "a\nb CHANGED";
+        assert_eq!(
+            merge3(base, mine, theirs),
+            Divergence::Merged("a CHANGED\nb CHANGED".to_string())
         );
     }
 }
