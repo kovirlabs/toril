@@ -9,5 +9,13 @@ allowBuilds:
 overrides:
   undici@>=7.0.0 <7.28.0: 7.28.0
   # Milkdown pulls dompurify ^3.2.5 transitively; force the whole tree to the
-  # patched 3.4.11 (clears the GHSA-* dompurify alerts). Our direct dep is also 3.4.11.
-  dompurify@<3.4.11: 3.4.11
+  # patched 3.4.12, which fixes GHSA-c2j3-45gr-mqc4 (CUSTOM_ELEMENT_HANDLING
+  # bypasses afterSanitizeElements for allowed custom elements). DOMPurify is
+  # Toril's whole XSS defense (§3.3), so a sanitizer bypass matters here more
+  # than its "low" rating suggests. Our direct dep is also 3.4.12.
+  dompurify@<3.4.12: 3.4.12
+  # postcss arrives transitively twice over — via vite, and via
+  # @milkdown/components -> vue -> @vue/compiler-sfc. 8.5.18 fixes
+  # GHSA-r28c-9q8g-f849 (path traversal in sourceMappingURL auto-loading leaks
+  # arbitrary .map files). Drop once both parents' ranges move past it.
+  postcss@<8.5.18: 8.5.18

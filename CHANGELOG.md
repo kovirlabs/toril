@@ -11,6 +11,17 @@ GitHub Release notes plus the commits that shipped in it.
 
 ## [Unreleased]
 
+### Security
+- **DOMPurify 3.4.11 → 3.4.12** — fixes GHSA-c2j3-45gr-mqc4, where
+  `CUSTOM_ELEMENT_HANDLING` let an allowed custom element bypass the
+  `afterSanitizeElements` hook. Rated low upstream, but DOMPurify *is* Toril's
+  defense against hostile markup in an opened file (§3.3), so a sanitizer bypass
+  carries more weight here than the rating suggests.
+- **PostCSS forced to 8.5.18** — fixes GHSA-r28c-9q8g-f849 (high), a path
+  traversal in previous-source-map auto-loading that could disclose arbitrary
+  `.map` files. It arrives transitively twice over: via Vite, and via
+  `@milkdown/components` → Vue → `@vue/compiler-sfc`.
+
 ### Added
 - **Local version history** (ROADMAP Movement I.3). Every save now records a
   restorable version of the note, browsable in a new history panel (toggle in the
