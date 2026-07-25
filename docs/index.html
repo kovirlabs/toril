@@ -54,7 +54,8 @@
 }
 </script>
 
-<link rel="icon" type="image/png" href="Toril_Icon.png">
+<!-- 384px mark for the page; the full-size icon is kept for og:image only -->
+<link rel="icon" type="image/png" href="Toril_Mark.png">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -175,6 +176,14 @@ h2{font-family:var(--font-display);font-weight:600;font-size:clamp(2rem,5vw,2.9r
 .intro h2{font-size:clamp(1.8rem,4.4vw,2.6rem)}
 .intro .lead{margin:0 auto;color:var(--text-muted)}
 
+/* ============ SCREENSHOT ============ */
+.shot{padding:0 0 96px}
+.shot figure{margin:0}
+.shot img{width:100%;height:auto;display:block;border-radius:var(--radius);
+  border:1px solid var(--border);box-shadow:0 30px 70px -30px rgba(2,41,62,.9)}
+.shot figcaption{margin-top:14px;text-align:center;font-family:var(--font-mono);
+  font-size:.82rem;color:var(--text-dim)}
+
 /* ============ FEATURES ============ */
 .feat-head{text-align:center;max-width:680px;margin:0 auto 56px}
 .feat-head .lead{margin:0 auto}
@@ -193,6 +202,23 @@ h2{font-family:var(--font-display);font-weight:600;font-size:clamp(2rem,5vw,2.9r
 .card code{font-family:var(--font-mono);font-size:.85em;background:var(--surface-2);
   padding:1px 6px;border-radius:5px;color:var(--pale-tint)}
 
+/* ============ LIMITS (the honest half) ============ */
+.limits .wrap{max-width:1000px}
+.limits .feat-head{margin-bottom:44px}
+.limits .grid{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+.limits .card{background:var(--surface);border-top-width:3px}
+.limits .card.design{border-top-color:var(--cyan-soft)}
+.limits .card.pending{border-top-color:var(--gold)}
+.limits .card:hover{transform:none;box-shadow:none;border-color:var(--border)}
+.limits .card.design:hover{border-top-color:var(--cyan-soft)}
+.limits .card.pending:hover{border-top-color:var(--gold)}
+.limits ul{list-style:none;margin-top:4px}
+.limits li{position:relative;padding-left:22px;margin-bottom:12px;
+  font-size:.98rem;color:var(--text-muted)}
+.limits li::before{position:absolute;left:0;top:-1px;font-family:var(--font-mono);font-size:1rem}
+.limits .design li::before{content:"—";color:var(--cyan-soft)}
+.limits .pending li::before{content:"+";color:var(--gold)}
+
 /* ============ WHY (editorial band) ============ */
 .why{background:linear-gradient(150deg,#0A3D47,#072733 70%,#08171E);
   border-top:1px solid var(--border);border-bottom:1px solid var(--border);position:relative;overflow:hidden}
@@ -203,6 +229,9 @@ h2{font-family:var(--font-display);font-weight:600;font-size:clamp(2rem,5vw,2.9r
 .why h2{color:var(--ink-white)}
 .why p{font-size:1.2rem;color:var(--pale-tint);margin-bottom:16px}
 .why .pen{font-family:var(--font-display);font-style:italic;color:var(--gold)}
+/* the name story is an aside now, not the argument — keep it subordinate */
+.why p.note{font-size:1rem;color:var(--text-dim);margin-top:26px;
+  padding-top:20px;border-top:1px solid rgba(30,67,80,.7)}
 
 /* ============ BUILT-ON ============ */
 .builton{text-align:center}
@@ -262,7 +291,7 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:54px 0 40
 <!-- NAV -->
 <nav>
   <div class="wrap nav-in">
-    <a class="brand" href="#top"><img src="Toril_Icon.png" alt="Toril icon">Toril</a>
+    <a class="brand" href="#top"><img src="Toril_Mark.png" width="30" height="30" alt="">Toril</a>
     <div class="nav-links">
       <a href="#features">Features</a>
       <a href="#limits">Limits</a>
@@ -284,7 +313,8 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:54px 0 40
   <span class="bracket tr">( )</span>
   <div class="hero-in">
     <div class="eyebrow">Markdown editor · Tauri + Rust</div>
-    <img class="mark" src="Toril_Icon.png" alt="Toril — a bull's head fused with a fountain-pen nib">
+    <img class="mark" src="Toril_Mark.png" width="148" height="148" fetchpriority="high"
+         alt="Toril — a bull's head fused with a fountain-pen nib">
     <h1>Toril</h1>
     <div class="tag">A desktop markdown editor.</div>
     <p class="sub">Your markdown renders in place as you type — no separate preview pane — and your files stay plain <code>.md</code> in ordinary folders, so a workspace can be a live Obsidian vault.</p>
@@ -301,6 +331,17 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:54px 0 40
   <div class="wrap reveal">
     <h2>It is a tool, and it does one job.</h2>
     <p class="lead">Toril edits markdown. The editing surface is the rendered surface, so there is no split pane and nothing to keep in sync. It is built on Tauri and Rust, which means a native binary rather than a bundled browser. It is beta software: the editor works and is used daily, and there are still rough edges. Keep backups of anything important.</p>
+  </div>
+</section>
+
+<!-- SCREENSHOT -->
+<section class="shot">
+  <div class="wrap reveal">
+    <figure>
+      <img src="UI-Screenshot.png" width="2188" height="1824" loading="lazy" decoding="async"
+           alt="Toril editing a Markdown document: a workspace sidebar on the left, a document tab bar, and headings, lists and code rendered inline in the editor.">
+      <figcaption>Toril editing a document — the rendered surface is the editing surface.</figcaption>
+    </figure>
   </div>
 </section>
 
@@ -367,30 +408,30 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:54px 0 40
 </section>
 
 <!-- WHAT IT DOESN'T DO -->
-<section class="intro" id="limits">
-  <div class="wrap reveal" style="max-width:1000px;text-align:left">
-    <div class="feat-head reveal" style="text-align:center">
+<section class="intro limits" id="limits">
+  <div class="wrap reveal">
+    <div class="feat-head">
       <div class="kicker">Just as important</div>
       <h2>What it doesn't do</h2>
       <p class="lead">Some of this is deliberate and permanent. Some is simply not built yet. The difference matters, so they are listed apart.</p>
     </div>
     <div class="grid">
-      <div class="card reveal">
+      <div class="card design reveal">
         <h3>By design</h3>
-        <p>
-          No account, no cloud sync, no backend, no telemetry — Toril does not phone home.<br><br>
-          No proprietary container or sidecar database.<br><br>
-          No plugin system, and none planned.<br><br>
-          No mobile app.
-        </p>
+        <ul>
+          <li>No account, no cloud sync, no backend, no telemetry — Toril does not phone home.</li>
+          <li>No proprietary container or sidecar database.</li>
+          <li>No plugin system, and none planned.</li>
+          <li>No mobile app.</li>
+        </ul>
       </div>
-      <div class="card reveal">
+      <div class="card pending reveal">
         <h3>Not yet built</h3>
-        <p>
-          Math rendering (KaTeX), PDF export, and in-editor YAML front matter.<br><br>
-          Search across a whole vault, wikilinks, and backlinks.<br><br>
-          Signed installers — Windows SmartScreen and macOS Gatekeeper will warn on first run. That is expected for an unsigned build, not a sign of a problem.
-        </p>
+        <ul>
+          <li>Math rendering (KaTeX), PDF export, and in-editor YAML front matter.</li>
+          <li>Search across a whole vault, wikilinks, and backlinks.</li>
+          <li>Signed installers — Windows SmartScreen and macOS Gatekeeper warn on first run. That is expected for an unsigned build, not a sign of a problem.</li>
+        </ul>
       </div>
     </div>
   </div>
@@ -404,7 +445,7 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:54px 0 40
     <h2>Data safety first, then features.</h2>
     <p>Current work is a floor to stand on: autosave and crash recovery, local version history, safe delete, and coexisting cleanly with folders that Obsidian or a sync client is also writing to. Search, wikilinks, and backlinks come after that — a tool you keep notes in has to be trustworthy before it is clever.</p>
     <p>An AI assist layer is planned further out, built around your own API key or a local model. None of it is written yet, and nothing in Toril talks to a network today.</p>
-    <p style="font-size:1rem;color:var(--text-dim)">The name: in the Spanish bullring, <span class="pen">el toril</span> is the pen where the bull waits before it charges — a nod to Tauri (the bull) and to writing (the pen).</p>
+    <p class="note">The name: in the Spanish bullring, <span class="pen">el toril</span> is the pen where the bull waits before it charges — a nod to Tauri (the bull) and to writing (the pen).</p>
   </div>
 </section>
 
@@ -438,7 +479,7 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:54px 0 40
 <footer>
   <div class="wrap foot-in">
     <div class="foot-brand">
-      <a class="brand" href="#top"><img src="Toril_Icon.png" alt="Toril icon">Toril</a>
+      <a class="brand" href="#top"><img src="Toril_Mark.png" width="30" height="30" alt="">Toril</a>
       <p>A desktop markdown editor. Your files stay plain <code>.md</code> in ordinary folders.</p>
     </div>
     <div class="foot-links">
