@@ -456,7 +456,11 @@ Fixes Tier 2 and adds the fixture class that would have caught it.
 - Consumes: `useCanonical(editor)` from Task 2; the path A/B decision from Task 1.
 - Produces: a `preserved` fixture record in `roundtrip.test.ts` that later tasks extend.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Delete the test that asserts the bug**
+
+In `tests/roundtrip.test.ts`, delete the whole `it("normalizes formatting without losing content", ...)` block (including its leading comment, currently around lines 81-92). Its assertion — `tight → loose` — is the bug written down as a requirement, and this task makes it false. Deleting it here rather than later is what keeps this task's commit green; tight lists are covered by `preserved.tightBullets` below.
+
+- [ ] **Step 2: Write the failing test**
 
 In `tests/roundtrip.test.ts`, add a second fixture record directly below the existing `fixtures` object:
 
@@ -492,12 +496,12 @@ And add the block that exercises it, inside the existing `describe`:
   }
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [ ] **Step 3: Run it to verify it fails**
 
 Run: `pnpm vitest run tests/roundtrip.test.ts -t "preserves human-authored input"`
 Expected: FAIL on `tightBullets`, `nestedTight`, `tightTaskList`, and `mixedNested` — each received a loose list with blank lines between items. `looseBullets`, `tightOrdered`, `looseTaskList`, `thematicBreak`, and both emphasis fixtures should already PASS.
 
-- [ ] **Step 3 (path A): Add the tight-list plugin**
+- [ ] **Step 4 (path A): Add the tight-list plugin**
 
 Only if Task 1 chose path A. In `src/editor/canonical.ts`, add the imports:
 
@@ -569,7 +573,7 @@ export function useCanonical(editor: Editor): Editor {
 }
 ```
 
-- [ ] **Step 3 (path B): Nothing to implement**
+- [ ] **Step 4 (path B): Nothing to implement**
 
 Only if Task 1 chose path B. The `pnpm patch` committed in Task 1 Step 6 already fixes this. Add a comment to `src/editor/canonical.ts` above `useCanonical` recording where the fix lives, so the next reader does not go looking for it:
 
@@ -582,17 +586,17 @@ Only if Task 1 chose path B. The `pnpm patch` committed in Task 1 Step 6 already
 // fixtures in tests/roundtrip.test.ts keep the behavior honest.
 ```
 
-- [ ] **Step 4: Run the preservation tests to verify they pass**
+- [ ] **Step 5: Run the preservation tests to verify they pass**
 
 Run: `pnpm vitest run tests/roundtrip.test.ts -t "preserves human-authored input"`
 Expected: all 10 PASS.
 
-- [ ] **Step 5: Run the full suite and typecheck**
+- [ ] **Step 6: Run the full suite and typecheck**
 
 Run: `pnpm test && pnpm typecheck`
-Expected: all pass. If `tests/roundtrip.test.ts`'s tight→loose normalization test (line ~84) now fails, that is correct and expected — Task 4 inverts it. Leave it failing only if you are proceeding directly to Task 4; otherwise temporarily skip it with `it.skip` and remove the skip in Task 4.
+Expected: all pass, with no skipped tests. The test that asserted tight→loose was deleted in Step 1, so the suite must be fully green here.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add src/editor/canonical.ts tests/roundtrip.test.ts
@@ -613,7 +617,7 @@ bug touching every bullet line in a vault stayed green through 133 tests."
 
 ## Task 4: Pin the residual normalizations
 
-Converts the remaining Tier 3 reformatting from prose into executable expectations, and inverts the test that asserted the bug.
+Converts the remaining Tier 3 reformatting from prose into executable expectations. (The test that asserted tight→loose was already deleted in Task 3 Step 1.)
 
 **Files:**
 - Modify: `tests/roundtrip.test.ts`
@@ -622,11 +626,7 @@ Converts the remaining Tier 3 reformatting from prose into executable expectatio
 - Consumes: `roundtrip()` and the `preserved` record from Task 3.
 - Produces: a `normalized` fixture record — the executable form of spec §7's residual list, which `feat/sync-coexistence` reasons about.
 
-- [ ] **Step 1: Delete the inverted test**
-
-In `tests/roundtrip.test.ts`, delete the whole `it("normalizes formatting without losing content", ...)` block (lines ~81-92 including its leading comment). Its assertion — `tight → loose` — is the bug written down as a requirement, and tight lists are now covered by `preserved.tightBullets`.
-
-- [ ] **Step 2: Write the failing test**
+- [ ] **Step 1: Write the failing test**
 
 Add a third fixture record below `preserved`:
 
@@ -669,12 +669,12 @@ And the block exercising it, replacing the emoji test (lines ~94-100), which thi
   }
 ```
 
-- [ ] **Step 3: Run it**
+- [ ] **Step 2: Run it**
 
 Run: `pnpm vitest run tests/roundtrip.test.ts -t "normalizes to an exact"`
 Expected: all 11 PASS. These pin behavior that already exists, so failures mean a measurement was wrong — investigate the actual output rather than editing the expectation to match.
 
-- [ ] **Step 4: Update the file header comment**
+- [ ] **Step 3: Update the file header comment**
 
 The header (lines 1-14) describes two properties and one fixture class. Replace it:
 
@@ -701,12 +701,12 @@ The header (lines 1-14) describes two properties and one fixture class. Replace 
 // can reformat a user's notes.
 ```
 
-- [ ] **Step 5: Run the full suite and typecheck**
+- [ ] **Step 4: Run the full suite and typecheck**
 
 Run: `pnpm test && pnpm typecheck`
 Expected: all pass, no skipped tests remaining.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add tests/roundtrip.test.ts
