@@ -1,7 +1,6 @@
 # Toril — Roadmap: The Next Horizon
 
-> *The bull, penned — now learning to roam.* This is the forward plan: how Toril
-> goes from a principled single-document editor to a notes **system** people live in.
+> The forward plan: how Toril goes from a single-document editor to a notes system.
 
 This document is the source of truth for **what we build next and in what order**.
 The shipped past lives in [`CHANGELOG.md`](./CHANGELOG.md); the durable contract
@@ -12,31 +11,27 @@ move its story to the changelog and tick it here.
 
 ## 0. The thesis (why this roadmap looks the way it does)
 
-We are **not** trying to beat Apple Notes at being Apple Notes. We lose that fight
-by default: a free solo project can't match preinstalled ubiquity, invisible iCloud
-sync, Apple Pencil, or the system share sheet. Chasing it would also cost us our
-identity.
+Toril is not trying to replace Apple Notes on its own terms. A solo project can't
+match preinstalled ubiquity, invisible iCloud sync, Apple Pencil, or the system
+share sheet, and chasing them would cost the thing that makes Toril worth using.
 
-Instead Toril competes where Apple Notes is *weak* — and where it doesn't exist at
-all (Windows, Linux). The winnable arena is **Obsidian / Typora / iA Writer / Bear /
-Logseq / Zettlr** (and the now-abandoned MarkText, whose users are up for grabs).
-The pitch:
-
-> **The local-first, plain-files, AI-native writing tool you defect to when you
-> outgrow Apple Notes.** Real markdown. Your files on your disk, no cloud, no
-> lock-in. And an AI layer no default notes app will give you.
+The useful comparison set is Obsidian, Typora, iA Writer, Bear, Logseq, and Zettlr
+— plus MarkText, which is unmaintained, so people who liked it need somewhere to
+go. Toril's position within that set: real markdown, plain files on your own disk,
+no cloud and no lock-in, and eventually an AI layer that runs on your own key or a
+local model.
 
 Two facts drive everything below:
 
-1. **Sync is the gravity well of mainstream adoption** — but a plain-files app gets
-   it almost for free by living in a synced folder (iCloud Drive / OneDrive /
+1. **Sync is what most people mean by "does it work everywhere"** — and a
+   plain-files app gets most of it by living in a synced folder (iCloud Drive / OneDrive /
    Dropbox / Syncthing / Git). We don't build sync infrastructure; we become
    *flawless at coexisting with folder-sync*. That is a §3 data-safety problem, not
    a server problem.
-2. **AI is the unfair advantage.** It's the one thing neither Apple Notes nor stock
-   Obsidian does well, and the reason the HTML-as-first-class work (v0.1.1) already
-   exists. It's the headline differentiator — but it ships *last* among the pillars,
-   because it must stand on a bulletproof data-safety floor.
+2. **AI is the clearest point of difference** — neither Apple Notes nor stock
+   Obsidian does it well, and it is why the HTML-as-first-class work (v0.1.1)
+   already exists. It ships *last* among the pillars, because every AI edit writes
+   to a file and therefore needs the data-safety floor underneath it first.
 
 ---
 
@@ -51,16 +46,24 @@ It is a fine **editor**. It is not yet a **notes system** — no global search, 
 quick switcher, no links, no tags, no version history, no sync conflict handling,
 no AI. That gap is this roadmap.
 
-> **Status (2026-07-08).** The foundation above — plus file-association / double-click
+> **Status (2026-07-25).** The foundation above — plus file-association / double-click
 > open — shipped through **`v1.0.0-beta.1`** (see `CHANGELOG.md`). **Movement I,
 > branches 1–3 are complete** (autosave + crash-recovery journal; safe-delete-to-trash;
-> local version history); the remaining Movement I–V branches are unstarted.
-> **▶ Pick up at Movement I, branch 4 — `feat/sync-coexistence`.**
+> local version history). Branches 4–5 and Movements II–V are unstarted.
+> **▶ Pick up at Movement I, branch 4 — `feat/sync-coexistence`.** It has an approved
+> design spec (`docs/superpowers/specs/2026-07-24-sync-coexistence-design.md`) and no
+> implementation code; its §7 still needs correcting after the precursor below.
+>
+> *Landed since, outside the movement ladder:* a serializer-normalization precursor
+> (canonical markdown now matches Obsidian — `-` bullets, `---` rules, tight lists
+> preserved), which exists to keep branch 4's 3-way merge from drowning in
+> reformatting noise; CI running the headless gates on Ubuntu and Windows for every
+> pull request; and the GitHub community-standards docs.
 >
 > *Version note:* the `v1.0.0-beta.1` tag ran **ahead** of the indicative ladder in §2
-> (that ladder is guidance, not gospel). The data-safety floor (Movement I) is still
-> unbuilt, so the project is functionally pre-`v0.2` despite the tag — keep §3's
-> trust-before-reach rule in mind before leaning on the version number.
+> (that ladder is guidance, not gospel). Movement I is not finished, so the project is
+> functionally pre-`v0.2` despite the tag — keep §3's trust-before-reach rule in mind
+> before leaning on the version number.
 
 ---
 
@@ -163,8 +166,8 @@ nice in a synced folder. This movement is also the prerequisite for the AI wedge
    - *Gate:* `cargo test -p trashbin`.
 
 - [x] **3. `feat/local-version-history`** — content-addressed snapshots of each note
-   on save + a diff/restore panel. **This out-does Apple Notes** and is squarely
-   on-brand. *Store decision (§8) resolved: hand-rolled CAS, not `gix`.*
+   on save + a diff/restore panel. *Store decision (§8) resolved: hand-rolled CAS,
+   not `gix`.*
    - *New crate:* `crates/snapshots` — hand-rolled content-addressed blob store
      (sha2 + flate2/miniz_oxide + serde; pure-Rust, C-free); on-save dedup +
      time-decay thinning + crash-safe `rekey`.
@@ -206,14 +209,14 @@ nice in a synced folder. This movement is also the prerequisite for the AI wedge
 
 ### Movement II — From Editor to Notes System · *the daily-driver core*
 
-**Why:** this is what turns a pile of files into a second brain — and it's the
-Obsidian-compatible wedge. After this, Toril is something you *use every day*, not
-something you *tried once*.
+**Why:** a folder of files only becomes a notes system once you can find things in
+it and move between them. Search, a quick switcher, and links are what make an
+editor something you keep using rather than something you tried.
 
 **Branches**
 
-- [ ] **6. `feat/vault-search`** — global find-in-files with a results panel; **the #1 felt
-   gap.** Incremental index updated on watcher events.
+- [ ] **6. `feat/vault-search`** — global find-in-files with a results panel. The largest
+   gap between Toril and a notes system today. Incremental index updated on watcher events.
    - *New crate:* `crates/vaultsearch` — full-text index on **`tantivy`** (pure-Rust,
      Quickwit-maintained); sibling to `vaultscan` so scan/index logic stays
      unit-testable.
@@ -222,16 +225,16 @@ something you *tried once*.
    - *Gate:* `cargo test -p vaultsearch` (index → query → rank) + a panel test.
 
 - [ ] **7. `feat/command-palette`** — quick switcher (fuzzy-open any note) + command palette
-   (`Ctrl/Cmd-P` / `Ctrl-K`) running every editor/menu action. The power-user muscle
-   memory whose absence is felt instantly.
+   (`Ctrl/Cmd-P` / `Ctrl-K`) running every editor/menu action. Anyone coming from
+   VS Code, Obsidian, or Sublime reaches for this within minutes.
    - *Touches:* `src/ui/palette.ts`; fuzzy ranking via **`nucleo`** (Helix team) exposed
      through a tiny command, or a pure-TS matcher for the file list.
    - *Gate:* `tests/palette.test.ts` (fuzzy rank + command dispatch parity with menu).
    - *Depends on:* `vaultsearch` for file ranking.
 
 - [ ] **8. `feat/wikilinks-backlinks`** — `[[wikilink]]` with `[[`-autocomplete + a backlinks
-   panel. **The stickiest feature in modern note-taking and our strongest Obsidian-compat
-   play.**
+   panel. The main thing that makes a folder of notes navigable, and it is the syntax
+   Obsidian already uses, so vaults stay readable in both.
    - *New crate:* `crates/linkgraph` — parse `[[links]]`, resolve to files, maintain a
      backlink index; updates on watcher events.
    - *Touches:* a Milkdown `$node`/`$inputRule` for the link + autocomplete (canonical,
@@ -264,11 +267,11 @@ something you *tried once*.
 
 ---
 
-### Movement III — Writing Craft · *win the focus-writer fight*
+### Movement III — Writing Craft · *the editing surface itself*
 
-**Why:** you explicitly want a *high-focus writing editor*. This is the iA Writer /
-Typora lane — mostly frontend, cheap to build, very high perceived quality. It's what
-makes Toril *feel premium* and gives reviewers something to film.
+**Why:** this is the iA Writer / Typora lane — syntax highlighting, math, diagrams,
+and the focus modes. Mostly frontend, comparatively cheap, and it is the difference
+between an editor that works and one that is pleasant to spend hours in.
 
 **Branches**
 
@@ -301,7 +304,7 @@ makes Toril *feel premium* and gives reviewers something to film.
     - *Gate:* extend `statusbar.test.ts`.
 
 - [ ] **18. `feat/daily-notes-templates`** — daily-note creation + a template system (variables
-    like `{{date}}`, `{{title}}`). Drives habitual daily use.
+    like `{{date}}`, `{{title}}`).
     - *Touches:* `src/ui/templates.ts`; a tiny TS template engine (no heavy dep).
     - *Gate:* `tests/templates.test.ts`.
 
@@ -314,16 +317,16 @@ makes Toril *feel premium* and gives reviewers something to film.
       `styles.css`, `sanitize.ts` (scoped user CSS).
     - *Gate:* extend `toolbar.test.ts` + `security.test.ts` (user CSS can't break the
       sanitize boundary).
-    - [ ] **⬢ RELEASE `v0.6.0-beta`** — *"A joy to write in."*
+    - [ ] **⬢ RELEASE `v0.6.0-beta`** — the writing surface is finished.
 
 ---
 
-### Movement IV — The AI Wedge · *the unfair advantage*
+### Movement IV — The AI Layer · *assistance that writes to your files*
 
-**Why:** the differentiator. This is what makes people choose Toril *over* the
-incumbents, not merely *instead of* MarkText — and it's why HTML-as-first-class already
-exists. It ships after the trust floor (Movement I) because **every AI edit takes a
-snapshot first** and writes through the canonical serializer.
+**Why:** the clearest point of difference against the incumbents, and the reason
+HTML-as-first-class already exists. It ships after the trust floor (Movement I) for
+a concrete reason: **every AI edit takes a snapshot first** and writes through the
+canonical serializer. Without that, an assistant editing your notes is a liability.
 
 **Branches**
 
@@ -340,7 +343,7 @@ snapshot first** and writes through the canonical serializer.
       protected. No telemetry.
 
 - [ ] **21. `feat/vault-rag-chat`** — chat-with-your-vault: local embeddings + semantic search
-    + Q&A over the user's notes. **Almost nobody does this free *and* local.**
+    + Q&A over the user's notes — free, and local if you point it at Ollama.
     - *New crate:* `crates/embedindex` — embeddings via Ollama (no bundled model, keeps
       §2 clean) + a small vector store (**`instant-distance`** HNSW, or brute-force cosine
       for small vaults; keep it pluggable).
@@ -355,14 +358,14 @@ snapshot first** and writes through the canonical serializer.
     "AI assistants emit rich content into my editor."
     - *§3:* agent writes are sandboxed to the vault, atomic, snapshotted, and surfaced in
       version history.
-    - [ ] **⬢ RELEASE `v0.8.0-beta`** — *"Your notes, with Claude inside."*
+    - [ ] **⬢ RELEASE `v0.8.0-beta`** — AI assistance, on your own key or a local model.
 
 ---
 
 ### Movement V — Reach · *scale, polish, and the mobile bet*
 
-**Why:** the long-horizon work that takes Toril from "great for the niche" to "for
-everyone," culminating in `v1.0`.
+**Why:** the long-horizon work — performance at scale, accessibility, and mobile —
+that has to land before a `v1.0` means anything.
 
 **Branches**
 
@@ -376,19 +379,19 @@ everyone," culminating in `v1.0`.
     - *Gate:* `vaultscan` benchmark/fixture at thousands of files; a large-file guard test.
 
 - [ ] **26. `feat/a11y-i18n`** — accessibility pass (keyboard nav, ARIA, screen-reader) +
-    localization scaffolding. Matters for "mainstream" and is a quiet credibility signal.
+    localization scaffolding.
 
 - [ ] **27. `feat/encryption-locked-notes`** — opt-in per-note encryption via the **`age`**
     crate (pure-Rust) for "locked notes" parity. *Eyes open:* `.md.age` breaks
     Obsidian-compat for those notes — offer it, never default it.
     - *Gate:* `cargo test -p` (encrypt → decrypt round-trip; wrong-key fails closed).
 
-- [ ] **28. `feat/mobile-ios-android`** — the big bet, on Tauri 2 mobile (the
+- [ ] **28. `feat/mobile-ios-android`** — the largest single increment here, on Tauri 2 mobile (the
     `tauri::mobile_entry_point` hook is already latent). Touch UI, mobile Milkdown UX,
     and the iOS file-sandbox reality (lean on the Files app / iCloud Drive container;
     "plain files anywhere" is harder there — be honest about it). A quarter of work, not
     a weekend.
-    - [ ] **⬢ RELEASE `v1.0.0`** — *Toril, for everyone who outgrew their notes app.*
+    - [ ] **⬢ RELEASE `v1.0.0`**
 
 ---
 
@@ -427,7 +430,7 @@ All follow the `crates/*` pattern: webview-free, unit-tested, healthy pure-Rust 
 | Crate | Job | Key dep (healthy) | Branch |
 |---|---|---|---|
 | `trashbin` | Soft-delete + restore (atomic) | — | `feat/safe-delete-trash` |
-| `snapshots` | Content-addressed local version history | `gix` (pure-Rust) | `feat/local-version-history` |
+| `snapshots` | Content-addressed local version history | hand-rolled (`sha2` + `flate2`); see §8 | `feat/local-version-history` |
 | `mergemd` | 3-way markdown merge + conflict files | `similar` | `feat/sync-coexistence` |
 | `vaultsearch` | Incremental full-text vault index | `tantivy` | `feat/vault-search` |
 | `linkgraph` | `[[link]]`/`#tag` parse + backlink index | hand-rolled / `pulldown-cmark` | `feat/wikilinks-backlinks` |
@@ -441,11 +444,11 @@ Secrets: **`keyring`** crate (OS keychain) for AI provider keys.
 
 ## 7. The single most important sequencing rule
 
-**Trust before reach.** Movement I (data-safety) gates everything: it makes the app
-recommendable for daily use *and* it's the floor the AI wedge stands on. Build the floor
-before the differentiators, and let the strongest story — *local-first, plain files,
-AI-native, and it never loses your work* — come together before leaning on it. Everything
-else is execution.
+**Trust before reach.** Movement I gates everything. It is what makes the app
+recommendable for daily use, and it is the floor the AI layer stands on — an
+assistant that edits your files is only safe on top of snapshots and atomic writes.
+Build the floor before the differentiators, and don't promote the app past what the
+floor supports. Everything else is execution.
 
 ---
 
