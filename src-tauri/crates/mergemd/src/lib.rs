@@ -703,7 +703,18 @@ mod tests {
                 }
             }
         }
-        v.concat()
+        let mut s = v.concat();
+        // One document in four loses its trailing terminator. Without this the
+        // generator cannot produce an unterminated final line, so the fusion class
+        // that shape enables — a line glued from two sides, present in neither —
+        // would go untested by this property and rest on one regression alone.
+        if rng.pick(4) == 0 && s.ends_with('\n') {
+            s.pop();
+            if s.ends_with('\r') {
+                s.pop();
+            }
+        }
+        s
     }
 
     #[test]
