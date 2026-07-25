@@ -35,9 +35,12 @@ the feature-by-feature record.
 - **PDF export** — deferred (§7); HTML export → browser "Save as PDF" is the manual path.
 - **Source / Typewriter / Focus edit modes** — *dropped as low-value* (user decision, 2026-05-26), not
   deferred-pending. Revisit only on explicit demand.
-- **On-device GUI verification** — every dialog/menu/webview flow is unverified here (this box has no
-  platform webview; the app crate can't even link). Logic layers are gated headlessly. Verify with
-  `pnpm tauri dev` on a webview-capable machine.
+- **Interactive GUI verification** — what is genuinely unverified is *interactive* behavior: dialogs,
+  menus, and webview flows that need a human driving a window (`pnpm tauri dev`). The **build is not
+  the obstacle** — the dev box has the WebKitGTK deps, so `cargo test --workspace` (app crate
+  included, it links and its tests run) and `cargo clippy --workspace --all-targets` are available
+  and **should be run**, not skipped. Don't assume the Rust side can't be compiled here; check before
+  concluding that. (On a box genuinely missing the webview deps, the fallback in §Commands applies.)
 - Tab switching does **not** preserve per-tab undo history (single shared editor, content swapped).
   Acceptable for now.
 - **An unused link reference definition is deleted on save.** `[ex]: https://example.com` with no
