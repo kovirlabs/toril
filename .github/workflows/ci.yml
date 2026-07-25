@@ -10,6 +10,12 @@ on:
   push:
     branches: [main]
 
+# Least privilege: these jobs only ever read the checkout. Without this the token
+# inherits the repository default, which can be read/write — `release.yml` scopes
+# itself to `contents: write` for the same reason, since it publishes.
+permissions:
+  contents: read
+
 # A force-push to a PR supersedes the run already in flight — cancel it rather
 # than paying for both.
 concurrency:
