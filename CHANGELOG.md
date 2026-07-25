@@ -14,10 +14,10 @@ GitHub Release notes plus the commits that shipped in it.
 ### Changed
 - **Canonical markdown now matches Obsidian.** Toril writes `-` bullets and `---`
   thematic breaks, and no longer converts tight lists to loose ones — a Milkdown
-  bug that forwarded the list `spread` attribute as a truthy string, reported
-  upstream. Notes written by Obsidian or by hand now generally survive an
-  open→save cycle untouched, which matters when the folder is a live vault or is
-  synced by iCloud/OneDrive/Dropbox.
+  bug that forwarded the list `spread` attribute as a truthy string, carried here
+  as a pinned dependency patch until it is fixed upstream. Notes written by
+  Obsidian or by hand now generally survive an open→save cycle untouched, which
+  matters when the folder is a live vault or is synced by iCloud/OneDrive/Dropbox.
 
   **Existing notes re-normalize lazily** — only when you next save a note anyway,
   never in bulk, so nothing rewrites files you did not choose to write. Because

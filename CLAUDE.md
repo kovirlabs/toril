@@ -42,10 +42,10 @@ the feature-by-feature record.
   Acceptable for now.
 
 **Known trade-off:** Toril's canonical form (`src/editor/canonical.ts`) is `-` bullets and `---`
-thematic breaks, matching Obsidian — so most notes survive open→save untouched. What still
-reformats: setext headings, indented code blocks, `~~~` fences, two-space hard breaks, link
-reference definitions, and `*`-authored bullets/rules. Each is pinned to an exact expected output
-by the `normalized` class in `tests/roundtrip.test.ts`. It never drops content and is idempotent —
+thematic breaks, matching Obsidian — so most notes survive open→save untouched. Some constructs
+still reformat (setext headings, indented code blocks, `~~~` fences, two-space hard breaks, link
+reference definitions, `*`-authored bullets/rules and others); the `normalized` class in
+`tests/roundtrip.test.ts` is the authoritative list. It never drops content and is idempotent —
 relevant to Obsidian-vault diffs (§1).
 
 **HTML as a first-class editable format — shipped in v0.1.1-alpha.1.** Open/edit/save `.html`
