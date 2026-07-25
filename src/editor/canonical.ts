@@ -21,6 +21,13 @@ const CANONICAL_STRINGIFY_OPTIONS = {
   rule: "-",
 } as const;
 
+// Tight lists are fixed by patches/@milkdown__preset-commonmark@7.21.1.patch,
+// not here: Milkdown forwards the list `spread` attribute as the string "false"
+// (truthy), so every bullet list serialized loose. An extendSchema override could
+// not chain to the GFM-extended list_item and dropped task-list checkboxes.
+// Remove the patch once Milkdown ships the upstream fix; the `preserved`
+// fixtures in tests/roundtrip.test.ts keep the behavior honest.
+
 /**
  * Apply Toril's canonical markdown form to an editor under construction.
  *

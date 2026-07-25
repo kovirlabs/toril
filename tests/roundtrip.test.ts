@@ -61,11 +61,37 @@ const fixtures: Record<string, string> = {
   emoji: "Ship it 🚀 now\n",
 };
 
+// Human/Obsidian-authored input that must survive a round-trip untouched. This
+// class is the point of the gate: the `fixtures` above are authored in Toril's
+// own canonical form, so they can only ever confirm that canonical input stays
+// canonical — they cannot observe human input being mangled.
+const preserved: Record<string, string> = {
+  tightBullets: "- one\n- two\n- three\n",
+  looseBullets: "- one\n\n- two\n",
+  nestedTight: "- Parent\n  - Child\n  - Child two\n",
+  tightOrdered: "1. First\n2. Second\n",
+  tightTaskList: "- [ ] todo\n- [x] done\n",
+  looseTaskList: "- [ ] todo\n\n- [x] done\n",
+  mixedNested: "- Parent\n  - [ ] child task\n  - plain\n",
+  thematicBreak: "Above.\n\n---\n\nBelow.\n",
+  asteriskEmphasis: "Some *italic* and **bold** text.\n",
+  underscoreEmphasis: "Some _italic_ and __bold__ text.\n",
+};
+
 describe("round-trip fidelity (Phase 1 gate)", () => {
   for (const [name, md] of Object.entries(fixtures)) {
     it(`is canonical & stable: ${name}`, async () => {
       const once = await roundtrip(md);
       expect(once).toBe(md); // (1) lossless on canonical input
+      const twice = await roundtrip(once);
+      expect(twice).toBe(once); // (2) idempotent
+    });
+  }
+
+  for (const [name, md] of Object.entries(preserved)) {
+    it(`preserves human-authored input: ${name}`, async () => {
+      const once = await roundtrip(md);
+      expect(once).toBe(md); // (1) the file is not rewritten
       const twice = await roundtrip(once);
       expect(twice).toBe(once); // (2) idempotent
     });
