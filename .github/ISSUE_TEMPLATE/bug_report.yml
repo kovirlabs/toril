@@ -1,0 +1,113 @@
+name: Bug report
+description: Something in Toril behaves incorrectly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this.
+
+        **If this is a security vulnerability, stop and use
+        [private reporting](https://github.com/kovirlabs/toril/security/advisories/new)
+        instead** — please don't describe it in a public issue. See
+        [SECURITY.md](../blob/main/SECURITY.md).
+
+  - type: checkboxes
+    id: data-safety
+    attributes:
+      label: Did this lose or change your writing?
+      description: >-
+        Toril's first rule is that your notes are the only thing that truly
+        matters. Anything that loses, truncates, or silently reformats note
+        content is triaged ahead of everything else — so please tick this if it
+        applies, even if you're not certain.
+      options:
+        - label: This bug lost, truncated, corrupted, or silently reformatted note content
+        - label: I still have a copy of the affected file (please don't overwrite it)
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you do, what did you expect, and what happened instead?
+      placeholder: |
+        1. Opened a note containing …
+        2. Typed / clicked …
+        3. Expected … but Toril …
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Toril version
+      description: Help → About, or the release you installed. If you built from source, give the commit.
+      placeholder: "v1.0.0-beta.1"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      description: Windows is the primary platform; macOS and Linux build from the same stack but get less testing.
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS
+        - Linux
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install it?
+      options:
+        - Installer from a GitHub release
+        - Built from source
+    validations:
+      required: true
+
+  - type: dropdown
+    id: format
+    attributes:
+      label: Which file format?
+      description: Toril edits both, and they use separate serializers — this narrows it down a lot.
+      options:
+        - Markdown (.md)
+        - HTML (.html)
+        - Both / not sure
+        - Not file-specific
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: folder-context
+    attributes:
+      label: About the folder
+      description: >-
+        Toril is designed to coexist with other tools writing the same files, so
+        this context often explains behavior that looks random.
+      options:
+        - label: The folder is also an Obsidian vault
+        - label: The folder is synced (iCloud Drive, OneDrive, Dropbox, Syncthing, git, …)
+        - label: The file was open in another editor at the same time
+        - label: The folder is on a network share or external drive
+
+  - type: textarea
+    id: sample
+    attributes:
+      label: Sample content
+      description: >-
+        If a specific document triggers it, the smallest version that still
+        reproduces the problem is enormously helpful. Paste it as text rather
+        than a screenshot where you can — exact characters and whitespace often
+        matter.
+      render: markdown
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Screenshots, console output, or anything else you think matters.
