@@ -531,8 +531,9 @@ Add the two overrides above `useCanonical`:
 // coerce with `=== "true"` and are already correct, which is why tight ordered
 // lists and checkboxes already survive.
 //
-// Reported upstream. Delete these two overrides once Milkdown ships the fix; the
-// `preserved` fixtures in tests/roundtrip.test.ts keep the behavior honest.
+// An upstream report is drafted but not yet filed. Delete these two overrides once
+// Milkdown ships the fix; the `preserved` fixtures in tests/roundtrip.test.ts keep
+// the behavior honest.
 const tightBulletList = bulletListSchema.extendSchema((prev) => (ctx) => {
   const base = prev(ctx);
   return {

@@ -84,7 +84,7 @@ const preserved: Record<string, string> = {
   tightTaskList: "- [ ] todo\n- [x] done\n",
   looseTaskList: "- [ ] todo\n\n- [x] done\n",
   mixedNested: "- Parent\n  - [ ] child task\n  - plain\n",
-  thematicBreak: "Above.\n\n---\n\nBelow.\n",
+  thematicBreak: "Above.\n\n---\n\nBelow.\n", // deliberate overlap with `fixtures`
   asteriskEmphasis: "Some *italic* and **bold** text.\n",
   underscoreEmphasis: "Some _italic_ and __bold__ text.\n",
 };
@@ -112,6 +112,19 @@ const normalized: Record<string, [input: string, output: string]> = {
     "A literal asterisk \\* and an underscore\\_in\\_word here.\n",
   ],
   emojiShortcode: ["Hello :smile: world\n", "Hello 😄 world\n"],
+  // An UNUSED link reference definition is DELETED — the one place the rewrite
+  // drops authored bytes rather than reshaping them. Pre-existing remark
+  // behavior, not introduced by the canonical form; tracked in CLAUDE.md §0.
+  unusedLinkDefinition: ["Some text.\n\n[ex]: https://example.com\n", "Some text.\n"],
+  // THE MOST CONSEQUENTIAL ENTRY. Windows is Toril's primary platform (§1), and a
+  // CRLF-authored note has 100% of its lines rewritten to LF on first save — so
+  // this single normalization dominates the conflict rate that feat/sync-coexistence
+  // reasons about, far more than any construct-level reformat below.
+  crlfLineEndings: ["- one\r\n- two\r\n", "- one\n- two\n"],
+  bareAutolink: ["Visit https://example.com today.\n", "Visit <https://example.com> today.\n"],
+  plusBullets: ["+ one\n+ two\n", "- one\n- two\n"],
+  parenOrderedMarker: ["1) one\n2) two\n", "1. one\n2. two\n"],
+  overIndentedNesting: ["- Parent\n    - Child\n", "- Parent\n  - Child\n"],
 };
 
 describe("round-trip fidelity (Phase 1 gate)", () => {

@@ -40,13 +40,22 @@ the feature-by-feature record.
   `pnpm tauri dev` on a webview-capable machine.
 - Tab switching does **not** preserve per-tab undo history (single shared editor, content swapped).
   Acceptable for now.
+- **An unused link reference definition is deleted on save.** `[ex]: https://example.com` with no
+  `[…][ex]` referencing it does not survive a round-trip: nothing in the ProseMirror doc records an
+  unreferenced definition, so remark cannot re-emit it. Pre-existing remark/Milkdown behavior, not
+  introduced by the canonical form. Pinned as `normalized.unusedLinkDefinition` in
+  `tests/roundtrip.test.ts` so it can't drift silently; not being fixed (it would mean carrying
+  unreferenced-definition state through the doc, §11).
 
 **Known trade-off:** Toril's canonical form (`src/editor/canonical.ts`) is `-` bullets and `---`
 thematic breaks, matching Obsidian — so most notes survive open→save untouched. Some constructs
 still reformat (setext headings, indented code blocks, `~~~` fences, two-space hard breaks, link
-reference definitions, `*`-authored bullets/rules and others); the `normalized` class in
-`tests/roundtrip.test.ts` is the authoritative list. It never drops content and is idempotent —
-relevant to Obsidian-vault diffs (§1).
+reference definitions, `*`/`+`-authored bullets, `1)` ordered markers, over-indented nesting, bare
+URLs, and **CRLF line endings → LF**, which rewrites every line of a Windows-authored note); the
+`normalized` class in `tests/roundtrip.test.ts` is the authoritative list — each entry pinned to its
+exact output. The reformatting is idempotent and never drops *rendered* content; the one known
+exception is that an **unused link reference definition is deleted outright** (see the deferred list
+above). Relevant to Obsidian-vault diffs (§1).
 
 **HTML as a first-class editable format — shipped in v0.1.1-alpha.1.** Open/edit/save `.html`
 WYSIWYG alongside `.md`, motivated by AI assistants emitting rich HTML instead of Markdown. The editor
@@ -138,13 +147,29 @@ low-reputation. Before adding one, confirm it isn't flagged `deprecated` (npm / 
 publish history, and comes from a reputable publisher. If a feature's *only* viable dependency is
 unhealthy, **defer the feature** (note it in §0) rather than ship the bad dep.
 
-**One vendored exception — security-patched `glib`.** `src-tauri/third-party/glib/` is gtk-rs `glib`
+**Two patched dependencies — both recorded here, both with a removal condition.** Patching an
+upstream package is allowed only as a documented exception; each one must say what it changes, why,
+and when it goes away.
+
+**1. Security-patched `glib` (vendored).** `src-tauri/third-party/glib/` is gtk-rs `glib`
 0.18.5 vendored verbatim except a one-line fix for **GHSA-wrw7-89jp-8q8g** (a `VariantStrIter`
 NULL-deref), wired in via `[patch.crates-io]` in `src-tauri/Cargo.toml`. It exists only because Tauri's
 frozen gtk3 stack pins a vulnerable glib with no 0.18.x backport (glib 0.20 is incompatible). It is
 `exclude`d from the workspace (we never fmt/clippy/test upstream code), and CodeQL findings inside it
 are false positives. Don't edit it beyond the security patch; **remove the whole vendored crate** once
 Tauri moves off gtk3. Full rationale is in the `Cargo.toml` patch comment.
+
+**2. Correctness-patched `@milkdown/preset-commonmark` (pnpm patch).**
+`patches/@milkdown__preset-commonmark@7.21.1.patch`, wired in via `patchedDependencies` in
+`pnpm-workspace.yaml`. Two `toMarkdown` runners forward the list `spread` attribute to mdast as the
+**string** `"false"`, which is truthy — so every bullet list serialized *loose*, reformatting whole
+Obsidian vaults on save (a §3.2 round-trip defect, not a style preference). The patch coerces with
+`=== "true"`, matching what `ordered_list` and preset-gfm's task item already do. A local
+`extendSchema` override was tried first and rejected: it could not chain to the GFM-extended
+`list_item` and dropped task-list checkboxes. **Remove the patch** once Milkdown ships the fix
+upstream (the issue is drafted, not yet filed); the `preserved` fixtures in `tests/roundtrip.test.ts`
+keep the behavior honest either way. `patches/**` is `-text` in `.gitattributes` so the file is
+checked out byte-exact — CRLF-ifying it makes `pnpm install` fail to apply it on Windows.
 
 ### Why this stack (so it isn't second-guessed later)
 Inline WYSIWYG is the hard part of any markdown editor, and the mature engines for it live in the
@@ -236,7 +261,7 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 | Command | Args | Returns | Notes |
 |---|---|---|---|
 | `open_file` | `path` | `{ path, content }` | UTF-8 read |
-| `save_file` | `path, content` | `()` | **atomic** (temp + fsync + rename) — §3.1; also records a version-history snapshot (best-effort, additive) |
+| `save_file` | `path, content` | `()` | **atomic** (temp + fsync + rename) — §3.1; also records version-history snapshots of the pre-existing *and* new content (best-effort, additive) |
 | `save_file_as` | `content` | `path` | native dialog |
 | `open_folder` | `path` | `FileNode[]` | recursive `.md` tree |
 | `watch_folder` | `path` | event stream | external-change events (`notify` crate) |
@@ -278,8 +303,10 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 > per-note dir under `<app-config>/history/<hash(path)>/` — a `manifest.json` + gzip,
 > sha256-addressed blobs. It lives **outside the vault** (like recovery/session, §1) so it
 > never pollutes plain files or rides folder-sync. Capture is a **best-effort, additive**
-> side-effect of `save_file`/`save_file_as` (a failure never blocks a save, §3); on-save
-> content-dedup; **time-decay thinning** (keep-all <24h → hourly <7d → daily <30d → weekly,
+> side-effect of `save_file`/`save_file_as` (a failure never blocks a save, §3), taken on **both
+> sides** of the write — `snapshot_existing` records the bytes already on disk before they are
+> overwritten, so the first Toril save of an externally-authored note (the moment canonical-form
+> normalization lands) is itself undoable; content-dedup; **time-decay thinning** (keep-all <24h → hourly <7d → daily <30d → weekly,
 > always keeping oldest+newest). Byte-exact (raw-bytes addressing, §3.2). `rekey` carries a
 > note's history across a rename copy-then-delete (≥1 intact dir on power loss); the in-app
 > rename that calls it is Movement II.12. Restore snapshots the current state first, so it is
