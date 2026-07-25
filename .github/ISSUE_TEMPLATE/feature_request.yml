@@ -1,0 +1,60 @@
+name: Feature request
+description: Suggest something Toril should do
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: Toril is deliberately a **focused markdown editor**, and a
+        few directions are already-decided *no*s rather than open questions —
+        multi-format structured editing (JSON/XML/YAML/TOML), and a pure-Rust
+        split-pane rewrite. See §12 of
+        [CLAUDE.md](../blob/main/CLAUDE.md) for why.
+
+        If you're unsure whether an idea is in scope, a
+        [Discussion](https://github.com/kovirlabs/toril/discussions) is a better
+        starting point than an issue — no need to shape it into a proposal first.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you running into?
+      description: >-
+        Describe the situation rather than the fix you have in mind. Knowing what
+        you were trying to do usually opens up options a feature request alone
+        wouldn't.
+      placeholder: "When I …, I have to … because Toril doesn't …"
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like Toril to do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered
+      description: Including other editors that handle this well, and how.
+
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Does this fit Toril's constraints?
+      description: >-
+        Best guesses are fine — this isn't a test, it just surfaces the
+        trade-offs early. The full rules are in CLAUDE.md §3.
+      options:
+        - label: It keeps notes as plain `.md` files in ordinary folders (no proprietary container or sidecar)
+        - label: It stays compatible with the folder also being a live Obsidian vault
+        - label: It doesn't require a backend, an account, or network access
+        - label: I'm not sure — happy to be told otherwise
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Mockups, links to how other tools do it, or prior discussion.

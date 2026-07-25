@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/kovirlabs/toril/security/advisories/new
+    about: Report privately — please don't open a public issue. See SECURITY.md.
+  - name: Question, idea, or "is this in scope?"
+    url: https://github.com/kovirlabs/toril/discussions
+    about: Discussions are the right place for anything not yet shaped into a bug or proposal.
+  - name: Contributing guide
+    url: https://github.com/kovirlabs/toril/blob/main/CONTRIBUTING.md
+    about: Setup, the non-negotiable data-safety rules, and how to get a change merged.
