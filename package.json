@@ -18,7 +18,7 @@
     "@milkdown/theme-nord": "7.21.1",
     "@tauri-apps/api": "2.11.0",
     "@tauri-apps/plugin-dialog": "2.7.1",
-    "dompurify": "3.4.11"
+    "dompurify": "3.4.12"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.11.2",
