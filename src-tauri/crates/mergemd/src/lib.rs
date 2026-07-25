@@ -668,4 +668,81 @@ mod tests {
 
         fs::remove_dir_all(&dir).ok();
     }
+
+    /// Deterministic pseudo-random generator so a failure is reproducible from
+    /// the seed alone. Avoids a proptest dependency for one property (§2).
+    struct Lcg(u64);
+    impl Lcg {
+        fn next(&mut self) -> u64 {
+            self.0 = self
+                .0
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            self.0 >> 33
+        }
+        fn pick(&mut self, n: usize) -> usize {
+            (self.next() as usize) % n
+        }
+    }
+
+    /// Apply a few random edits to `lines`, returning the new text.
+    fn mutate(lines: &[&str], rng: &mut Lcg, tag: &str) -> String {
+        let mut v: Vec<String> = lines.iter().map(|s| s.to_string()).collect();
+        let edits = 1 + rng.pick(3);
+        for _ in 0..edits {
+            if v.is_empty() {
+                v.push(format!("{tag}-new\n"));
+                continue;
+            }
+            let at = rng.pick(v.len());
+            match rng.pick(3) {
+                0 => v[at] = format!("{tag}-edit\n"),
+                1 => v.insert(at, format!("{tag}-ins\n")),
+                _ => {
+                    v.remove(at);
+                }
+            }
+        }
+        v.concat()
+    }
+
+    #[test]
+    fn a_successful_merge_never_drops_a_line() {
+        let base_lines: Vec<&str> = vec!["l1\n", "l2\n", "l3\n", "l4\n", "l5\n", "l6\n"];
+        let base = base_lines.concat();
+        let mut rng = Lcg(0x5EED);
+
+        for case in 0..500 {
+            let mine = mutate(&base_lines, &mut rng, "M");
+            let theirs = mutate(&base_lines, &mut rng, "T");
+
+            match merge3(&base, &mine, &theirs) {
+                // Conflict is always an acceptable answer — it writes nothing.
+                Divergence::Conflict => {}
+                Divergence::Unchanged | Divergence::TheirsOnly => {}
+                Divergence::Merged(out) => {
+                    // Every line either side introduced must survive. This is
+                    // the §3 guarantee: a clean merge loses nothing.
+                    for line in split_lines(&mine) {
+                        if !split_lines(&base).contains(&line) {
+                            assert!(
+                                out.contains(line),
+                                "case {case}: merged output dropped a line of MINE\n\
+                                 line: {line:?}\nmine: {mine:?}\ntheirs: {theirs:?}\nout: {out:?}"
+                            );
+                        }
+                    }
+                    for line in split_lines(&theirs) {
+                        if !split_lines(&base).contains(&line) {
+                            assert!(
+                                out.contains(line),
+                                "case {case}: merged output dropped a line of THEIRS\n\
+                                 line: {line:?}\nmine: {mine:?}\ntheirs: {theirs:?}\nout: {out:?}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

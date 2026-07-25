@@ -102,8 +102,8 @@ pnpm tauri build      # production .exe + installer (Windows; see §9)
 pnpm test             # vitest — round-trip + toolbar + theme + export + tabs + security (jsdom)
 pnpm typecheck        # tsc --noEmit (TS strict)
 pnpm build            # tsc + vite build (frontend only)
-# logic crates — the same seven CI runs (plain `cargo test` also builds the app crate)
-cd src-tauri && cargo test -p fsatomic -p vaultscan -p mdhtml -p mdrtf -p imgasset -p trashbin -p snapshots
+# logic crates — the same eight CI runs (plain `cargo test` also builds the app crate)
+cd src-tauri && cargo test -p fsatomic -p vaultscan -p mdhtml -p mdrtf -p imgasset -p trashbin -p snapshots -p mergemd
 cd src-tauri && cargo fmt --all && cargo clippy   # clean before commit (§10)
 ```
 
@@ -395,7 +395,7 @@ Phases 0–3 are complete and Phase 4 (polish) is in progress; the shipped detai
 
 **CI runs these automatically** on every pull request and on pushes to `main`
 (`.github/workflows/ci.yml`): `pnpm typecheck` + `pnpm test` + `pnpm build`, and `cargo test` over the
-seven logic crates — each on **Ubuntu and Windows**, plus `cargo fmt --all --check` on Ubuntu. The
+eight logic crates — each on **Ubuntu and Windows**, plus `cargo fmt --all --check` on Ubuntu. The
 Windows leg is not ceremony: `pnpm install --frozen-lockfile` is what applies the Milkdown patch, and
 `fsatomic` is the §3.1 gate whose replace-over-existing semantics differ from POSIX there.
 
