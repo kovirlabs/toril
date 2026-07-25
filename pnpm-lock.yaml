@@ -8,6 +8,9 @@ overrides:
   undici@>=7.0.0 <7.28.0: 7.28.0
   dompurify@<3.4.11: 3.4.11
 
+patchedDependencies:
+  '@milkdown/preset-commonmark@7.21.1': fa4fde61a41fade3ff500c5496359365209922d8ad3fd08b4e69f631ea73eaaf
+
 importers:
 
   .:
@@ -1560,7 +1563,7 @@ snapshots:
       '@milkdown/exception': 7.21.1
       '@milkdown/plugin-diff': 7.21.1
       '@milkdown/plugin-tooltip': 7.21.1
-      '@milkdown/preset-commonmark': 7.21.1
+      '@milkdown/preset-commonmark': 7.21.1(patch_hash=fa4fde61a41fade3ff500c5496359365209922d8ad3fd08b4e69f631ea73eaaf)
       '@milkdown/preset-gfm': 7.21.1
       '@milkdown/prose': 7.21.1
       '@milkdown/transformer': 7.21.1
@@ -1612,7 +1615,7 @@ snapshots:
       '@milkdown/plugin-tooltip': 7.21.1
       '@milkdown/plugin-trailing': 7.21.1
       '@milkdown/plugin-upload': 7.21.1
-      '@milkdown/preset-commonmark': 7.21.1
+      '@milkdown/preset-commonmark': 7.21.1(patch_hash=fa4fde61a41fade3ff500c5496359365209922d8ad3fd08b4e69f631ea73eaaf)
       '@milkdown/preset-gfm': 7.21.1
       '@milkdown/prose': 7.21.1
       '@milkdown/transformer': 7.21.1
@@ -1757,7 +1760,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@milkdown/preset-commonmark@7.21.1':
+  '@milkdown/preset-commonmark@7.21.1(patch_hash=fa4fde61a41fade3ff500c5496359365209922d8ad3fd08b4e69f631ea73eaaf)':
     dependencies:
       '@milkdown/core': 7.21.1
       '@milkdown/ctx': 7.21.1
@@ -1776,7 +1779,7 @@ snapshots:
       '@milkdown/core': 7.21.1
       '@milkdown/ctx': 7.21.1
       '@milkdown/exception': 7.21.1
-      '@milkdown/preset-commonmark': 7.21.1
+      '@milkdown/preset-commonmark': 7.21.1(patch_hash=fa4fde61a41fade3ff500c5496359365209922d8ad3fd08b4e69f631ea73eaaf)
       '@milkdown/prose': 7.21.1
       '@milkdown/transformer': 7.21.1
       '@milkdown/utils': 7.21.1

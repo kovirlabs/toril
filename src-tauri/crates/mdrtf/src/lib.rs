@@ -14,6 +14,37 @@
 use comrak::nodes::{AstNode, ListType, NodeValue};
 use comrak::{Arena, Options, parse_document};
 
+/// Whether `markdown` plausibly opens with a YAML front-matter block: a leading
+/// `---` delimiter line whose **next line is non-blank**.
+///
+/// comrak's `front_matter_delimiter` is unconditional — with it set, *any*
+/// document whose first line is `---` has everything up to the next `---`
+/// swallowed as front matter. Toril's canonical thematic break is `---`
+/// (`src/editor/canonical.ts`), so a note opening with a horizontal rule and
+/// containing a later one would silently lose the content in between (§3). A
+/// `---` followed by a blank line (or by EOF) is a thematic break and never valid
+/// YAML front matter, so that shape is the reliable discriminator. `---`
+/// immediately followed by non-blank text stays front matter — it is
+/// indistinguishable from the real thing, and Toril never writes that shape.
+///
+/// Deliberately duplicated from `mdhtml` (same doc comment there): ten
+/// dependency-free lines in each crate beats inventing a shared crate for one
+/// predicate, and both call sites carry their own regression tests. **Keep the two
+/// bodies identical** — a silent divergence between HTML and RTF export would be
+/// its own bug.
+fn opens_with_front_matter(markdown: &str) -> bool {
+    // A UTF-8 BOM is common in Windows-authored files (the primary platform, §1)
+    // and would otherwise make the first line `\u{feff}---`, hiding real front
+    // matter from the check below and dumping it into the export body. comrak
+    // itself tolerates the BOM, so only this predicate needs to skip it.
+    let markdown = markdown.strip_prefix('\u{feff}').unwrap_or(markdown);
+    let mut lines = markdown.lines();
+    if lines.next().map(str::trim_end) != Some("---") {
+        return false;
+    }
+    lines.next().is_some_and(|next| !next.trim().is_empty())
+}
+
 // Times New Roman (\f0, proportional) for prose, Consolas (\f1, monospace) for
 // code. \fs is half-points, so \fs24 = 12pt body text.
 const HEADER: &str = "{\\rtf1\\ansi\\ansicpg1252\\deff0\n\
@@ -30,7 +61,11 @@ pub fn to_rtf(markdown: &str) -> String {
     options.extension.tasklist = true;
     options.extension.autolink = true;
     options.extension.footnotes = true;
-    options.extension.front_matter_delimiter = Some("---".to_string());
+    // Only when the document really opens with front matter — otherwise a leading
+    // `---` thematic break is read as a delimiter and its content dropped (§3).
+    if opens_with_front_matter(markdown) {
+        options.extension.front_matter_delimiter = Some("---".to_string());
+    }
     let root = parse_document(&arena, markdown, &options);
 
     let mut w = Writer {
@@ -408,5 +443,49 @@ mod tests {
         let out = rtf("---\ntitle: secret\n---\n\n# Heading\n");
         assert!(out.contains("Heading"));
         assert!(!out.contains("secret"));
+    }
+
+    #[test]
+    fn real_front_matter_is_still_stripped() {
+        let out = rtf("---\ntitle: T\n---\n\nBody.\n");
+        assert!(out.contains("Body."));
+        assert!(!out.contains("title: T"));
+    }
+
+    #[test]
+    fn a_bom_does_not_hide_front_matter_from_the_guard() {
+        // Windows-authored files often carry a UTF-8 BOM; without skipping it the
+        // first line is "\u{feff}---" and real front matter lands in the body.
+        let out = rtf("\u{feff}---\ntitle: T\n---\n\nBody.\n");
+        assert!(out.contains("Body."));
+        assert!(!out.contains("title: T"));
+    }
+
+    #[test]
+    fn a_bom_does_not_widen_the_guard_onto_thematic_breaks() {
+        let out = rtf("\u{feff}---\n\nBelow.\n\n---\n\nEnd.\n");
+        assert!(out.contains("Below."), "middle content dropped: {out:?}");
+        assert!(out.contains("End."));
+    }
+
+    #[test]
+    fn leading_thematic_break_does_not_swallow_the_document() {
+        // Regression: `---` is Toril's canonical thematic break, and an
+        // unconditional front_matter_delimiter read a doc opening with one as
+        // front matter — deleting everything up to the next `---` (§3).
+        let out = rtf("---\n\nBelow.\n\n---\n\nEnd.\n");
+        assert!(out.contains("Below."), "middle content dropped: {out:?}");
+        assert!(out.contains("End."));
+        assert_eq!(out.matches("\\brdrb").count(), 2);
+    }
+
+    #[test]
+    fn asterisk_rule_equivalent_is_unchanged() {
+        // Guards against over-correcting: the pre-branch rule form must render
+        // exactly as the `---` form now does.
+        assert_eq!(
+            rtf("***\n\nBelow.\n\n***\n\nEnd.\n"),
+            rtf("---\n\nBelow.\n\n---\n\nEnd.\n")
+        );
     }
 }

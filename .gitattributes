@@ -1,2 +1,9 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# pnpm patch files must be checked out byte-exact. `text=auto` plus Git-for-Windows'
+# default core.autocrlf=true would materialize them with CRLF, and pnpm's patch
+# parser splits on \n without stripping \r — so no context line matches the LF
+# package bundle and `pnpm install` fails to apply the patch. Windows is the
+# primary target platform (CLAUDE.md §1) and the release job runs windows-latest.
+patches/** -text

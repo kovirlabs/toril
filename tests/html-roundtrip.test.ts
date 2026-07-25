@@ -14,6 +14,7 @@ import { Editor, rootCtx } from "@milkdown/kit/core";
 import { commonmark } from "@milkdown/kit/preset/commonmark";
 import { gfm } from "@milkdown/kit/preset/gfm";
 import { emoji } from "@milkdown/plugin-emoji";
+import { useCanonical } from "../src/editor/canonical";
 import { docToHtml, htmlToDoc } from "../src/editor/html-serializer";
 import { docToMarkdown } from "../src/editor/serializer";
 import { htmlConstructs } from "../src/editor/html-constructs";
@@ -27,13 +28,14 @@ let root: HTMLElement;
 beforeAll(async () => {
   root = document.createElement("div");
   document.body.appendChild(root);
-  editor = await Editor.make()
-    .config((ctx) => ctx.set(rootCtx, root))
-    .use(commonmark)
-    .use(gfm)
-    .use(emoji)
-    .use(htmlConstructs)
-    .create();
+  editor = await useCanonical(
+    Editor.make()
+      .config((ctx) => ctx.set(rootCtx, root))
+      .use(commonmark)
+      .use(gfm)
+      .use(emoji)
+      .use(htmlConstructs),
+  ).create();
 });
 
 afterAll(async () => {
