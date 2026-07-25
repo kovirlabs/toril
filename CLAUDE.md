@@ -86,8 +86,8 @@ pnpm tauri build      # production .exe + installer (Windows; see §9)
 pnpm test             # vitest — round-trip + toolbar + theme + export + tabs + security (jsdom)
 pnpm typecheck        # tsc --noEmit (TS strict)
 pnpm build            # tsc + vite build (frontend only)
-cd src-tauri && cargo test -p fsatomic -p vaultscan -p mdhtml -p mdrtf -p imgasset   # logic crates
-# (plain `cargo test` also builds the app crate → needs the webview toolchain)
+# logic crates — the same seven CI runs (plain `cargo test` also builds the app crate)
+cd src-tauri && cargo test -p fsatomic -p vaultscan -p mdhtml -p mdrtf -p imgasset -p trashbin -p snapshots
 cd src-tauri && cargo fmt --all && cargo clippy   # clean before commit (§10)
 ```
 
@@ -356,6 +356,17 @@ Phases 0–3 are complete and Phase 4 (polish) is in progress; the shipped detai
   §3.3 sanitization chokepoint).
 - Plus `vaultscan`, `imgasset`, `theme`, `statusbar`, `search`, `security`, `tabs` suites.
 
+**CI runs these automatically** on every pull request and on pushes to `main`
+(`.github/workflows/ci.yml`): `pnpm typecheck` + `pnpm test` + `pnpm build`, and `cargo test` over the
+seven logic crates — each on **Ubuntu and Windows**, plus `cargo fmt --all --check` on Ubuntu. The
+Windows leg is not ceremony: `pnpm install --frozen-lockfile` is what applies the Milkdown patch, and
+`fsatomic` is the §3.1 gate whose replace-over-existing semantics differ from POSIX there.
+
+**What CI cannot cover — still yours to run:** interactive GUI flows (`pnpm tauri dev` — dialogs,
+menus, the reload prompt), macOS, the Tauri app crate, and `cargo clippy` (§10; excluded from CI
+because it lints the vendored `glib`, a path dependency that gets no `--cap-lints allow`). A green PR
+means the headless gates passed, not that the app was driven.
+
 **Remaining for Phase 4:** optional code-signing (removes the SmartScreen warning — see the
 code-signing memory) and on-device verification of GUI/Rust flows that can't be tested here.
 Shortcut-reference panel deferred (the menu lists shortcuts).
@@ -368,6 +379,10 @@ Shortcut-reference panel deferred (the menu lists shortcuts).
 pnpm tauri dev          # development
 pnpm tauri build        # production -> .exe + installer
 ```
+
+> **Two workflows.** `.github/workflows/ci.yml` runs the headless gates on every PR and on pushes to
+> `main` (§8). `.github/workflows/release.yml` fires only on a `v*` tag and builds the installers —
+> it does **not** run tests, which is why CI exists separately.
 
 Output: `src-tauri/target/release/` (raw `.exe`) and `…/bundle/` (NSIS installer). In
 `tauri.conf.json`: `bundle.targets` is an explicit list (`nsis` on Windows; `app`/`dmg` on macOS;
