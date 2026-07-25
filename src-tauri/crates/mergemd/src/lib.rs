@@ -91,17 +91,22 @@ fn changes(base: &[&str], other: &[&str]) -> Vec<Change> {
     out
 }
 
-/// Do two changes touch the same region? Half-open ranges, so a change ending
-/// exactly where another begins is adjacent, not overlapping — those stay
-/// independent. Two pure insertions at the same point are the exception: they
-/// occupy no base lines but still collide.
+/// Do two changes touch the same region?
+///
+/// Half-open ranges, so a change ending exactly where another begins is
+/// adjacent, not overlapping — those stay independent. Zero-width insertions
+/// need their own cases: an insert at `x` lies inside `[s, e)` when `s <= x < e`
+/// (at `e` it appends after the region, which is independent), and two inserts
+/// collide only at the same point.
 fn overlaps(a: &Change, b: &Change) -> bool {
     let a_empty = a.base_start == a.base_end;
     let b_empty = b.base_start == b.base_end;
-    if a_empty && b_empty {
-        return a.base_start == b.base_start;
+    match (a_empty, b_empty) {
+        (true, true) => a.base_start == b.base_start,
+        (true, false) => b.base_start <= a.base_start && a.base_start < b.base_end,
+        (false, true) => a.base_start <= b.base_start && b.base_start < a.base_end,
+        (false, false) => a.base_start < b.base_end && b.base_start < a.base_end,
     }
-    a.base_start < b.base_end && b.base_start < a.base_end
 }
 
 /// Render one side's version of base lines `[start, end)`, applying that side's
@@ -211,6 +216,15 @@ pub fn merge3(base: &str, mine: &str, theirs: &str) -> Divergence {
             if !grew {
                 break;
             }
+        }
+
+        // Invariant: a cluster may never begin behind the cursor. If it does,
+        // content would be emitted out of order — the failure mode that has
+        // already produced two silent-corruption bugs here. Fail closed: a
+        // Conflict writes nothing, so an unenumerated case costs the user a
+        // prompt rather than a mangled file.
+        if envelope.base_start < pos {
+            return Divergence::Conflict;
         }
 
         let mine_touched = mi > i;
@@ -355,6 +369,31 @@ mod tests {
         assert_eq!(
             merge3(base, mine, theirs),
             Divergence::Merged("a\nc CHANGED\n".to_string())
+        );
+    }
+
+    #[test]
+    fn an_insert_at_the_head_of_a_replaced_range_conflicts() {
+        // Regression: theirs prepends, mine replaces the whole file. Previously
+        // Merged("M\nZ\n") — Z was written before the content and emitted after.
+        let base = "a\nb\nc\n";
+        let mine = "M\n";
+        let theirs = "Z\na\nb\nc\n";
+        assert_eq!(merge3(base, mine, theirs), Divergence::Conflict);
+        assert_eq!(merge3(base, theirs, mine), Divergence::Conflict);
+    }
+
+    #[test]
+    fn an_append_after_a_replaced_range_still_merges() {
+        // The control for the asymmetry above: an insert at the END boundary is
+        // appending after the region, which is independent and must still merge.
+        // If this regresses to Conflict, `overlaps` has been made too eager.
+        let base = "a\nb\nc\n";
+        let mine = "M\n";
+        let theirs = "a\nb\nc\nZ\n";
+        assert_eq!(
+            merge3(base, mine, theirs),
+            Divergence::Merged("M\nZ\n".to_string())
         );
     }
 }
