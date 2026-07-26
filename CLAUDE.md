@@ -361,9 +361,13 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 > re-verifies disk in between. An external write landing in that window is silently clobbered, and
 > the subsequent `tabs.setBase()` then makes every later reconcile compare against the new (just
 > overwritten) bytes and report `unchanged` — so the loss isn't just possible, it stops being
-> detectable. Closing it needs a compare-and-swap inside `save_file` itself (refuse the write unless
-> the on-disk bytes still equal `base`); that has not been built. Treat this as the honest edge of
-> "never silently overwrite", not as a solved case.
+> detectable *by reconciliation*. It is still **recoverable**: `save_file` calls
+> `snapshot_before_write` → `snapshots::store::snapshot_existing` (`commands/files.rs`), which
+> records the bytes already on disk *before* the overwrite — so the clobbered external write is a
+> version in the history panel, and restoring it is one click. Closing the window properly needs a
+> compare-and-swap inside `save_file` itself (refuse the write unless the on-disk bytes still equal
+> `base`); that has not been built. Treat this as the honest edge of "never silently overwrite" —
+> undetected at the moment it happens, but not unrecoverable.
 
 ---
 

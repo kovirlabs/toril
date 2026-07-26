@@ -48,8 +48,11 @@ GitHub Release notes plus the commits that shipped in it.
 
   **Known limit:** there is a narrow window, between the disk check and the write
   that follows it, where a change landing in that instant can still be overwritten
-  without being flagged. Closing it needs a compare-and-swap inside the save
-  itself; that part isn't built yet. Gates: `cargo test -p mergemd` +
+  without being flagged. It is not lost, though: every save records the bytes
+  already on disk as a version *before* overwriting them, so the overwritten
+  change is in the history panel and one click away. Closing the window properly
+  needs a compare-and-swap inside the save itself; that part isn't built yet.
+  Gates: `cargo test -p mergemd` +
   `tests/sync.test.ts`; the `main.ts` wiring that drives autosave/Save All gating
   and the conflict banner is on-device only (no test harness for it yet).
 - **Local version history** (ROADMAP Movement I.3). Every save now records a
