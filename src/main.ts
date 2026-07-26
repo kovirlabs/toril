@@ -85,6 +85,13 @@ let sessionTimer: ReturnType<typeof setTimeout> | null = null;
 let loading = false; // suppress the dirty flag during programmatic loads
 /** Pending per-path reconciles — sync daemons emit bursts (write, chmod, touch). */
 const reconcileTimers = new Map<string, ReturnType<typeof setTimeout>>();
+/**
+ * Bumped whenever a path is removed on disk. A reconcile captures the count when
+ * it starts and discards its result if it changed, so a merge still awaiting IPC
+ * when the deletion lands cannot strand the tab in an `error` divergence that
+ * nothing will ever clear (no further watcher events arrive for a dead path).
+ */
+const removalEpoch = new Map<string, number>();
 
 function basename(p: string): string {
   const parts = p.split(/[\\/]/);
@@ -498,28 +505,40 @@ function scheduleSidebarRefresh(): void {
  */
 async function reconcile(tab: TabState): Promise<void> {
   if (!tab.path) return;
+  const path = tab.path;
   const mine = tab.id === tabs.active()?.id ? serializeEditor(tab.format) : tab.content;
+
+  // The file may be deleted while we await IPC below; the `remove` branch of the
+  // watcher owns that tab from then on, and applying a stale merge over the top
+  // of its decision would undo it.
+  const epoch = removalEpoch.get(path) ?? 0;
+  const removedMeanwhile = (): boolean => (removalEpoch.get(path) ?? 0) !== epoch;
 
   let report: MergeReport;
   try {
-    report = await mergeExternal(tab.path, tab.base, mine);
+    report = await mergeExternal(path, tab.base, mine);
   } catch {
     // One retry: a sync client may hold the file open for a moment mid-write.
     await new Promise((r) => setTimeout(r, 200));
     try {
-      report = await mergeExternal(tab.path, tab.base, mine);
+      report = await mergeExternal(path, tab.base, mine);
     } catch (e) {
+      if (removedMeanwhile()) return; // deleted, not unreadable — already handled
       // Fail closed — block writes rather than risk overwriting something we
       // could not read (§3).
       tabs.setDiverged(tab.id, {
         theirs: "",
         reason: "error",
-        message: `could not be compared with disk (${String(e)})`,
+        // Labels the state as non-actionable, since the two buttons cannot be
+        // suppressed from here (see the report: `ConflictBar.show` always
+        // renders both, and conflictbar.ts is outside this task).
+        message: `could not be compared with disk, so no action is available yet (${String(e)})`,
       });
       renderConflictBar();
       return;
     }
   }
+  if (removedMeanwhile()) return;
 
   const action = decideAction(report, tab.format);
   switch (action.kind) {
@@ -647,15 +666,35 @@ function handleWorkspaceChange(change: WorkspaceChange): void {
   scheduleSidebarRefresh();
 
   if (change.kind === "remove") {
+    // Cancel any reconcile still queued for a path that no longer exists: it
+    // would fail both read attempts and leave an `error` divergence that no
+    // later event can clear, blocking the very save promised below. The epoch
+    // bump does the same for a reconcile already in flight.
+    for (const path of change.paths) {
+      const pending = reconcileTimers.get(path);
+      if (pending) {
+        clearTimeout(pending);
+        reconcileTimers.delete(path);
+      }
+      removalEpoch.set(path, (removalEpoch.get(path) ?? 0) + 1);
+    }
+
     // A sync daemon deleting a file the user has open must not vaporize their
     // buffer. Keep it, mark it dirty; the next save recreates the file.
     for (const tab of tabs.list()) {
       if (tab.path && change.paths.includes(tab.path)) {
+        // A reconcile that errored *before* this event arrived (the deletion is
+        // what it tripped over) left a divergence with no user-actionable exit.
+        // Deletion is a state this branch has an answer for, so clear it. A
+        // `conflict` divergence is left alone: its `theirs` is real content the
+        // user can still park, and resolving it releases the tab.
+        if (tab.diverged?.reason === "error") tabs.setDiverged(tab.id, null);
         tabs.setDirty(tab.id, true);
         setStatus(`${tab.name} was removed on disk — save to recreate it`);
       }
     }
     updateTitle();
+    renderConflictBar();
     return;
   }
   if (change.kind !== "modify" && change.kind !== "create") return;
@@ -804,7 +843,12 @@ async function recoverCrashedBuffers(): Promise<void> {
           const onDisk = await openFile(entry.path);
           tabs.setBase(tab.id, onDisk.content);
         } catch {
-          // file gone — the tab stays dirty and diverged-on-read; saving recreates it
+          // Unreadable right now (gone, or a sync client mid-restore). An empty
+          // base is the honest ancestor: we know nothing about disk. Whatever
+          // appears later is then a real three-way merge — both sides changed
+          // from nothing, which conflicts and asks — instead of the clean
+          // overwrite an equal-to-buffer base would produce.
+          tabs.setBase(tab.id, "");
         }
       }
     }
