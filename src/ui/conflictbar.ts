@@ -42,6 +42,18 @@ export type ConflictBarOptions = ConflictBarResolveOptions | ConflictBarNoticeOp
 
 export class ConflictBar {
   private readonly el: HTMLDivElement;
+  /**
+   * The live region, created **once**.
+   *
+   * Assistive tech watches a live region for mutations, which means the region
+   * has to already exist and be exposed before the text it should announce
+   * arrives. A fresh `aria-live` span built inside a still-`hidden` container on
+   * every `show()` satisfies neither: content present at creation is not a
+   * mutation, and content revealed by unhiding generally is not announced
+   * either. So the span outlives every `show()`/`hide()` and only its text
+   * changes — and `show()` unhides the container before writing that text.
+   */
+  private readonly text: HTMLSpanElement;
 
   constructor(host: HTMLElement) {
     this.el = document.createElement("div");
@@ -49,31 +61,41 @@ export class ConflictBar {
     this.el.hidden = true;
     this.el.setAttribute("role", "region");
     this.el.setAttribute("aria-label", "File changed on disk");
+
+    this.text = document.createElement("span");
+    this.text.className = "conflict-bar-text";
+    this.text.setAttribute("aria-live", "polite");
+    this.el.appendChild(this.text);
+
     host.appendChild(this.el);
   }
 
-  show(opts: ConflictBarOptions): void {
-    this.el.replaceChildren();
+  /** Drop the buttons, keeping the persistent live region (always first) in place. */
+  private clearActions(): void {
+    while (this.el.lastChild && this.el.lastChild !== this.text) {
+      this.el.removeChild(this.el.lastChild);
+    }
+  }
 
-    const text = document.createElement("span");
-    text.className = "conflict-bar-text";
-    text.setAttribute("aria-live", "polite");
-    this.el.appendChild(text);
+  show(opts: ConflictBarOptions): void {
+    this.clearActions();
+    // Unhidden before the text is written, so the mutation lands on a region
+    // that is already exposed — see the `text` field's note.
+    this.el.hidden = false;
 
     // Nothing to choose between: message only. No buttons, and no reassurance —
     // there is no other version saved beside anything.
     if (opts.actions === "none") {
-      text.textContent = `${opts.name} — ${opts.message}.`;
       this.el.setAttribute("aria-label", "File could not be read");
-      this.el.hidden = false;
+      this.text.textContent = `${opts.name} — ${opts.message}.`;
       return;
     }
 
+    this.el.setAttribute("aria-label", "File changed on disk");
     // The reassurance is deliberately visible rather than tooltip-only: a user
     // deciding under pressure needs to know, without hovering, that neither
     // choice throws work away.
-    text.textContent = `${opts.name} — ${opts.message}. Either way, the other version is saved beside it.`;
-    this.el.setAttribute("aria-label", "File changed on disk");
+    this.text.textContent = `${opts.name} — ${opts.message}. Either way, the other version is saved beside it.`;
 
     const keep = document.createElement("button");
     keep.type = "button";
@@ -90,12 +112,13 @@ export class ConflictBar {
     theirs.title = "Save your version alongside as a conflict copy, and load the disk version";
     theirs.addEventListener("click", () => opts.onUseTheirs());
     this.el.appendChild(theirs);
-
-    this.el.hidden = false;
   }
 
   hide(): void {
     this.el.hidden = true;
-    this.el.replaceChildren();
+    this.clearActions();
+    // Emptied, not removed: the live region has to survive so the next `show()`
+    // is a text mutation on an existing region rather than a fresh one.
+    this.text.textContent = "";
   }
 }
