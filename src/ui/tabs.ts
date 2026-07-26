@@ -41,6 +41,16 @@ export interface TabState {
   base: string;
   /** Non-null while the tab is diverged from disk. Blocks all writes (§3). */
   diverged: DivergedState | null;
+  /**
+   * True while the file behind this tab has vanished from disk.
+   *
+   * Orthogonal to `diverged`: there is no "theirs" to weigh against, so nothing
+   * needs resolving — the buffer is simply the only copy left, and an *explicit*
+   * save recreates the file. Unattended writes must not: an Obsidian rename is a
+   * delete followed by a create, and autosave recreating the deleted path would
+   * silently resurrect the old note beside the renamed one (§3).
+   */
+  removedOnDisk: boolean;
 }
 
 export interface TabCallbacks {
@@ -100,6 +110,7 @@ export class TabManager {
       dirty: false,
       base: opts.content,
       diverged: null,
+      removedOnDisk: false,
     };
     this.items.push(tab);
     this.setActive(tab.id);
@@ -151,6 +162,12 @@ export class TabManager {
   setDiverged(id: string, d: DivergedState | null): void {
     const tab = this.items.find((t) => t.id === id);
     if (tab) tab.diverged = d;
+  }
+
+  /** Mark or clear "the file behind this tab is gone" (see `removedOnDisk`). */
+  setRemovedOnDisk(id: string, removed: boolean): void {
+    const tab = this.items.find((t) => t.id === id);
+    if (tab) tab.removedOnDisk = removed;
   }
 
   setPath(id: string, path: string, name: string): void {

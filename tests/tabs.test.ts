@@ -111,4 +111,30 @@ describe("TabManager", () => {
     h.tm.setDiverged(tab.id, null);
     expect(tab.diverged).toBeNull();
   });
+
+  it("opens with the file present on disk", () => {
+    const tab = h.tm.open({ path: "/v/a.md", name: "a.md", content: "x\n" });
+    expect(tab.removedOnDisk).toBe(false);
+  });
+
+  it("stores and clears the removed-on-disk flag", () => {
+    const tab = h.tm.open({ path: "/v/a.md", name: "a.md", content: "x\n" });
+    h.tm.setRemovedOnDisk(tab.id, true);
+    expect(tab.removedOnDisk).toBe(true);
+    h.tm.setRemovedOnDisk(tab.id, false);
+    expect(tab.removedOnDisk).toBe(false);
+  });
+
+  it("keeps removal orthogonal to divergence", () => {
+    // A deleted file has no `theirs` to weigh against, so nothing needs
+    // resolving: `blocksWrite` stays false and an explicit save recreates it.
+    // Only unattended writes consult the flag.
+    const tab = h.tm.open({ path: "/v/a.md", name: "a.md", content: "x\n" });
+    h.tm.setRemovedOnDisk(tab.id, true);
+    expect(tab.diverged).toBeNull();
+
+    h.tm.setDiverged(tab.id, { theirs: "y\n", reason: "conflict", message: "m" });
+    h.tm.setRemovedOnDisk(tab.id, false);
+    expect(tab.diverged?.theirs).toBe("y\n"); // clearing one leaves the other
+  });
 });
