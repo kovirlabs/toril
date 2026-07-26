@@ -10,7 +10,14 @@
 // …and, since the whole-branch review, a fourth: an *unedited* tab must never
 // be treated as edited. `selectMine` is where that lives.
 import { describe, expect, it } from "vitest";
-import { blocksWrite, decideAction, selectMine, selectSavable } from "../src/sync";
+import {
+  blocksWrite,
+  decideAction,
+  describeSaveAll,
+  selectMine,
+  selectRemovedOnDisk,
+  selectSavable,
+} from "../src/sync";
 import type { MergeReport } from "../src/ipc";
 import type { DivergedState } from "../src/ui/tabs";
 
@@ -130,31 +137,83 @@ describe("selectMine — an unedited tab is never treated as edited", () => {
   });
 });
 
-describe("write gating", () => {
-  const tab = (over: Partial<{ dirty: boolean; path: string | null; diverged: unknown }> = {}) => ({
-    dirty: true,
-    path: "/v/a.md",
-    diverged: null,
-    ...over,
-  }) as { dirty: boolean; path: string | null; diverged: null };
+interface Savable {
+  name: string;
+  dirty: boolean;
+  path: string | null;
+  diverged: DivergedState | null;
+  removedOnDisk: boolean;
+}
 
+const savableTab = (over: Partial<Savable> = {}): Savable => ({
+  name: "a.md",
+  dirty: true,
+  path: "/v/a.md",
+  diverged: null,
+  removedOnDisk: false,
+  ...over,
+});
+
+describe("write gating", () => {
   it("blocks a write while diverged", () => {
-    expect(blocksWrite(tab())).toBe(false);
-    expect(
-      blocksWrite(
-        tab({ diverged: { theirs: "x", reason: "conflict", message: "m" } }) as never,
-      ),
-    ).toBe(true);
+    expect(blocksWrite(savableTab())).toBe(false);
+    const diverged = savableTab({ diverged: { theirs: "x", reason: "conflict", message: "m" } });
+    expect(blocksWrite(diverged)).toBe(true);
   });
 
   it("excludes diverged tabs from Save All and autosave", () => {
-    const clean = tab({ dirty: false });
-    const untitled = tab({ path: null });
-    const diverged = tab({ diverged: { theirs: "x", reason: "conflict", message: "m" } }) as never;
-    const savable = tab();
+    const clean = savableTab({ dirty: false });
+    const untitled = savableTab({ path: null });
+    const diverged = savableTab({ diverged: { theirs: "x", reason: "conflict", message: "m" } });
+    const savable = savableTab();
 
     const out = selectSavable([clean, untitled, diverged, savable]);
     expect(out).toEqual([savable]);
+  });
+
+  it("excludes a tab whose file was removed on disk — Save All must not resurrect it", () => {
+    // An Obsidian rename is remove + create. The losing tab is forced dirty
+    // (its buffer is the only copy left), so it lands in the Save All set with
+    // no user action; writing it recreates the old note beside the new one and
+    // the sync client propagates the duplicate.
+    const removed = savableTab({ name: "Meeting.md", removedOnDisk: true });
+    const savable = savableTab({ name: "Other.md", path: "/v/b.md" });
+
+    expect(selectSavable([removed, savable])).toEqual([savable]);
+    expect(selectRemovedOnDisk([removed, savable])).toEqual([removed]);
+  });
+
+  it("does not report an untitled or clean tab as removed-on-disk", () => {
+    // Nothing to recreate and nothing to tell the user about.
+    const untitled = savableTab({ path: null, removedOnDisk: true });
+    const clean = savableTab({ dirty: false, removedOnDisk: true });
+    expect(selectRemovedOnDisk([untitled, clean])).toEqual([]);
+  });
+});
+
+describe("Save All status line", () => {
+  it("names a skipped removal and says how to act on it", () => {
+    const msg = describeSaveAll(3, 0, ["Meeting.md"]);
+    expect(msg).toContain("Saved 3 files");
+    expect(msg).toContain("Meeting.md");
+    expect(msg).toContain("Save to recreate");
+  });
+
+  it("reports both kinds of exclusion at once", () => {
+    const msg = describeSaveAll(1, 2, ["Meeting.md"]);
+    expect(msg).toContain("Saved 1 file —");
+    expect(msg).toContain("skipped 2 changed on disk");
+    expect(msg).toContain("Meeting.md");
+  });
+
+  it("summarizes a long removal list instead of listing every name", () => {
+    const msg = describeSaveAll(0, 0, ["a.md", "b.md", "c.md", "d.md", "e.md"]);
+    expect(msg).toContain("a.md, b.md, c.md and 2 more");
+    expect(msg).not.toContain("d.md");
+  });
+
+  it("says nothing when there is nothing to say", () => {
+    expect(describeSaveAll(0, 0, [])).toBe("");
   });
 });
 
@@ -190,14 +249,8 @@ describe("resolution ordering (the invariant that matters most)", () => {
   // every test above and still silently unblock writes on an error tab,
   // because `""` is falsy. These two tests target exactly that.
 
-  const tab = (
-    diverged: DivergedState | null,
-    path = "/v/a.md",
-  ): { dirty: boolean; path: string | null; diverged: DivergedState | null } => ({
-    dirty: true,
-    path,
-    diverged,
-  });
+  const tab = (diverged: DivergedState | null, path = "/v/a.md"): Savable =>
+    savableTab({ diverged, path });
 
   it("blocks writes for an unparkable divergence, not just a conflict one", () => {
     const stuck = tab({ theirs: "", reason: "error", message: "m" });

@@ -45,7 +45,14 @@ import {
 } from "./ipc";
 import { AutosaveScheduler, type RecoveryEntry, selectDirtySaved, snapshotDirty } from "./autosave";
 import { isAtOrUnder } from "./paths";
-import { blocksWrite, decideAction, selectMine, selectSavable } from "./sync";
+import {
+  blocksWrite,
+  decideAction,
+  describeSaveAll,
+  selectMine,
+  selectRemovedOnDisk,
+  selectSavable,
+} from "./sync";
 import { ConflictBar } from "./ui/conflictbar";
 import { History } from "./ui/history";
 import { Outline } from "./ui/outline";
@@ -353,7 +360,11 @@ function captureActiveBuffer(): void {
  * for the next round, which costs a delay and never a keystroke. The residual
  * window between the last read and the write is the documented TOCTOU limit.
  */
-async function reconcileWritableTabs(): Promise<{ writable: TabState[]; blocked: number }> {
+async function reconcileWritableTabs(): Promise<{
+  writable: TabState[];
+  blocked: number;
+  removed: string[];
+}> {
   const reconciled = new Set<string>();
   for (let pass = 0; pass < 2; pass++) {
     captureActiveBuffer();
@@ -370,6 +381,7 @@ async function reconcileWritableTabs(): Promise<{ writable: TabState[]; blocked:
     // `selectSavable`'s rule, plus "we re-checked this one ourselves".
     writable: selectSavable(candidates).filter((t) => reconciled.has(t.id)),
     blocked: candidates.filter(blocksWrite).length,
+    removed: selectRemovedOnDisk(candidates).map((t) => t.name),
   };
 }
 
@@ -378,19 +390,17 @@ async function doSaveAll(): Promise<void> {
   // Save All is the real clobber vector: it loops every dirty tab, so a
   // background tab that diverged an hour ago, or one outside the watched root
   // that never gets an event at all, would otherwise be overwritten with no
-  // prompt ever shown. Save All is *explicit*, so it does recreate a file that
-  // was removed on disk — unlike autosave below.
-  const { writable, blocked } = await reconcileWritableTabs();
+  // prompt ever shown. It also refuses to *recreate* a file that vanished — the
+  // rename-resurrection case `selectSavable` documents. A focused File → Save
+  // still recreates it.
+  const { writable, blocked, removed } = await reconcileWritableTabs();
   const saved = await saveTabsToDisk(writable);
   updateTitle();
   autosave?.notifyChange();
   renderConflictBar();
-  // Say what was skipped. "Saved 3 files" while a fourth was silently refused
-  // is the kind of quiet half-success this feature exists to prevent.
-  const parts: string[] = [];
-  if (saved > 0) parts.push(`Saved ${saved} file${saved === 1 ? "" : "s"}`);
-  if (blocked > 0) parts.push(`skipped ${blocked} changed on disk`);
-  if (parts.length > 0) setStatus(parts.join(" — "));
+  // Say what was skipped, and what to do about it.
+  const message = describeSaveAll(saved, blocked, removed);
+  if (message) setStatus(message);
 }
 
 /**
@@ -646,14 +656,25 @@ function scheduleSidebarRefresh(): void {
  */
 function markRemovedOnDisk(tab: TabState): void {
   const alreadyKnown = tab.removedOnDisk;
+  const wasDirty = tab.dirty;
   if (tab.diverged?.reason === "error") tabs.setDiverged(tab.id, null);
-  // Dirty so the buffer is journalled and the close guard warns; `removedOnDisk`
-  // so autosave leaves the recreation to the user (see the field's doc comment).
+  // Dirty so the close guard warns and the journal picks the buffer up;
+  // `removedOnDisk` so the bulk writers leave the recreation to the user (see the
+  // field's doc comment and `selectSavable`).
   tabs.setRemovedOnDisk(tab.id, true);
   tabs.setDirty(tab.id, true);
-  // Announce the transition only. Every save and every autosave tick reconciles,
-  // so a file that stays deleted would otherwise restate this every two seconds
-  // and stomp every other message in the status line.
+  // `setDirty` only re-renders the tab strip — the recovery journal is written
+  // exclusively by the autosave debounce, so without this arming step the buffer
+  // of a note whose file just vanished lives nowhere but memory: the file is
+  // gone, the journal has no entry, and if Toril never saved this note version
+  // history has nothing either. Kill the process and the only copy is lost (§3).
+  //
+  // Armed on the transition only. Every save and every autosave tick reconciles,
+  // so arming unconditionally would re-arm the debounce from inside its own
+  // flush and cycle a journal write plus a `merge_external` round-trip every two
+  // seconds for as long as the file stays deleted.
+  if (!alreadyKnown || !wasDirty) autosave?.notifyChange();
+  // Announce the transition only, for the same reason.
   if (!alreadyKnown) setStatus(`${tab.name} was removed on disk — save to recreate it`);
 }
 
@@ -790,6 +811,9 @@ async function reconcile(tab: TabState): Promise<void> {
         }
         updateTitle();
         renderConflictBar();
+        // The merged text exists nowhere but memory until the user saves, so put
+        // it in the recovery journal now (§3) — `setDirty` alone never does.
+        autosave?.notifyChange();
         setStatus(
           action.clean
             ? `${tab.name}: external changes matched yours`
@@ -881,6 +905,10 @@ async function resolveConflict(tab: TabState, keepMine: boolean): Promise<void> 
   }
   updateTitle();
   renderConflictBar();
+  // Keep-mine leaves the buffer dirty and unwritten, and keep-theirs drops an
+  // entry the journal still holds; `setDirty` re-renders the tab strip and
+  // nothing else, so the journal only moves when the autosave debounce is armed.
+  autosave?.notifyChange();
   if (workspaceRoot) scheduleSidebarRefresh(); // the conflict copy is a new file
   setStatus(`Saved the other version as ${basename(parked)}`);
 }
@@ -1221,14 +1249,13 @@ window.addEventListener("DOMContentLoaded", async () => {
       saveDirtySaved: async () => {
         // Autosave is the write path that must never guess: it runs with the
         // user's attention elsewhere, so writing over an external change here is
-        // precisely the silent overwrite §3 forbids.
+        // precisely the silent overwrite §3 forbids. It must not *recreate* a
+        // vanished file either — `selectSavable` excludes both, for Save All as
+        // well as here. "Save to recreate it" is a promise about a focused save;
+        // until the user makes one the buffer's safety net is the recovery
+        // journal, which `markRemovedOnDisk` arms when the file disappears.
         const { writable } = await reconcileWritableTabs();
-        // …and it must not *recreate* a file either. An Obsidian rename is a
-        // delete followed by a create, so recreating the deleted path unattended
-        // would resurrect the old note beside the renamed one. "Save to recreate
-        // it" is a promise about an explicit save; the buffer stays safe in the
-        // recovery journal until the user makes one.
-        await saveTabsToDisk(writable.filter((t) => !t.removedOnDisk));
+        await saveTabsToDisk(writable);
         updateTitle();
         renderConflictBar();
       },

@@ -97,14 +97,62 @@ export function blocksWrite(tab: { diverged: DivergedState | null }): boolean {
   return tab.diverged !== null;
 }
 
+/** The tab fields every bulk-write selector reads. */
+interface SavableLike {
+  dirty: boolean;
+  path: string | null;
+  diverged: DivergedState | null;
+  removedOnDisk: boolean;
+}
+
 /**
- * Dirty, path-backed, non-diverged tabs — the only ones Save All or autosave
- * may write. Save All is the real clobber vector: it loops every dirty tab, so a
- * background tab that diverged an hour ago would otherwise be overwritten with
- * no prompt ever shown (§5.5).
+ * Dirty, path-backed, non-diverged, still-on-disk tabs — the only ones Save All
+ * or autosave may write.
+ *
+ * Two exclusions, for two different reasons.
+ *
+ * **Diverged**: Save All is the real clobber vector — it loops every dirty tab,
+ * so a background tab that diverged an hour ago would otherwise be overwritten
+ * with no prompt ever shown (§5.5).
+ *
+ * **Removed on disk**: recreating a vanished file is a *creation*, and neither
+ * bulk writer is aimed at it. An Obsidian rename is a delete followed by a
+ * create, so the losing tab is marked `removedOnDisk` **and forced dirty** (the
+ * buffer is the only copy left) — which puts it in the Save All set even though
+ * the user never touched it. Ctrl+Alt+S while working on some other document
+ * would then resurrect the old note beside the renamed one and the sync client
+ * would propagate the duplicate everywhere. Save All being *explicit* does not
+ * carry: it is a bulk convenience keystroke usually aimed at a different tab. A
+ * focused File → Save still recreates the file — it goes through `persistActive`,
+ * not through here.
  */
-export function selectSavable<
-  T extends { dirty: boolean; path: string | null; diverged: DivergedState | null },
->(tabs: readonly T[]): T[] {
-  return tabs.filter((t) => t.dirty && t.path !== null && !blocksWrite(t));
+export function selectSavable<T extends SavableLike>(tabs: readonly T[]): T[] {
+  return tabs.filter((t) => t.dirty && t.path !== null && !blocksWrite(t) && !t.removedOnDisk);
+}
+
+/** Dirty, path-backed tabs held back by `selectSavable` because their file is gone. */
+export function selectRemovedOnDisk<T extends SavableLike>(tabs: readonly T[]): T[] {
+  return tabs.filter((t) => t.dirty && t.path !== null && t.removedOnDisk);
+}
+
+/**
+ * The Save All status line. Every exclusion is named, because "Saved 3 files"
+ * while a fourth was silently refused is the quiet half-success this whole
+ * feature exists to prevent — and a removal in particular needs to say what the
+ * user can *do* about it, or the exclusion just looks like a lost save.
+ */
+export function describeSaveAll(
+  saved: number,
+  blocked: number,
+  removedNames: readonly string[],
+): string {
+  const parts: string[] = [];
+  if (saved > 0) parts.push(`Saved ${saved} file${saved === 1 ? "" : "s"}`);
+  if (blocked > 0) parts.push(`skipped ${blocked} changed on disk`);
+  if (removedNames.length > 0) {
+    const shown = removedNames.slice(0, 3).join(", ");
+    const rest = removedNames.length > 3 ? ` and ${removedNames.length - 3} more` : "";
+    parts.push(`skipped ${shown}${rest}: removed on disk, open it and Save to recreate`);
+  }
+  return parts.join(" — ");
 }
