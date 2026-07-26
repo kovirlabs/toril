@@ -9,6 +9,7 @@
 import { describe, expect, it } from "vitest";
 import { blocksWrite, decideAction, selectSavable } from "../src/sync";
 import type { MergeReport } from "../src/ipc";
+import type { DivergedState } from "../src/ui/tabs";
 
 const report = (r: Partial<MergeReport> & Pick<MergeReport, "outcome">): MergeReport => ({
   content: null,
@@ -90,5 +91,59 @@ describe("write gating", () => {
 
     const out = selectSavable([clean, untitled, diverged, savable]);
     expect(out).toEqual([savable]);
+  });
+});
+
+describe("resolution ordering (the invariant that matters most)", () => {
+  // resolveConflict lives in main.ts, which needs a live editor and Tauri IPC
+  // (§8), so the actual sequencing it protects — park the losing side before
+  // touching disk, abort the whole resolution and keep `diverged` set if the
+  // park fails — is exercised on-device, not here. What IS testable is the
+  // contract that ordering depends on: a diverged tab must keep refusing
+  // writes until something explicitly clears `diverged`, no matter *why* it
+  // diverged.
+  //
+  // This task's brief (written before Tasks 10-11 landed) proposed three
+  // tests, all built on a `reason: "conflict"` fixture:
+  //   - "keeps refusing writes while diverged" and "permits writes again once
+  //     cleared" duplicate the "write gating" tests above byte-for-byte in
+  //     what they exercise (same predicates, same conflict-shaped fixture,
+  //     same clean-vs-diverged split) — any wrong implementation that trips
+  //     them would already trip those, so repeating them adds no detection
+  //     power. Not added.
+  //   - "captures theirs at detection time" only asserted a value against the
+  //     literal that had just constructed it — it calls no production code
+  //     and cannot fail for any implementation. Vacuous. Not added.
+  //
+  // What genuinely isn't covered anywhere else: an `"error"` divergence
+  // (Task 11) carries `theirs: ""` — resolveConflict refuses to act on it at
+  // all (there is nothing to park), so blocksWrite/selectSavable are the ONLY
+  // things standing between that tab and an overwrite for as long as the
+  // reason stays "error". Every existing fixture in this file uses a
+  // non-empty `theirs`, so an implementation that keyed off truthiness of
+  // `diverged.theirs` instead of `diverged !== null` — a plausible slip,
+  // since a conflict's `theirs` is normally what you'd reach for — would pass
+  // every test above and still silently unblock writes on an error tab,
+  // because `""` is falsy. These two tests target exactly that.
+
+  const tab = (
+    diverged: DivergedState | null,
+    path = "/v/a.md",
+  ): { dirty: boolean; path: string | null; diverged: DivergedState | null } => ({
+    dirty: true,
+    path,
+    diverged,
+  });
+
+  it("blocks writes for an unparkable divergence, not just a conflict one", () => {
+    const stuck = tab({ theirs: "", reason: "error", message: "m" });
+    expect(blocksWrite(stuck)).toBe(true);
+    expect(selectSavable([stuck])).toEqual([]);
+  });
+
+  it("excludes an error-reason tab from Save All alongside a normal savable tab", () => {
+    const stuck = tab({ theirs: "", reason: "error", message: "m" }, "/v/a.md");
+    const savable = tab(null, "/v/b.md");
+    expect(selectSavable([stuck, savable])).toEqual([savable]);
   });
 });
