@@ -22,6 +22,8 @@ import {
   loadRecovery,
   loadSettings,
   markdownToHtml,
+  type MergeReport,
+  mergeExternal,
   onMenuAction,
   onOpenFile,
   onWorkspaceChange,
@@ -39,8 +41,19 @@ import {
   showAbout,
   takeLaunchPath,
   watchFolder,
+  writeConflictCopy,
 } from "./ipc";
 import { AutosaveScheduler, type RecoveryEntry, selectDirtySaved, snapshotDirty } from "./autosave";
+import { isAtOrUnder } from "./paths";
+import {
+  blocksWrite,
+  decideAction,
+  describeSaveAll,
+  selectMine,
+  selectRemovedOnDisk,
+  selectSavable,
+} from "./sync";
+import { ConflictBar } from "./ui/conflictbar";
 import { History } from "./ui/history";
 import { Outline } from "./ui/outline";
 import { SearchBar } from "./ui/search";
@@ -63,6 +76,7 @@ let statusBar: StatusBar | null = null;
 let outline: Outline | null = null;
 let history: History | null = null;
 let searchBar: SearchBar | null = null;
+let conflictBar: ConflictBar | null = null;
 let autosave: AutosaveScheduler | null = null;
 let autosaveEnabled = false;
 let autosaveDebounceMs = 2000;
@@ -77,8 +91,15 @@ let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 let sessionTimer: ReturnType<typeof setTimeout> | null = null;
 
 let loading = false; // suppress the dirty flag during programmatic loads
-/** Paths we just wrote, with a timestamp — to ignore our own watcher events. */
-const selfWrites = new Map<string, number>();
+/** Pending per-path reconciles — sync daemons emit bursts (write, chmod, touch). */
+const reconcileTimers = new Map<string, ReturnType<typeof setTimeout>>();
+/**
+ * Bumped whenever a path is removed on disk. A reconcile captures the count when
+ * it starts and discards its result if it changed, so a merge still awaiting IPC
+ * when the deletion lands cannot strand the tab in an `error` divergence that
+ * nothing will ever clear (no further watcher events arrive for a dead path).
+ */
+const removalEpoch = new Map<string, number>();
 
 function basename(p: string): string {
   const parts = p.split(/[\\/]/);
@@ -147,6 +168,7 @@ function onActivate(tab: TabState): void {
   outline?.refresh();
   refreshHistory();
   scheduleSessionSave();
+  renderConflictBar(); // the banner is per-tab, so it re-renders on every switch
 }
 
 function onCloseRequest(tab: TabState): void {
@@ -216,17 +238,16 @@ async function loadWorkspace(path: string): Promise<void> {
   scheduleSessionSave();
 }
 
-function recordSelfWrite(path: string): void {
-  selfWrites.set(path, Date.now());
-}
-
 async function persistActive(path: string): Promise<void> {
   const tab = tabs.active();
   if (!tab) return;
   const content = serializeEditor(tab.format);
-  recordSelfWrite(path);
   await saveFile(path, content);
   tab.content = content;
+  tabs.setRemovedOnDisk(tab.id, false); // whatever was gone, this write recreated
+  // What we just wrote is what is on disk — the merge base for the next
+  // external change, and what makes our own watcher event report `unchanged`.
+  tabs.setBase(tab.id, content);
   tabs.setDirty(tab.id, false);
   updateTitle();
   setStatus(`Saved ${basename(path)}`);
@@ -234,28 +255,77 @@ async function persistActive(path: string): Promise<void> {
   refreshHistory(); // a save just created a new version
 }
 
+/**
+ * Re-check one tab against disk and report whether it may now be written.
+ *
+ * The order is the whole point: reconcile FIRST, then consult `blocksWrite`.
+ * Refusing on the stale flag first would trap any tab whose divergence came from
+ * a path the watcher never reports — a network share, a FUSE mount, a file
+ * outside the watched workspace root — with no exit at all: the banner says
+ * saving is paused until the file can be read again, and nothing would ever
+ * unpause it. Reconciling first gives every write the chance to clear a stale
+ * divergence: a read that has since started working, an external edit that was
+ * reverted, or a deletion (which reconcile answers by recreating on save).
+ *
+ * This costs one extra read per save, and it is where the feature's guarantee
+ * actually lives. The watcher is an optimization — it drops and coalesces events
+ * on precisely the setups this branch exists to support.
+ */
+async function recheckBeforeWrite(tab: TabState): Promise<boolean> {
+  await reconcile(tab);
+  return !blocksWrite(tab);
+}
+
 async function doSave(): Promise<void> {
   const tab = tabs.active();
   if (!tab) return;
   if (!tab.path) {
+    // An Untitled draft has nothing on disk to diverge from — Save As is exempt.
     await doSaveAs();
     return;
   }
+  if (!(await recheckBeforeWrite(tab))) {
+    renderConflictBar();
+    setStatus(`${tab.name} changed on disk — resolve the banner before saving`);
+    return;
+  }
   try {
-    await persistActive(tab.path);
+    if (tabs.active()?.id === tab.id) {
+      await persistActive(tab.path);
+    } else {
+      // The user switched tabs while we re-checked disk, so the editor no longer
+      // holds this document and `persistActive` would write the wrong bytes to
+      // this path. `onDeactivate` flushed the buffer on the way out — write that.
+      if ((await saveTabsToDisk([tab])) > 0) {
+        updateTitle();
+        setStatus(`Saved ${tab.name}`);
+      }
+    }
   } catch (e) {
     setStatus(`Save failed: ${String(e)}`);
   }
 }
 
-/** Save the given path-backed tabs atomically (dirty filtering is the caller's). */
+/**
+ * Save the given path-backed tabs atomically (dirty filtering is the caller's).
+ *
+ * The divergence check here is the last line of defence, not the first: callers
+ * reconcile before selecting, so anything still diverged at this point has been
+ * re-checked against disk and genuinely needs the user. Refusing silently would
+ * be worse than not refusing at all, so each skip says so.
+ */
 async function saveTabsToDisk(list: readonly TabState[]): Promise<number> {
   let saved = 0;
   for (const tab of list) {
     if (!tab.path) continue;
+    if (blocksWrite(tab)) {
+      setStatus(`Skipped ${tab.name} — it changed on disk`);
+      continue;
+    }
     try {
-      recordSelfWrite(tab.path);
       await saveFile(tab.path, tab.content);
+      tabs.setBase(tab.id, tab.content);
+      tabs.setRemovedOnDisk(tab.id, false); // whatever was gone, this write recreated
       tabs.setDirty(tab.id, false);
       saved++;
     } catch (e) {
@@ -271,15 +341,74 @@ function captureActiveBuffer(): void {
   if (active) active.content = serializeEditor(active.format);
 }
 
-/** Save every dirty, file-backed tab (Untitled tabs need Save As and are skipped). */
-async function doSaveAll(): Promise<void> {
-  captureActiveBuffer();
-  const saved = await saveTabsToDisk(tabs.list().filter((t) => t.dirty));
-  updateTitle();
-  autosave?.notifyChange();
-  if (saved > 0) setStatus(`Saved ${saved} file${saved === 1 ? "" : "s"}`);
+/**
+ * Reconcile every dirty, path-backed tab against disk and return the subset that
+ * may now be written. Shared by Save All and autosave — the two bulk writers.
+ *
+ * Two things make this more than a loop.
+ *
+ * The active buffer is re-captured *between* passes and again at the end.
+ * `captureActiveBuffer` runs once, then N sequential IPC round-trips happen;
+ * anything typed during them is on screen but not in `tab.content`, so writing
+ * the stale buffer and then clearing `dirty` would strand those keystrokes
+ * nowhere — not on disk, not in the journal, and with the close guard silent.
+ *
+ * And nothing is returned that was not itself reconciled. A tab can *enter* the
+ * dirty set while we await, and writing it unchecked is exactly the hole this
+ * task exists to close; a second pass picks those up. Two passes, not a loop to
+ * a fixed point: anything that only turns dirty during the second pass is left
+ * for the next round, which costs a delay and never a keystroke. The residual
+ * window between the last read and the write is the documented TOCTOU limit.
+ */
+async function reconcileWritableTabs(): Promise<{
+  writable: TabState[];
+  blocked: number;
+  removed: string[];
+}> {
+  const reconciled = new Set<string>();
+  for (let pass = 0; pass < 2; pass++) {
+    captureActiveBuffer();
+    const pending = selectDirtySaved(tabs.list()).filter((t) => !reconciled.has(t.id));
+    if (pending.length === 0) break;
+    for (const tab of pending) {
+      reconciled.add(tab.id);
+      await reconcile(tab);
+    }
+  }
+  captureActiveBuffer(); // the last reconcile awaited too
+  const candidates = selectDirtySaved(tabs.list());
+  return {
+    // `selectSavable`'s rule, plus "we re-checked this one ourselves".
+    writable: selectSavable(candidates).filter((t) => reconciled.has(t.id)),
+    blocked: candidates.filter(blocksWrite).length,
+    removed: selectRemovedOnDisk(candidates).map((t) => t.name),
+  };
 }
 
+/** Save every dirty, file-backed tab (Untitled tabs need Save As and are skipped). */
+async function doSaveAll(): Promise<void> {
+  // Save All is the real clobber vector: it loops every dirty tab, so a
+  // background tab that diverged an hour ago, or one outside the watched root
+  // that never gets an event at all, would otherwise be overwritten with no
+  // prompt ever shown. It also refuses to *recreate* a file that vanished — the
+  // rename-resurrection case `selectSavable` documents. A focused File → Save
+  // still recreates it.
+  const { writable, blocked, removed } = await reconcileWritableTabs();
+  const saved = await saveTabsToDisk(writable);
+  updateTitle();
+  autosave?.notifyChange();
+  renderConflictBar();
+  // Say what was skipped, and what to do about it.
+  const message = describeSaveAll(saved, blocked, removed);
+  if (message) setStatus(message);
+}
+
+/**
+ * Save As is exempt from the divergence check by design. A *new* path has no
+ * shared history to diverge from, and Save As *over* an existing file is an
+ * overwrite the user explicitly chose in the native dialog. Checking here would
+ * block a legitimate first write and make the dialog behave unpredictably.
+ */
 async function doSaveAs(): Promise<void> {
   const tab = tabs.active();
   if (!tab) return;
@@ -287,10 +416,17 @@ async function doSaveAs(): Promise<void> {
     const content = serializeEditor(tab.format);
     const path = await saveFileAs(content);
     if (!path) return; // cancelled
-    recordSelfWrite(path);
     tab.content = content;
+    tabs.setBase(tab.id, content);
     tabs.setPath(tab.id, path, basename(path));
     tabs.setDirty(tab.id, false);
+    // Any divergence — or removal — belonged to the *old* path. Carrying it over
+    // would block every future save of a file that has just been written
+    // cleanly, with a banner about a conflict on a file this tab no longer
+    // points at.
+    tabs.setDiverged(tab.id, null);
+    tabs.setRemovedOnDisk(tab.id, false);
+    renderConflictBar();
     updateTitle();
     setStatus(`Saved ${basename(path)}`);
     autosave?.notifyChange();
@@ -365,26 +501,55 @@ function refreshHistory(): void {
 /**
  * Full restore flow behind the panel's Restore button. If the active buffer has
  * unsaved edits, save it first (which snapshots that state via the §4 hook), then
- * restore the chosen version and reload the buffer from disk. `recordSelfWrite`
- * suppresses the watcher's external-change prompt for our own writes.
+ * restore the chosen version and reload the buffer from disk. The watcher event
+ * our own write provokes is self-cancelling: `base` is set to the restored bytes
+ * below, so reconciling against disk reports `unchanged`.
  */
 async function restoreVersion(path: string, hash: string): Promise<void> {
   const tab = tabs.active();
-  if (tab && tab.path === path && tab.dirty) {
-    try {
-      await persistActive(path);
-    } catch (e) {
-      setStatus(`Save before restore failed: ${String(e)}`);
+  // Restore is a write path twice over: the pre-restore save writes the buffer,
+  // and `restoreSnapshot` then writes the chosen version over the file. Neither
+  // may run past an external change the user has not seen (§3).
+  if (tab && tab.path === path) {
+    if (!(await recheckBeforeWrite(tab))) {
+      renderConflictBar();
+      setStatus(`${tab.name} changed on disk — resolve the banner before restoring`);
       return;
     }
+    // That re-check awaited. If the user switched tabs during it, the editor no
+    // longer holds this document — and `persistActive` re-resolves the *active*
+    // tab, so it would write the new tab's bytes to this path and then mark the
+    // new tab clean, stranding edits that were never written anywhere. Abort
+    // rather than finish the restore against a stale reference.
+    if (tabs.active()?.id !== tab.id) {
+      setStatus("Restore cancelled — you switched documents");
+      return;
+    }
+    if (tab.dirty) {
+      try {
+        await persistActive(path);
+      } catch (e) {
+        setStatus(`Save before restore failed: ${String(e)}`);
+        return;
+      }
+    }
   }
-  recordSelfWrite(path);
   await restoreSnapshot(path, hash);
   const reloaded = await openFile(path);
-  if (tab && tab.path === path) {
-    loadIntoEditor(reloaded.content, tab.format);
-    tab.content = reloaded.content;
-    tabs.setDirty(tab.id, false);
+  // Two more awaits, so the same switch is possible again — and the restore has
+  // now happened on disk, so the tab's buffer must be brought in line whether or
+  // not it is on screen. `loadIntoEditor` targets the live editor, so it is the
+  // one step gated on the tab still being active (the `reconcile` pattern).
+  const target = tabs.byPath(path);
+  if (target) {
+    target.content = reloaded.content;
+    tabs.setBase(target.id, reloaded.content);
+    tabs.setDirty(target.id, false);
+    if (target.id === tabs.active()?.id) {
+      loadIntoEditor(reloaded.content, target.format);
+      outline?.refresh();
+      statusBar?.refresh();
+    }
     updateTitle();
   }
   setStatus(`Restored a previous version of ${basename(path)}`);
@@ -466,16 +631,6 @@ async function onImagePaste(bytes: Uint8Array): Promise<string | null> {
 
 // ---- External changes ------------------------------------------------------
 
-function isSelfWrite(path: string): boolean {
-  const at = selfWrites.get(path);
-  if (at === undefined) return false;
-  if (Date.now() - at > 2000) {
-    selfWrites.delete(path);
-    return false;
-  }
-  return true;
-}
-
 function scheduleSidebarRefresh(): void {
   if (refreshTimer) clearTimeout(refreshTimer);
   refreshTimer = setTimeout(() => {
@@ -489,32 +644,323 @@ function scheduleSidebarRefresh(): void {
   }, 300);
 }
 
-async function handleWorkspaceChange(change: WorkspaceChange): Promise<void> {
+/**
+ * The file behind an open tab has vanished. A sync daemon deleting a file the
+ * user has open must not vaporize their buffer: keep it, mark it dirty, and the
+ * next save recreates the file.
+ *
+ * An `error` divergence is cleared here because the deletion is what that read
+ * tripped over, and an `error` has no user-actionable exit — leaving it set
+ * would block the very save this status line promises. A `conflict` divergence
+ * is left alone: its `theirs` is real content the user can still park.
+ */
+function markRemovedOnDisk(tab: TabState): void {
+  const alreadyKnown = tab.removedOnDisk;
+  const wasDirty = tab.dirty;
+  if (tab.diverged?.reason === "error") tabs.setDiverged(tab.id, null);
+  // Dirty so the close guard warns and the journal picks the buffer up;
+  // `removedOnDisk` so the bulk writers leave the recreation to the user (see the
+  // field's doc comment and `selectSavable`).
+  tabs.setRemovedOnDisk(tab.id, true);
+  tabs.setDirty(tab.id, true);
+  // `setDirty` only re-renders the tab strip — the recovery journal is written
+  // exclusively by the autosave debounce, so without this arming step the buffer
+  // of a note whose file just vanished lives nowhere but memory: the file is
+  // gone, the journal has no entry, and if Toril never saved this note version
+  // history has nothing either. Kill the process and the only copy is lost (§3).
+  //
+  // Armed on the transition only. Every save and every autosave tick reconciles,
+  // so arming unconditionally would re-arm the debounce from inside its own
+  // flush and cycle a journal write plus a `merge_external` round-trip every two
+  // seconds for as long as the file stays deleted.
+  if (!alreadyKnown || !wasDirty) autosave?.notifyChange();
+  // Announce the transition only, for the same reason.
+  if (!alreadyKnown) setStatus(`${tab.name} was removed on disk — save to recreate it`);
+}
+
+/**
+ * Reconcile one tab against disk and act on the result.
+ *
+ * Called from the watcher and (Task 11) from the pre-save check. The watcher is
+ * an optimization; the save path is the guarantee — watchers drop and coalesce
+ * events on network shares and some sync clients.
+ *
+ * This replaces the old 2-second `isSelfWrite` window. After Toril saves, disk
+ * equals `base`, so a self-triggered event reports `unchanged` and stops here —
+ * a byte comparison where a timer used to guess.
+ */
+async function reconcile(tab: TabState): Promise<void> {
+  if (!tab.path) return;
+  const path = tab.path;
+
+  /** The live editor for the active tab; `null` means "this tab isn't on screen". */
+  const liveBuffer = (): string | null =>
+    tab.id === tabs.active()?.id ? serializeEditor(tab.format) : null;
+
+  // The file may be deleted while we await IPC below; the `remove` branch of the
+  // watcher owns that tab from then on, and applying a stale merge over the top
+  // of its decision would undo it.
+  const epoch = removalEpoch.get(path) ?? 0;
+  const removedMeanwhile = (): boolean => (removalEpoch.get(path) ?? 0) !== epoch;
+
+  // Up to two attempts, because `mine` is captured *before* an await and the two
+  // outcomes that end in `loadIntoEditor` replace the ProseMirror document
+  // wholesale. Anything typed while `merge_external` was in flight is on screen
+  // but not in `mine`, so it is not in the merged text either — applying it
+  // destroys those keystrokes, and the `reload` branch also clears `dirty`, so
+  // the loss isn't even flagged. Detect it by re-selecting `mine` after the
+  // await and comparing; recompute once against the buffer that actually exists.
+  //
+  // A second race falls through to a conflict rather than bailing out. Bailing
+  // would leave the tab un-diverged with an external change unaccounted for, and
+  // this function is also the pre-write check (`recheckBeforeWrite`,
+  // `reconcileWritableTabs`) — a silent "no result" there reads as "clear to
+  // write" and the save clobbers the external change. Failing closed keeps both
+  // sides: the banner parks the loser whichever way the user answers.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const mine = selectMine(tab, liveBuffer);
+
+    let report: MergeReport;
+    try {
+      report = await mergeExternal(path, tab.base, mine);
+    } catch {
+      // One retry: a sync client may hold the file open for a moment mid-write.
+      await new Promise((r) => setTimeout(r, 200));
+      try {
+        report = await mergeExternal(path, tab.base, mine);
+      } catch (e) {
+        if (removedMeanwhile()) return; // deleted, not unreadable — already handled
+        // Fail closed — block writes rather than risk overwriting something we
+        // could not read (§3).
+        tabs.setDiverged(tab.id, {
+          theirs: "",
+          reason: "error",
+          message:
+            `could not be read from disk (${String(e)}). ` +
+            `Your edits are untouched here; saving is paused until the file can be read again`,
+        });
+        renderConflictBar();
+        return;
+      }
+    }
+    if (removedMeanwhile()) return;
+
+    // The file is gone. That is not a conflict and not an error: there is no
+    // "theirs" to weigh against, the buffer is the only copy left, and the answer
+    // is to recreate the file on the next save. Handled here rather than in
+    // `decideAction` because it is the one outcome that must *unblock* a write —
+    // and it does not depend on `mine`, so a raced buffer cannot make it wrong.
+    if (report.outcome === "missing") {
+      markRemovedOnDisk(tab);
+      updateTitle();
+      renderConflictBar();
+      return;
+    }
+    // The read succeeded, so the file exists — a previous removal has been undone
+    // (restored by the sync client, or recreated by a save). Clear the flag here
+    // rather than only on our own writes, so an externally restored file starts
+    // autosaving again without the user having to do anything.
+    tabs.setRemovedOnDisk(tab.id, false);
+
+    // Only the two buffer-replacing outcomes are gated. `unchanged` means disk
+    // equals base — a fact about disk alone — and `conflict` writes nothing and
+    // blocks the tab, which is the safe direction to be wrong in.
+    if (report.outcome === "theirsOnly" || report.outcome === "merged") {
+      if (selectMine(tab, liveBuffer) !== mine) {
+        if (attempt === 0) continue;
+        report = { outcome: "conflict", content: null, theirs: report.theirs };
+      }
+    }
+
+    const action = decideAction(report, tab.format, tab.dirty);
+    switch (action.kind) {
+      case "none":
+        // If an external writer reverted their change, the conflict resolves
+        // itself and the banner goes away.
+        if (tab.diverged) {
+          tabs.setDiverged(tab.id, null);
+          renderConflictBar();
+        }
+        return;
+
+      case "reload":
+        tab.content = action.theirs;
+        tabs.setBase(tab.id, action.theirs);
+        tabs.setDiverged(tab.id, null);
+        tabs.setDirty(tab.id, false);
+        if (tab.id === tabs.active()?.id) {
+          loadIntoEditor(action.theirs, tab.format);
+          outline?.refresh();
+          statusBar?.refresh();
+        }
+        updateTitle();
+        renderConflictBar();
+        setStatus(`Reloaded ${tab.name}`);
+        return;
+
+      case "applyMerge":
+        tab.content = action.merged;
+        // base becomes THEIRS, not the merged text: theirs is what is on disk now.
+        tabs.setBase(tab.id, action.theirs);
+        tabs.setDiverged(tab.id, null);
+        tabs.setDirty(tab.id, !action.clean);
+        if (tab.id === tabs.active()?.id) {
+          loadIntoEditor(action.merged, tab.format);
+          outline?.refresh();
+          statusBar?.refresh();
+        }
+        updateTitle();
+        renderConflictBar();
+        // The merged text exists nowhere but memory until the user saves, so put
+        // it in the recovery journal now (§3) — `setDirty` alone never does.
+        autosave?.notifyChange();
+        setStatus(
+          action.clean
+            ? `${tab.name}: external changes matched yours`
+            : `Merged external changes into ${tab.name} — review and save`,
+        );
+        return;
+
+      case "conflict":
+        tabs.setDiverged(tab.id, {
+          theirs: action.theirs,
+          reason: "conflict",
+          message: action.message,
+        });
+        renderConflictBar();
+        return;
+    }
+  }
+}
+
+/** Show the banner for the active tab if it is diverged; hide it otherwise. */
+function renderConflictBar(): void {
+  const tab = tabs.active();
+  if (!tab || !tab.diverged) {
+    conflictBar?.hide();
+    return;
+  }
+  // An `error` divergence has no `theirs`, so neither choice exists and nothing
+  // has been parked — the bar renders as a notice, without the two buttons or
+  // the park guarantee that `resolveConflict` would refuse to honour.
+  if (tab.diverged.reason === "error") {
+    conflictBar?.show({ name: tab.name, message: tab.diverged.message, actions: "none" });
+    return;
+  }
+  conflictBar?.show({
+    name: tab.name,
+    message: tab.diverged.message,
+    actions: "resolve",
+    onKeepMine: () => void resolveConflict(tab, true),
+    onUseTheirs: () => void resolveConflict(tab, false),
+  });
+}
+
+/**
+ * Resolve a conflict by parking the losing side, in both directions.
+ *
+ * The park happens FIRST. If it fails the whole resolution aborts — no reload,
+ * `diverged` stays set, the banner stays up. If we cannot preserve the losing
+ * side, we do not get to destroy it (§3). This is the most important error path
+ * in the feature.
+ */
+async function resolveConflict(tab: TabState, keepMine: boolean): Promise<void> {
+  if (!tab.path || !tab.diverged) return;
+  // An `error` divergence has no `theirs` — we never managed to read the file.
+  // Acting on it would park an empty conflict copy and, for "Use theirs", blank
+  // the buffer. Refuse: the state clears itself as soon as the file reads again.
+  if (tab.diverged.reason === "error") {
+    setStatus(`${tab.name} still cannot be read from disk — nothing changed`);
+    return;
+  }
+  const theirs = tab.diverged.theirs;
+  // Same rule as `reconcile`: "my version" of a tab with no unsaved edits is the
+  // merge base, not a fresh canonical serialization of the buffer (`selectMine`).
+  const mine = selectMine(tab, () =>
+    tab.id === tabs.active()?.id ? serializeEditor(tab.format) : null,
+  );
+
+  let parked: string;
+  try {
+    parked = await writeConflictCopy(tab.path, keepMine ? theirs : mine);
+  } catch (e) {
+    setStatus(`Could not save the conflict copy — nothing changed (${String(e)})`);
+    return; // diverged stays set; the banner stays up
+  }
+
+  if (keepMine) {
+    tabs.setBase(tab.id, theirs); // disk holds theirs; the buffer is still ours
+    tabs.setDiverged(tab.id, null);
+    tabs.setDirty(tab.id, true);
+  } else {
+    tab.content = theirs;
+    tabs.setBase(tab.id, theirs);
+    tabs.setDiverged(tab.id, null);
+    tabs.setDirty(tab.id, false);
+    if (tab.id === tabs.active()?.id) {
+      loadIntoEditor(theirs, tab.format);
+      outline?.refresh();
+      statusBar?.refresh();
+    }
+  }
+  updateTitle();
+  renderConflictBar();
+  // Keep-mine leaves the buffer dirty and unwritten, and keep-theirs drops an
+  // entry the journal still holds; `setDirty` re-renders the tab strip and
+  // nothing else, so the journal only moves when the autosave debounce is armed.
+  autosave?.notifyChange();
+  if (workspaceRoot) scheduleSidebarRefresh(); // the conflict copy is a new file
+  setStatus(`Saved the other version as ${basename(parked)}`);
+}
+
+function handleWorkspaceChange(change: WorkspaceChange): void {
   // The tree may have changed (create/remove/rename) — refresh the sidebar.
   scheduleSidebarRefresh();
 
-  // If the file in the active tab changed underneath us, offer to reload it.
-  const active = tabs.active();
-  if (!active?.path) return;
-  if (change.kind !== "modify" && change.kind !== "create") return;
-  if (!change.paths.includes(active.path)) return;
-  if (isSelfWrite(active.path)) return;
+  if (change.kind === "remove") {
+    // `notify` reports a removed *directory* as a single event carrying only the
+    // directory path, so exact matching would miss every open tab whose file
+    // lived inside it — those tabs would get no signal at all.
+    const wasRemoved = (p: string): boolean => change.paths.some((r) => isAtOrUnder(p, r));
 
-  const reload =
-    !active.dirty ||
-    confirm(`${active.name} changed on disk. Reload and lose your unsaved edits?`);
-  if (!reload) return;
+    // Cancel any reconcile still queued for a path that no longer exists: it
+    // would fail both read attempts and leave an `error` divergence that no
+    // later event can clear, blocking the very save promised below. The epoch
+    // bump does the same for a reconcile already in flight — keyed by tab path,
+    // which is what `reconcile` reads (a removed directory's own path is not).
+    for (const [path, pending] of reconcileTimers) {
+      if (!wasRemoved(path)) continue;
+      clearTimeout(pending);
+      reconcileTimers.delete(path);
+    }
 
-  try {
-    const file = await openFile(active.path);
-    active.content = file.content;
-    loadIntoEditor(file.content, active.format);
-    outline?.refresh();
-    tabs.setDirty(active.id, false);
+    for (const tab of tabs.list()) {
+      if (!tab.path || !wasRemoved(tab.path)) continue;
+      removalEpoch.set(tab.path, (removalEpoch.get(tab.path) ?? 0) + 1);
+      markRemovedOnDisk(tab);
+    }
     updateTitle();
-    setStatus(`Reloaded ${active.name}`);
-  } catch (e) {
-    setStatus(`Reload failed: ${String(e)}`);
+    renderConflictBar();
+    return;
+  }
+  if (change.kind !== "modify" && change.kind !== "create") return;
+
+  // Every tab whose path changed, not only the active one. Debounced per path:
+  // sync daemons emit bursts (write, chmod, touch), and the tab is re-looked-up
+  // at fire time so a closed or replaced tab is never reconciled.
+  for (const tab of tabs.list()) {
+    if (!tab.path || !change.paths.includes(tab.path)) continue;
+    const path = tab.path;
+    const existing = reconcileTimers.get(path);
+    if (existing) clearTimeout(existing);
+    reconcileTimers.set(
+      path,
+      setTimeout(() => {
+        reconcileTimers.delete(path);
+        const current = tabs.byPath(path);
+        if (current) void reconcile(current);
+      }, 250),
+    );
   }
 }
 
@@ -634,6 +1080,23 @@ async function recoverCrashedBuffers(): Promise<void> {
         format: entry.format,
       });
       tabs.setDirty(tab.id, true);
+      // `tabs.open` seeds `base` from the content it is given, but a recovered
+      // buffer is *newer* than disk — leaving it as the base would make the next
+      // reconcile read the older file as an external change and reload over the
+      // recovery. base must be what is on disk (§3).
+      if (entry.path) {
+        try {
+          const onDisk = await openFile(entry.path);
+          tabs.setBase(tab.id, onDisk.content);
+        } catch {
+          // Unreadable right now (gone, or a sync client mid-restore). An empty
+          // base is the honest ancestor: we know nothing about disk. Whatever
+          // appears later is then a real three-way merge — both sides changed
+          // from nothing, which conflicts and asks — instead of the clean
+          // overwrite an equal-to-buffer base would produce.
+          tabs.setBase(tab.id, "");
+        }
+      }
     }
   }
   updateTitle();
@@ -771,6 +1234,10 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
   const searchEl = document.querySelector<HTMLElement>("#searchbar");
   if (searchEl) searchBar = new SearchBar(searchEl, editor);
+  // Its own row in #main, between the search bar and the editor: the banner
+  // belongs above the document, not inside the surface that scrolls away.
+  const conflictEl = document.querySelector<HTMLElement>("#conflictbar");
+  if (conflictEl) conflictBar = new ConflictBar(conflictEl);
 
   autosave = new AutosaveScheduler(
     {
@@ -780,9 +1247,17 @@ window.addEventListener("DOMContentLoaded", async () => {
       },
       writeJournal: (entries) => (entries.length > 0 ? saveRecovery(entries) : clearRecovery()),
       saveDirtySaved: async () => {
-        captureActiveBuffer();
-        await saveTabsToDisk(selectDirtySaved(tabs.list()));
+        // Autosave is the write path that must never guess: it runs with the
+        // user's attention elsewhere, so writing over an external change here is
+        // precisely the silent overwrite §3 forbids. It must not *recreate* a
+        // vanished file either — `selectSavable` excludes both, for Save All as
+        // well as here. "Save to recreate it" is a promise about a focused save;
+        // until the user makes one the buffer's safety net is the recovery
+        // journal, which `markRemovedOnDisk` arms when the file disappears.
+        const { writable } = await reconcileWritableTabs();
+        await saveTabsToDisk(writable);
         updateTitle();
+        renderConflictBar();
       },
       reportError: (err) => setStatus(`Autosave failed: ${String(err)}`),
     },

@@ -15,6 +15,9 @@
   --btn-bg: #ffffff;
   --code-bg: #f0f0f3;
   --table-stripe: #f6f6f7;
+  --warn-bg: #fdf3d9;
+  --warn-fg: #5a4413;
+  --warn-border: #e3c876;
 
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
   font-size: 16px;
@@ -42,6 +45,9 @@ html[data-theme="dark"] {
   --btn-bg: #2f2f35;
   --code-bg: #2a2a30;
   --table-stripe: #26262b;
+  --warn-bg: #4a3a1a;
+  --warn-fg: #f4e2be;
+  --warn-border: #6b5424;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -56,6 +62,9 @@ html[data-theme="dark"] {
     --btn-bg: #2f2f35;
     --code-bg: #2a2a30;
     --table-stripe: #26262b;
+    --warn-bg: #4a3a1a;
+    --warn-fg: #f4e2be;
+    --warn-border: #6b5424;
   }
 }
 
@@ -347,7 +356,8 @@ body {
 /* ---- Main: tab bar + editor ---- */
 #main {
   display: grid;
-  grid-template-rows: auto auto auto 1fr; /* tabbar · format toolbar · search · editor */
+  /* tabbar · format toolbar · search · conflict banner · editor */
+  grid-template-rows: auto auto auto auto 1fr;
   min-height: 0;
   min-width: 0;
 }
@@ -603,4 +613,37 @@ body {
 #docstats {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+
+/* Conflict banner (ROADMAP I.4) — non-blocking, above the editor. Uses the
+   warning role rather than danger: nothing has been lost, a decision is due. */
+.conflict-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+  border-bottom: 1px solid var(--warn-border);
+  font-size: 13px;
+}
+.conflict-bar[hidden] {
+  display: none;
+}
+.conflict-bar-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.conflict-bar-btn {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border: 1px solid var(--warn-border);
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+.conflict-bar-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
 }

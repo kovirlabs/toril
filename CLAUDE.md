@@ -102,8 +102,8 @@ pnpm tauri build      # production .exe + installer (Windows; see §9)
 pnpm test             # vitest — round-trip + toolbar + theme + export + tabs + security (jsdom)
 pnpm typecheck        # tsc --noEmit (TS strict)
 pnpm build            # tsc + vite build (frontend only)
-# logic crates — the same seven CI runs (plain `cargo test` also builds the app crate)
-cd src-tauri && cargo test -p fsatomic -p vaultscan -p mdhtml -p mdrtf -p imgasset -p trashbin -p snapshots
+# logic crates — the same eight CI runs (plain `cargo test` also builds the app crate)
+cd src-tauri && cargo test -p fsatomic -p vaultscan -p mdhtml -p mdrtf -p imgasset -p trashbin -p snapshots -p mergemd
 cd src-tauri && cargo fmt --all && cargo clippy   # clean before commit (§10)
 ```
 
@@ -112,6 +112,10 @@ Linux: WebKitGTK-4.1 + `pkg-config`). On a box without those, the frontend (`pnp
 `typecheck`), the logic-crate tests, and `cargo generate-lockfile` all work, but a full `cargo build`/
 `tauri dev` will not link. Launch the window on a machine with the platform webview deps. `fsatomic`
 and the other logic crates are split out so their gates stay runnable everywhere.
+
+**Typecheck landmine.** Do not verify types with `npx tsc` — `npx` resolves a bogus, unrelated
+`tsc@2.0.4` package from npm (not TypeScript's `tsc`) that **exits 0 without checking anything**, so
+it reports success on code that does not typecheck. Use `pnpm typecheck` or `node_modules/.bin/tsc`.
 
 ---
 
@@ -226,10 +230,13 @@ toril/
 │   │   ├── toolbar.ts         # formatting toolbar (commands + active state, §6)
 │   │   ├── theme.ts           # theme preference controller (System/Light/Dark)
 │   │   ├── statusbar.ts       # word/char count + reading time + cursor
-│   │   └── search.ts          # Find & Replace (decoration plugin + bar)
+│   │   ├── search.ts          # Find & Replace (decoration plugin + bar)
+│   │   └── conflictbar.ts     # non-blocking per-tab conflict banner (§5)
 │   ├── export/html.ts         # standalone HTML-document builder (§7)
 │   ├── styles.css             # app chrome + theme CSS variables (per data-theme)
 │   ├── sanitize.ts            # HTML sanitization (§3.3)
+│   ├── sync.ts                # pure external-change policy (no DOM/IPC, §5)
+│   ├── paths.ts               # path containment, for directory-level removal (§5)
 │   └── ipc.ts                 # thin wrappers around Tauri invoke(); installCloseGuard
 └── src-tauri/                 # BACKEND (Rust)
     ├── Cargo.toml             # pinned; workspace = app + crates/*
@@ -240,7 +247,8 @@ toril/
     │   ├── mdrtf/             # comrak markdown→RTF for export (§7)
     │   ├── imgasset/          # save pasted clipboard images beside the doc (§6)
     │   ├── trashbin/          # soft-delete to workspace .trash/ + restore (§3)
-    │   └── snapshots/         # content-addressed local version history (§3, ROADMAP I.3)
+    │   ├── snapshots/         # content-addressed local version history (§3, ROADMAP I.3)
+    │   └── mergemd/           # line-based 3-way merge + conflict filenames (§3, ROADMAP I.4)
     └── src/
         ├── main.rs            # bin entry → lib::run()
         ├── lib.rs             # Tauri builder + menu + command registration
@@ -249,7 +257,8 @@ toril/
         │   ├── files.rs       # open / save (ATOMIC) / save_as
         │   ├── workspace.rs   # open folder, list tree, watch (notify crate)
         │   ├── export.rs      # markdown_to_html + export_html; export_rtf (all-Rust)
-        │   └── images.rs      # save_clipboard_image (imgasset)
+        │   ├── images.rs      # save_clipboard_image (imgasset)
+        │   └── sync.rs        # merge_external / write_conflict_copy (§5)
         └── settings.rs        # persisted prefs (theme, last folder, open files, sidebar_visible)
 ```
 > comrak lives in `crates/mdhtml`/`mdrtf` (not the app crate) so its render config is unit-testable
@@ -284,6 +293,8 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 | `list_history` | `path` | `SnapshotMeta[]` | version list for a note, newest first; empty if none (`crates/snapshots`, ROADMAP I.3) |
 | `read_snapshot` | `path, hash` | `content` | exact stored content of one version (for the diff view) |
 | `restore_snapshot` | `path, hash` | `()` | snapshots current on-disk content **first**, then atomically writes the chosen version — restore is undoable (§3) |
+| `merge_external` | `path, base, mine` | `{ outcome, content?, theirs? }` | Reads the file and 3-way merges via `mergemd`. **Never writes.** `outcome` is one of `unchanged` / `theirsOnly` / `merged` / `conflict` / `missing` — `missing` is a deleted file (`io::ErrorKind::NotFound`), distinct from an unreadable one, so a gone file can be recreated by an explicit save rather than blocked forever. `content` is set only for `merged`; `theirs` (the bytes now on disk) is set for every outcome **except `unchanged` and `missing`** — nothing to park in either case — so the caller can set its new merge base and park the losing side without a second read that would race the writer (ROADMAP I.4) |
+| `write_conflict_copy` | `path, content` | `conflict_path` | Parks the losing side as `note (conflict 2026-07-25 14-32-05).md` beside the original — **atomic** via `fsatomic`, and `-2`/`-3`… suffixed rather than overwritten on a timestamp collision (§3) |
 | `take_launch_path` | — | `path?` | file the app was launched with (double-click / "Open with"); returns it **once**, then `null` (§file-open) |
 
 > **HTML export is split** across two commands to hold the single sanitization path (§3.3):
@@ -331,6 +342,32 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 > duplicate. **macOS** delivers file-opens via `RunEvent::Opened`, not argv — not yet wired (Windows
 > is the focus, §1); add that handler when macOS becomes a target. All flows need interactive GUI
 > verification — a human driving a window, not a missing toolchain (§0).
+>
+> **External changes: the save path is the guarantee, the watcher is an optimization.**
+> `workspace:change` reconciles every open tab whose file changed, not just the active one. But
+> watchers drop and coalesce events on network shares, some FUSE mounts, and a few sync clients — so
+> **every save re-checks disk first** (`merge_external`, then proceed only on `unchanged`). A tab
+> that has diverged blocks Save, Save All, and autosave until the user resolves it via the banner
+> (`conflictbar.ts`); whichever way they resolve it, `write_conflict_copy` parks the losing side
+> first, so no path through the feature discards bytes. A file that vanishes from disk mid-edit is
+> not a conflict — `TabState.removedOnDisk` marks it and only an *explicit* save (File → Save, Save
+> As, Save All) recreates it; autosave deliberately leaves it alone, because an Obsidian rename is a
+> delete followed by a create, and an unattended recreate would duplicate the note beside its new
+> name. The old 2-second `isSelfWrite` window is gone: after Toril saves, disk equals the tab's
+> `base`, so a self-triggered watcher event reports `unchanged` and stops.
+>
+> **Known limit of the guarantee: a residual TOCTOU between `merge_external`'s read and `save_file`'s
+> write.** `merge_external` only reads; the frontend then calls `save_file` separately, and nothing
+> re-verifies disk in between. An external write landing in that window is silently clobbered, and
+> the subsequent `tabs.setBase()` then makes every later reconcile compare against the new (just
+> overwritten) bytes and report `unchanged` — so the loss isn't just possible, it stops being
+> detectable *by reconciliation*. It is still **recoverable**: `save_file` calls
+> `snapshot_before_write` → `snapshots::store::snapshot_existing` (`commands/files.rs`), which
+> records the bytes already on disk *before* the overwrite — so the clobbered external write is a
+> version in the history panel, and restoring it is one click. Closing the window properly needs a
+> compare-and-swap inside `save_file` itself (refuse the write unless the on-disk bytes still equal
+> `base`); that has not been built. Treat this as the honest edge of "never silently overwrite" —
+> undetected at the moment it happens, but not unrecoverable.
 
 ---
 
@@ -391,18 +428,31 @@ Phases 0–3 are complete and Phase 4 (polish) is in progress; the shipped detai
   typing the syntax, and asserts **no raw-markdown-text insertion** (§3.2).
 - **Export:** `cargo test -p mdhtml -p mdrtf` (render configs) + `tests/export.test.ts` (builder + the
   §3.3 sanitization chokepoint).
+- **Merge core:** `cargo test -p mergemd` — the crate's four `Divergence` outcomes (`Unchanged`,
+  `TheirsOnly`, `Merged`, `Conflict`), convergent edits, CRLF line-terminator preservation,
+  conflict-filename collisions, and a property test (500 randomized cases) that a clean merge
+  never drops a line. The wire protocol's fifth outcome, `missing`, is produced one layer up in
+  `src-tauri/src/commands/sync.rs` (an `io::ErrorKind::NotFound` on the read, before `mergemd` is
+  even called) — that file has **no tests of its own**, so `missing` is exercised on-device only.
+- **External-change policy:** `tests/sync.test.ts` — `decideAction`'s outcome→action mapping is total
+  and fails closed, HTML never auto-merges, and `selectSavable` excludes a diverged tab from every
+  bulk write path (§5).
 - Plus `vaultscan`, `imgasset`, `theme`, `statusbar`, `search`, `security`, `tabs` suites.
 
 **CI runs these automatically** on every pull request and on pushes to `main`
 (`.github/workflows/ci.yml`): `pnpm typecheck` + `pnpm test` + `pnpm build`, and `cargo test` over the
-seven logic crates — each on **Ubuntu and Windows**, plus `cargo fmt --all --check` on Ubuntu. The
+eight logic crates — each on **Ubuntu and Windows**, plus `cargo fmt --all --check` on Ubuntu. The
 Windows leg is not ceremony: `pnpm install --frozen-lockfile` is what applies the Milkdown patch, and
 `fsatomic` is the §3.1 gate whose replace-over-existing semantics differ from POSIX there.
 
 **What CI cannot cover — still yours to run:** interactive GUI flows (`pnpm tauri dev` — dialogs,
 menus, the reload prompt), macOS, the Tauri app crate, and `cargo clippy` (§10; excluded from CI
 because it lints the vendored `glib`, a path dependency that gets no `--cap-lints allow`). A green PR
-means the headless gates passed, not that the app was driven.
+means the headless gates passed, not that the app was driven. **The sync-coexistence *wiring* in
+`main.ts` (`reconcile`, `recheckBeforeWrite`, autosave/Save-All gating, the conflict banner) has no
+test harness — it needs a live Milkdown editor and Tauri IPC.** `crates/mergemd`, `src/sync.ts`,
+`src/paths.ts`, and the tab bookkeeping in `src/ui/tabs.ts` are gated in isolation; the glue that
+calls them in the right order, at the right time, is verified on-device only.
 
 **Remaining for Phase 4:** optional code-signing (removes the SmartScreen warning — see the
 code-signing memory) and on-device verification of GUI/Rust flows that can't be tested here.

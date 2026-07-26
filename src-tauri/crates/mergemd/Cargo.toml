@@ -1,0 +1,10 @@
+[package]
+name = "mergemd"
+version = "0.1.0"
+edition = "2024"
+description = "Line-based three-way merge for Toril (CLAUDE.md §3, ROADMAP Movement I.4). Pure computation plus conflict-filename selection — it never writes the target file, so fsatomic stays the only writer (§3.1). No Tauri dep, so it is unit-testable anywhere."
+
+# Diff primitives only (§2): `similar` is pure Rust, actively maintained by
+# Armin Ronacher, and widely used. Nothing else beyond std.
+[dependencies]
+similar = "2"

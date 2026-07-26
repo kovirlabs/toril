@@ -85,7 +85,7 @@ jobs:
           workspaces: ./src-tauri -> target
 
       # Named packages, NOT --workspace: that would pull in the Tauri app crate
-      # and with it WebKitGTK on Linux / WebView2 on Windows. These seven are
+      # and with it WebKitGTK on Linux / WebView2 on Windows. These eight are
       # split out (CLAUDE.md §4) precisely so their gates run without a webview.
       #
       # Windows matters here too: fsatomic is the §3.1 atomic-save gate and the
@@ -101,6 +101,7 @@ jobs:
           -p imgasset
           -p trashbin
           -p snapshots
+          -p mergemd
 
       # `--all` covers workspace *members*, and the vendored glib is excluded
       # from the workspace (§2) — so unlike clippy, this never touches upstream
