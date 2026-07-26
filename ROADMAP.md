@@ -48,11 +48,12 @@ no AI. That gap is this roadmap.
 
 > **Status (2026-07-25).** The foundation above — plus file-association / double-click
 > open — shipped through **`v1.0.0-beta.1`** (see `CHANGELOG.md`). **Movement I,
-> branches 1–3 are complete** (autosave + crash-recovery journal; safe-delete-to-trash;
-> local version history). Branches 4–5 and Movements II–V are unstarted.
-> **▶ Pick up at Movement I, branch 4 — `feat/sync-coexistence`.** It has an approved
-> design spec and no implementation code; its §7 still needs correcting after the
-> precursor below. The spec lives **on that branch**, not on `main`:
+> branches 1–4 are complete** (autosave + crash-recovery journal; safe-delete-to-trash;
+> local version history; sync coexistence — 3-way merge, conflict banner, parked
+> conflict copies). Branch 5 and Movements II–V are unstarted.
+> **▶ Pick up at Movement I, branch 5 — `feat/release-readiness`.** No design spec
+> exists for it yet; write one before starting. Branch 4's spec lived
+> **on its own branch**, not on `main`:
 > `docs/superpowers/specs/2026-07-24-sync-coexistence-design.md`.
 >
 > *Landed since, outside the movement ladder:* a serializer-normalization precursor
@@ -179,7 +180,7 @@ nice in a synced folder. This movement is also the prerequisite for the AI wedge
    - *§3:* snapshots are *additive* and never block a save; restore goes through the
      atomic path. Design spec: `docs/superpowers/specs/2026-07-08-local-version-history-design.md`.
 
-- [ ] **4. `feat/sync-coexistence`** — make folder-sync bulletproof: detect external edits
+- [x] **4. `feat/sync-coexistence`** — make folder-sync bulletproof: detect external edits
    to open files, 3-way merge where safe, write Obsidian-style `…(conflict).md`
    otherwise, and a clear "changed on disk — reload / keep mine / merge" UX. **This is
    our entire sync story.**

@@ -25,6 +25,33 @@ GitHub Release notes plus the commits that shipped in it.
   undoable per note from the history panel.
 
 ### Added
+- **Sync coexistence** (ROADMAP Movement I.4). Toril now handles a file changing
+  underneath it while you have it open — the case that matters when a folder is a
+  live Obsidian vault or is synced by iCloud Drive, OneDrive, Dropbox, Syncthing,
+  or git. Non-overlapping edits are merged into your buffer automatically and left
+  for you to review before saving; overlapping edits raise a non-blocking banner
+  on that tab, with the other tabs still usable.
+
+  **Whichever way you resolve it, the other version is kept** — parked beside the
+  original as `note (conflict 2026-07-25 14-32-05).md` before either choice is
+  applied. No path through this feature deletes bytes. A diverged file blocks
+  saving, Save All, and autosave until you decide, and **every save re-checks the
+  file on disk first**, so a change the file watcher missed still cannot be
+  overwritten. If the file itself is deleted from under an open tab, autosave
+  leaves it alone (an Obsidian rename is a delete-then-create, and an unattended
+  recreate would duplicate the note); an explicit Save brings it back.
+
+  New `crates/mergemd`: a line-based 3-way merge on `similar`, with each line's
+  own terminator preserved so a CRLF file does not get rewritten end-to-end for a
+  one-line change. HTML documents are never auto-merged — a line-level merge can
+  produce unbalanced tags — so an HTML tab always gets the conflict banner instead.
+
+  **Known limit:** there is a narrow window, between the disk check and the write
+  that follows it, where a change landing in that instant can still be overwritten
+  without being flagged. Closing it needs a compare-and-swap inside the save
+  itself; that part isn't built yet. Gates: `cargo test -p mergemd` +
+  `tests/sync.test.ts`; the `main.ts` wiring that drives autosave/Save All gating
+  and the conflict banner is on-device only (no test harness for it yet).
 - **Local version history** (ROADMAP Movement I.3). Every save now records a
   restorable version of the note, browsable in a new history panel (toggle in the
   toolbar / View menu; hidden by default) with a read-only line diff against the
