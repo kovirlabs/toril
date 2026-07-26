@@ -22,6 +22,8 @@ import {
   loadRecovery,
   loadSettings,
   markdownToHtml,
+  type MergeReport,
+  mergeExternal,
   onMenuAction,
   onOpenFile,
   onWorkspaceChange,
@@ -39,8 +41,11 @@ import {
   showAbout,
   takeLaunchPath,
   watchFolder,
+  writeConflictCopy,
 } from "./ipc";
 import { AutosaveScheduler, type RecoveryEntry, selectDirtySaved, snapshotDirty } from "./autosave";
+import { decideAction } from "./sync";
+import { ConflictBar } from "./ui/conflictbar";
 import { History } from "./ui/history";
 import { Outline } from "./ui/outline";
 import { SearchBar } from "./ui/search";
@@ -63,6 +68,7 @@ let statusBar: StatusBar | null = null;
 let outline: Outline | null = null;
 let history: History | null = null;
 let searchBar: SearchBar | null = null;
+let conflictBar: ConflictBar | null = null;
 let autosave: AutosaveScheduler | null = null;
 let autosaveEnabled = false;
 let autosaveDebounceMs = 2000;
@@ -77,8 +83,8 @@ let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 let sessionTimer: ReturnType<typeof setTimeout> | null = null;
 
 let loading = false; // suppress the dirty flag during programmatic loads
-/** Paths we just wrote, with a timestamp — to ignore our own watcher events. */
-const selfWrites = new Map<string, number>();
+/** Pending per-path reconciles — sync daemons emit bursts (write, chmod, touch). */
+const reconcileTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 function basename(p: string): string {
   const parts = p.split(/[\\/]/);
@@ -147,6 +153,7 @@ function onActivate(tab: TabState): void {
   outline?.refresh();
   refreshHistory();
   scheduleSessionSave();
+  renderConflictBar(); // the banner is per-tab, so it re-renders on every switch
 }
 
 function onCloseRequest(tab: TabState): void {
@@ -216,17 +223,15 @@ async function loadWorkspace(path: string): Promise<void> {
   scheduleSessionSave();
 }
 
-function recordSelfWrite(path: string): void {
-  selfWrites.set(path, Date.now());
-}
-
 async function persistActive(path: string): Promise<void> {
   const tab = tabs.active();
   if (!tab) return;
   const content = serializeEditor(tab.format);
-  recordSelfWrite(path);
   await saveFile(path, content);
   tab.content = content;
+  // What we just wrote is what is on disk — the merge base for the next
+  // external change, and what makes our own watcher event report `unchanged`.
+  tabs.setBase(tab.id, content);
   tabs.setDirty(tab.id, false);
   updateTitle();
   setStatus(`Saved ${basename(path)}`);
@@ -254,8 +259,8 @@ async function saveTabsToDisk(list: readonly TabState[]): Promise<number> {
   for (const tab of list) {
     if (!tab.path) continue;
     try {
-      recordSelfWrite(tab.path);
       await saveFile(tab.path, tab.content);
+      tabs.setBase(tab.id, tab.content);
       tabs.setDirty(tab.id, false);
       saved++;
     } catch (e) {
@@ -287,8 +292,8 @@ async function doSaveAs(): Promise<void> {
     const content = serializeEditor(tab.format);
     const path = await saveFileAs(content);
     if (!path) return; // cancelled
-    recordSelfWrite(path);
     tab.content = content;
+    tabs.setBase(tab.id, content);
     tabs.setPath(tab.id, path, basename(path));
     tabs.setDirty(tab.id, false);
     updateTitle();
@@ -365,8 +370,9 @@ function refreshHistory(): void {
 /**
  * Full restore flow behind the panel's Restore button. If the active buffer has
  * unsaved edits, save it first (which snapshots that state via the §4 hook), then
- * restore the chosen version and reload the buffer from disk. `recordSelfWrite`
- * suppresses the watcher's external-change prompt for our own writes.
+ * restore the chosen version and reload the buffer from disk. The watcher event
+ * our own write provokes is self-cancelling: `base` is set to the restored bytes
+ * below, so reconciling against disk reports `unchanged`.
  */
 async function restoreVersion(path: string, hash: string): Promise<void> {
   const tab = tabs.active();
@@ -378,12 +384,12 @@ async function restoreVersion(path: string, hash: string): Promise<void> {
       return;
     }
   }
-  recordSelfWrite(path);
   await restoreSnapshot(path, hash);
   const reloaded = await openFile(path);
   if (tab && tab.path === path) {
     loadIntoEditor(reloaded.content, tab.format);
     tab.content = reloaded.content;
+    tabs.setBase(tab.id, reloaded.content);
     tabs.setDirty(tab.id, false);
     updateTitle();
   }
@@ -466,16 +472,6 @@ async function onImagePaste(bytes: Uint8Array): Promise<string | null> {
 
 // ---- External changes ------------------------------------------------------
 
-function isSelfWrite(path: string): boolean {
-  const at = selfWrites.get(path);
-  if (at === undefined) return false;
-  if (Date.now() - at > 2000) {
-    selfWrites.delete(path);
-    return false;
-  }
-  return true;
-}
-
 function scheduleSidebarRefresh(): void {
   if (refreshTimer) clearTimeout(refreshTimer);
   refreshTimer = setTimeout(() => {
@@ -489,32 +485,197 @@ function scheduleSidebarRefresh(): void {
   }, 300);
 }
 
-async function handleWorkspaceChange(change: WorkspaceChange): Promise<void> {
+/**
+ * Reconcile one tab against disk and act on the result.
+ *
+ * Called from the watcher and (Task 11) from the pre-save check. The watcher is
+ * an optimization; the save path is the guarantee — watchers drop and coalesce
+ * events on network shares and some sync clients.
+ *
+ * This replaces the old 2-second `isSelfWrite` window. After Toril saves, disk
+ * equals `base`, so a self-triggered event reports `unchanged` and stops here —
+ * a byte comparison where a timer used to guess.
+ */
+async function reconcile(tab: TabState): Promise<void> {
+  if (!tab.path) return;
+  const mine = tab.id === tabs.active()?.id ? serializeEditor(tab.format) : tab.content;
+
+  let report: MergeReport;
+  try {
+    report = await mergeExternal(tab.path, tab.base, mine);
+  } catch {
+    // One retry: a sync client may hold the file open for a moment mid-write.
+    await new Promise((r) => setTimeout(r, 200));
+    try {
+      report = await mergeExternal(tab.path, tab.base, mine);
+    } catch (e) {
+      // Fail closed — block writes rather than risk overwriting something we
+      // could not read (§3).
+      tabs.setDiverged(tab.id, {
+        theirs: "",
+        reason: "error",
+        message: `could not be compared with disk (${String(e)})`,
+      });
+      renderConflictBar();
+      return;
+    }
+  }
+
+  const action = decideAction(report, tab.format);
+  switch (action.kind) {
+    case "none":
+      // If an external writer reverted their change, the conflict resolves
+      // itself and the banner goes away.
+      if (tab.diverged) {
+        tabs.setDiverged(tab.id, null);
+        renderConflictBar();
+      }
+      return;
+
+    case "reload":
+      tab.content = action.theirs;
+      tabs.setBase(tab.id, action.theirs);
+      tabs.setDiverged(tab.id, null);
+      tabs.setDirty(tab.id, false);
+      if (tab.id === tabs.active()?.id) {
+        loadIntoEditor(action.theirs, tab.format);
+        outline?.refresh();
+        statusBar?.refresh();
+      }
+      updateTitle();
+      renderConflictBar();
+      setStatus(`Reloaded ${tab.name}`);
+      return;
+
+    case "applyMerge":
+      tab.content = action.merged;
+      // base becomes THEIRS, not the merged text: theirs is what is on disk now.
+      tabs.setBase(tab.id, action.theirs);
+      tabs.setDiverged(tab.id, null);
+      tabs.setDirty(tab.id, !action.clean);
+      if (tab.id === tabs.active()?.id) {
+        loadIntoEditor(action.merged, tab.format);
+        outline?.refresh();
+        statusBar?.refresh();
+      }
+      updateTitle();
+      renderConflictBar();
+      setStatus(
+        action.clean
+          ? `${tab.name}: external changes matched yours`
+          : `Merged external changes into ${tab.name} — review and save`,
+      );
+      return;
+
+    case "conflict":
+      tabs.setDiverged(tab.id, {
+        theirs: action.theirs,
+        reason: "conflict",
+        message: action.message,
+      });
+      renderConflictBar();
+      return;
+  }
+}
+
+/** Show the banner for the active tab if it is diverged; hide it otherwise. */
+function renderConflictBar(): void {
+  const tab = tabs.active();
+  if (!tab || !tab.diverged) {
+    conflictBar?.hide();
+    return;
+  }
+  conflictBar?.show({
+    name: tab.name,
+    message: tab.diverged.message,
+    onKeepMine: () => void resolveConflict(tab, true),
+    onUseTheirs: () => void resolveConflict(tab, false),
+  });
+}
+
+/**
+ * Resolve a conflict by parking the losing side, in both directions.
+ *
+ * The park happens FIRST. If it fails the whole resolution aborts — no reload,
+ * `diverged` stays set, the banner stays up. If we cannot preserve the losing
+ * side, we do not get to destroy it (§3). This is the most important error path
+ * in the feature.
+ */
+async function resolveConflict(tab: TabState, keepMine: boolean): Promise<void> {
+  if (!tab.path || !tab.diverged) return;
+  // An `error` divergence has no `theirs` — we never managed to read the file.
+  // Acting on it would park an empty conflict copy and, for "Use theirs", blank
+  // the buffer. Refuse: the state clears itself as soon as the file reads again.
+  if (tab.diverged.reason === "error") {
+    setStatus(`${tab.name} still cannot be read from disk — nothing changed`);
+    return;
+  }
+  const theirs = tab.diverged.theirs;
+  const mine = tab.id === tabs.active()?.id ? serializeEditor(tab.format) : tab.content;
+
+  let parked: string;
+  try {
+    parked = await writeConflictCopy(tab.path, keepMine ? theirs : mine);
+  } catch (e) {
+    setStatus(`Could not save the conflict copy — nothing changed (${String(e)})`);
+    return; // diverged stays set; the banner stays up
+  }
+
+  if (keepMine) {
+    tabs.setBase(tab.id, theirs); // disk holds theirs; the buffer is still ours
+    tabs.setDiverged(tab.id, null);
+    tabs.setDirty(tab.id, true);
+  } else {
+    tab.content = theirs;
+    tabs.setBase(tab.id, theirs);
+    tabs.setDiverged(tab.id, null);
+    tabs.setDirty(tab.id, false);
+    if (tab.id === tabs.active()?.id) {
+      loadIntoEditor(theirs, tab.format);
+      outline?.refresh();
+      statusBar?.refresh();
+    }
+  }
+  updateTitle();
+  renderConflictBar();
+  if (workspaceRoot) scheduleSidebarRefresh(); // the conflict copy is a new file
+  setStatus(`Saved the other version as ${basename(parked)}`);
+}
+
+function handleWorkspaceChange(change: WorkspaceChange): void {
   // The tree may have changed (create/remove/rename) — refresh the sidebar.
   scheduleSidebarRefresh();
 
-  // If the file in the active tab changed underneath us, offer to reload it.
-  const active = tabs.active();
-  if (!active?.path) return;
-  if (change.kind !== "modify" && change.kind !== "create") return;
-  if (!change.paths.includes(active.path)) return;
-  if (isSelfWrite(active.path)) return;
-
-  const reload =
-    !active.dirty ||
-    confirm(`${active.name} changed on disk. Reload and lose your unsaved edits?`);
-  if (!reload) return;
-
-  try {
-    const file = await openFile(active.path);
-    active.content = file.content;
-    loadIntoEditor(file.content, active.format);
-    outline?.refresh();
-    tabs.setDirty(active.id, false);
+  if (change.kind === "remove") {
+    // A sync daemon deleting a file the user has open must not vaporize their
+    // buffer. Keep it, mark it dirty; the next save recreates the file.
+    for (const tab of tabs.list()) {
+      if (tab.path && change.paths.includes(tab.path)) {
+        tabs.setDirty(tab.id, true);
+        setStatus(`${tab.name} was removed on disk — save to recreate it`);
+      }
+    }
     updateTitle();
-    setStatus(`Reloaded ${active.name}`);
-  } catch (e) {
-    setStatus(`Reload failed: ${String(e)}`);
+    return;
+  }
+  if (change.kind !== "modify" && change.kind !== "create") return;
+
+  // Every tab whose path changed, not only the active one. Debounced per path:
+  // sync daemons emit bursts (write, chmod, touch), and the tab is re-looked-up
+  // at fire time so a closed or replaced tab is never reconciled.
+  for (const tab of tabs.list()) {
+    if (!tab.path || !change.paths.includes(tab.path)) continue;
+    const path = tab.path;
+    const existing = reconcileTimers.get(path);
+    if (existing) clearTimeout(existing);
+    reconcileTimers.set(
+      path,
+      setTimeout(() => {
+        reconcileTimers.delete(path);
+        const current = tabs.byPath(path);
+        if (current) void reconcile(current);
+      }, 250),
+    );
   }
 }
 
@@ -634,6 +795,18 @@ async function recoverCrashedBuffers(): Promise<void> {
         format: entry.format,
       });
       tabs.setDirty(tab.id, true);
+      // `tabs.open` seeds `base` from the content it is given, but a recovered
+      // buffer is *newer* than disk — leaving it as the base would make the next
+      // reconcile read the older file as an external change and reload over the
+      // recovery. base must be what is on disk (§3).
+      if (entry.path) {
+        try {
+          const onDisk = await openFile(entry.path);
+          tabs.setBase(tab.id, onDisk.content);
+        } catch {
+          // file gone — the tab stays dirty and diverged-on-read; saving recreates it
+        }
+      }
     }
   }
   updateTitle();
@@ -771,6 +944,10 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
   const searchEl = document.querySelector<HTMLElement>("#searchbar");
   if (searchEl) searchBar = new SearchBar(searchEl, editor);
+  // Its own row in #main, between the search bar and the editor: the banner
+  // belongs above the document, not inside the surface that scrolls away.
+  const conflictEl = document.querySelector<HTMLElement>("#conflictbar");
+  if (conflictEl) conflictBar = new ConflictBar(conflictEl);
 
   autosave = new AutosaveScheduler(
     {

@@ -356,7 +356,8 @@ body {
 /* ---- Main: tab bar + editor ---- */
 #main {
   display: grid;
-  grid-template-rows: auto auto auto 1fr; /* tabbar · format toolbar · search · editor */
+  /* tabbar · format toolbar · search · conflict banner · editor */
+  grid-template-rows: auto auto auto auto 1fr;
   min-height: 0;
   min-width: 0;
 }
