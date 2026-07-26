@@ -6,14 +6,39 @@
 //
 // Both actions park the losing side, so no path through this UI discards bytes.
 
-export interface ConflictBarOptions {
+interface ConflictBarCommon {
   name: string;
   message: string;
+}
+
+/**
+ * The ordinary case: both sides exist, so both choices are real and the park
+ * guarantee holds. `actions` defaults to this.
+ */
+export interface ConflictBarResolveOptions extends ConflictBarCommon {
+  actions?: "resolve";
   /** Park theirs; the buffer keeps the original path. */
   onKeepMine(): void;
   /** Park mine; reload theirs into the buffer. */
   onUseTheirs(): void;
 }
+
+/**
+ * A divergence with nothing to choose between: the file could not be read, so
+ * there is no "theirs" to park or load. Renders the message alone — no buttons,
+ * and crucially **no park guarantee**, because nothing has been parked and
+ * nothing would be. Promising safety we have not delivered is worse than saying
+ * nothing: it invites exactly the confident click that loses work.
+ *
+ * Modelled as a separate variant rather than optional callbacks so the two
+ * handlers cannot be passed where they can never fire — or omitted where the
+ * buttons would render dead.
+ */
+export interface ConflictBarNoticeOptions extends ConflictBarCommon {
+  actions: "none";
+}
+
+export type ConflictBarOptions = ConflictBarResolveOptions | ConflictBarNoticeOptions;
 
 export class ConflictBar {
   private readonly el: HTMLDivElement;
@@ -32,12 +57,23 @@ export class ConflictBar {
 
     const text = document.createElement("span");
     text.className = "conflict-bar-text";
+    text.setAttribute("aria-live", "polite");
+    this.el.appendChild(text);
+
+    // Nothing to choose between: message only. No buttons, and no reassurance —
+    // there is no other version saved beside anything.
+    if (opts.actions === "none") {
+      text.textContent = `${opts.name} — ${opts.message}.`;
+      this.el.setAttribute("aria-label", "File could not be read");
+      this.el.hidden = false;
+      return;
+    }
+
     // The reassurance is deliberately visible rather than tooltip-only: a user
     // deciding under pressure needs to know, without hovering, that neither
     // choice throws work away.
     text.textContent = `${opts.name} — ${opts.message}. Either way, the other version is saved beside it.`;
-    text.setAttribute("aria-live", "polite");
-    this.el.appendChild(text);
+    this.el.setAttribute("aria-label", "File changed on disk");
 
     const keep = document.createElement("button");
     keep.type = "button";

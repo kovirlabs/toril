@@ -529,10 +529,9 @@ async function reconcile(tab: TabState): Promise<void> {
       tabs.setDiverged(tab.id, {
         theirs: "",
         reason: "error",
-        // Labels the state as non-actionable, since the two buttons cannot be
-        // suppressed from here (see the report: `ConflictBar.show` always
-        // renders both, and conflictbar.ts is outside this task).
-        message: `could not be compared with disk, so no action is available yet (${String(e)})`,
+        message:
+          `could not be read from disk (${String(e)}). ` +
+          `Your edits are untouched here; saving is paused until the file can be read again`,
       });
       renderConflictBar();
       return;
@@ -604,9 +603,17 @@ function renderConflictBar(): void {
     conflictBar?.hide();
     return;
   }
+  // An `error` divergence has no `theirs`, so neither choice exists and nothing
+  // has been parked — the bar renders as a notice, without the two buttons or
+  // the park guarantee that `resolveConflict` would refuse to honour.
+  if (tab.diverged.reason === "error") {
+    conflictBar?.show({ name: tab.name, message: tab.diverged.message, actions: "none" });
+    return;
+  }
   conflictBar?.show({
     name: tab.name,
     message: tab.diverged.message,
+    actions: "resolve",
     onKeepMine: () => void resolveConflict(tab, true),
     onUseTheirs: () => void resolveConflict(tab, false),
   });
