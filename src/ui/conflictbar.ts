@@ -22,7 +22,8 @@ export class ConflictBar {
     this.el = document.createElement("div");
     this.el.className = "conflict-bar";
     this.el.hidden = true;
-    this.el.setAttribute("role", "alert");
+    this.el.setAttribute("role", "region");
+    this.el.setAttribute("aria-label", "File changed on disk");
     host.appendChild(this.el);
   }
 
@@ -31,7 +32,11 @@ export class ConflictBar {
 
     const text = document.createElement("span");
     text.className = "conflict-bar-text";
-    text.textContent = `${opts.name} — ${opts.message}`;
+    // The reassurance is deliberately visible rather than tooltip-only: a user
+    // deciding under pressure needs to know, without hovering, that neither
+    // choice throws work away.
+    text.textContent = `${opts.name} — ${opts.message}. Either way, the other version is saved beside it.`;
+    text.setAttribute("aria-live", "polite");
     this.el.appendChild(text);
 
     const keep = document.createElement("button");
