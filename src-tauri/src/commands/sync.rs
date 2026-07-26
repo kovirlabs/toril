@@ -15,7 +15,7 @@ use std::time::SystemTime;
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MergeReport {
-    /// `"unchanged" | "theirsOnly" | "merged" | "conflict"`.
+    /// `"unchanged" | "theirsOnly" | "merged" | "conflict" | "missing"`.
     pub outcome: String,
     /// The merged text. Present only for `"merged"`.
     pub content: Option<String>,
@@ -27,9 +27,28 @@ pub struct MergeReport {
 }
 
 /// Read `path` and three-way merge it against `base` and `mine`. Never writes.
+///
+/// A file that is *gone* reports `"missing"` rather than erroring. The two are
+/// opposite instructions to the caller: an unreadable file must block writes
+/// (we cannot know what we would clobber), whereas a deleted file must be
+/// *recreated* by the next save — the buffer is the only copy left. Splitting
+/// them here is the only way the frontend can tell them apart without parsing
+/// an error string, and it is what keeps "removed on disk — save to recreate
+/// it" from being a promise the write path then refuses to keep.
 #[tauri::command]
 pub fn merge_external(path: String, base: String, mine: String) -> Result<MergeReport, String> {
-    let theirs = fsatomic::read_to_string(&path).map_err(|e| e.to_string())?;
+    let theirs = match fsatomic::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // Covers a removed parent directory too: that also reads NotFound.
+            return Ok(MergeReport {
+                outcome: "missing".into(),
+                content: None,
+                theirs: None,
+            });
+        }
+        Err(e) => return Err(e.to_string()),
+    };
     Ok(match merge3(&base, &mine, &theirs) {
         Divergence::Unchanged => MergeReport {
             outcome: "unchanged".into(),

@@ -234,13 +234,19 @@ export function clearRecovery(): Promise<void> {
   return invoke<void>("clear_recovery");
 }
 
-export type MergeOutcome = "unchanged" | "theirsOnly" | "merged" | "conflict";
+/**
+ * `"missing"` means the file is gone, which is the opposite instruction to a
+ * read *failure*: an unreadable file blocks writes, a deleted one is recreated
+ * by the next save. The backend separates them so the frontend never has to
+ * guess from an error string.
+ */
+export type MergeOutcome = "unchanged" | "theirsOnly" | "merged" | "conflict" | "missing";
 
 export interface MergeReport {
   outcome: MergeOutcome;
   /** The merged text. Present only for `"merged"`. */
   content: string | null;
-  /** Bytes now on disk. Present for everything except `"unchanged"`. */
+  /** Bytes now on disk. Present for everything except `"unchanged"`/`"missing"`. */
   theirs: string | null;
 }
 

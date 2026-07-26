@@ -44,7 +44,8 @@ import {
   writeConflictCopy,
 } from "./ipc";
 import { AutosaveScheduler, type RecoveryEntry, selectDirtySaved, snapshotDirty } from "./autosave";
-import { decideAction } from "./sync";
+import { isAtOrUnder } from "./paths";
+import { blocksWrite, decideAction, selectSavable } from "./sync";
 import { ConflictBar } from "./ui/conflictbar";
 import { History } from "./ui/history";
 import { Outline } from "./ui/outline";
@@ -246,25 +247,73 @@ async function persistActive(path: string): Promise<void> {
   refreshHistory(); // a save just created a new version
 }
 
+/**
+ * Re-check one tab against disk and report whether it may now be written.
+ *
+ * The order is the whole point: reconcile FIRST, then consult `blocksWrite`.
+ * Refusing on the stale flag first would trap any tab whose divergence came from
+ * a path the watcher never reports — a network share, a FUSE mount, a file
+ * outside the watched workspace root — with no exit at all: the banner says
+ * saving is paused until the file can be read again, and nothing would ever
+ * unpause it. Reconciling first gives every write the chance to clear a stale
+ * divergence: a read that has since started working, an external edit that was
+ * reverted, or a deletion (which reconcile answers by recreating on save).
+ *
+ * This costs one extra read per save, and it is where the feature's guarantee
+ * actually lives. The watcher is an optimization — it drops and coalesces events
+ * on precisely the setups this branch exists to support.
+ */
+async function recheckBeforeWrite(tab: TabState): Promise<boolean> {
+  await reconcile(tab);
+  return !blocksWrite(tab);
+}
+
 async function doSave(): Promise<void> {
   const tab = tabs.active();
   if (!tab) return;
   if (!tab.path) {
+    // An Untitled draft has nothing on disk to diverge from — Save As is exempt.
     await doSaveAs();
     return;
   }
+  if (!(await recheckBeforeWrite(tab))) {
+    renderConflictBar();
+    setStatus(`${tab.name} changed on disk — resolve the banner before saving`);
+    return;
+  }
   try {
-    await persistActive(tab.path);
+    if (tabs.active()?.id === tab.id) {
+      await persistActive(tab.path);
+    } else {
+      // The user switched tabs while we re-checked disk, so the editor no longer
+      // holds this document and `persistActive` would write the wrong bytes to
+      // this path. `onDeactivate` flushed the buffer on the way out — write that.
+      if ((await saveTabsToDisk([tab])) > 0) {
+        updateTitle();
+        setStatus(`Saved ${tab.name}`);
+      }
+    }
   } catch (e) {
     setStatus(`Save failed: ${String(e)}`);
   }
 }
 
-/** Save the given path-backed tabs atomically (dirty filtering is the caller's). */
+/**
+ * Save the given path-backed tabs atomically (dirty filtering is the caller's).
+ *
+ * The divergence check here is the last line of defence, not the first: callers
+ * reconcile before selecting, so anything still diverged at this point has been
+ * re-checked against disk and genuinely needs the user. Refusing silently would
+ * be worse than not refusing at all, so each skip says so.
+ */
 async function saveTabsToDisk(list: readonly TabState[]): Promise<number> {
   let saved = 0;
   for (const tab of list) {
     if (!tab.path) continue;
+    if (blocksWrite(tab)) {
+      setStatus(`Skipped ${tab.name} — it changed on disk`);
+      continue;
+    }
     try {
       await saveFile(tab.path, tab.content);
       tabs.setBase(tab.id, tab.content);
@@ -286,12 +335,37 @@ function captureActiveBuffer(): void {
 /** Save every dirty, file-backed tab (Untitled tabs need Save As and are skipped). */
 async function doSaveAll(): Promise<void> {
   captureActiveBuffer();
-  const saved = await saveTabsToDisk(tabs.list().filter((t) => t.dirty));
+  // Re-check every candidate against disk before writing any of them, the
+  // already-diverged ones included — reconciling is what can clear a stale
+  // divergence (see `recheckBeforeWrite`). Save All is the real clobber vector:
+  // it loops every dirty tab, so a background tab that diverged an hour ago, or
+  // one outside the watched root that never gets an event at all, would
+  // otherwise be overwritten with no prompt ever shown.
+  for (const tab of selectDirtySaved(tabs.list())) {
+    await reconcile(tab);
+  }
+  // Re-derive from the live list: reconcile can clear, set or resolve
+  // divergence, and a tab may have been closed while we awaited.
+  const savable = selectSavable(tabs.list());
+  const skipped = selectDirtySaved(tabs.list()).length - savable.length;
+  const saved = await saveTabsToDisk(savable);
   updateTitle();
   autosave?.notifyChange();
-  if (saved > 0) setStatus(`Saved ${saved} file${saved === 1 ? "" : "s"}`);
+  renderConflictBar();
+  // Say what was skipped. "Saved 3 files" while a fourth was silently refused
+  // is the kind of quiet half-success this feature exists to prevent.
+  const parts: string[] = [];
+  if (saved > 0) parts.push(`Saved ${saved} file${saved === 1 ? "" : "s"}`);
+  if (skipped > 0) parts.push(`skipped ${skipped} changed on disk`);
+  if (parts.length > 0) setStatus(parts.join(" — "));
 }
 
+/**
+ * Save As is exempt from the divergence check by design. A *new* path has no
+ * shared history to diverge from, and Save As *over* an existing file is an
+ * overwrite the user explicitly chose in the native dialog. Checking here would
+ * block a legitimate first write and make the dialog behave unpredictably.
+ */
 async function doSaveAs(): Promise<void> {
   const tab = tabs.active();
   if (!tab) return;
@@ -303,6 +377,11 @@ async function doSaveAs(): Promise<void> {
     tabs.setBase(tab.id, content);
     tabs.setPath(tab.id, path, basename(path));
     tabs.setDirty(tab.id, false);
+    // Any divergence belonged to the *old* path. Carrying it over would block
+    // every future save of a file that has just been written cleanly, with a
+    // banner about a conflict on a file this tab no longer points at.
+    tabs.setDiverged(tab.id, null);
+    renderConflictBar();
     updateTitle();
     setStatus(`Saved ${basename(path)}`);
     autosave?.notifyChange();
@@ -383,6 +462,16 @@ function refreshHistory(): void {
  */
 async function restoreVersion(path: string, hash: string): Promise<void> {
   const tab = tabs.active();
+  // Restore is a write path twice over: the pre-restore save writes the buffer,
+  // and `restoreSnapshot` then writes the chosen version over the file. Neither
+  // may run past an external change the user has not seen (§3).
+  if (tab && tab.path === path) {
+    if (!(await recheckBeforeWrite(tab))) {
+      renderConflictBar();
+      setStatus(`${tab.name} changed on disk — resolve the banner before restoring`);
+      return;
+    }
+  }
   if (tab && tab.path === path && tab.dirty) {
     try {
       await persistActive(path);
@@ -493,6 +582,22 @@ function scheduleSidebarRefresh(): void {
 }
 
 /**
+ * The file behind an open tab has vanished. A sync daemon deleting a file the
+ * user has open must not vaporize their buffer: keep it, mark it dirty, and the
+ * next save recreates the file.
+ *
+ * An `error` divergence is cleared here because the deletion is what that read
+ * tripped over, and an `error` has no user-actionable exit — leaving it set
+ * would block the very save this status line promises. A `conflict` divergence
+ * is left alone: its `theirs` is real content the user can still park.
+ */
+function markRemovedOnDisk(tab: TabState): void {
+  if (tab.diverged?.reason === "error") tabs.setDiverged(tab.id, null);
+  tabs.setDirty(tab.id, true);
+  setStatus(`${tab.name} was removed on disk — save to recreate it`);
+}
+
+/**
  * Reconcile one tab against disk and act on the result.
  *
  * Called from the watcher and (Task 11) from the pre-save check. The watcher is
@@ -538,6 +643,17 @@ async function reconcile(tab: TabState): Promise<void> {
     }
   }
   if (removedMeanwhile()) return;
+
+  // The file is gone. That is not a conflict and not an error: there is no
+  // "theirs" to weigh against, the buffer is the only copy left, and the answer
+  // is to recreate the file on the next save. Handled here rather than in
+  // `decideAction` because it is the one outcome that must *unblock* a write.
+  if (report.outcome === "missing") {
+    markRemovedOnDisk(tab);
+    updateTitle();
+    renderConflictBar();
+    return;
+  }
 
   const action = decideAction(report, tab.format);
   switch (action.kind) {
@@ -673,32 +789,26 @@ function handleWorkspaceChange(change: WorkspaceChange): void {
   scheduleSidebarRefresh();
 
   if (change.kind === "remove") {
+    // `notify` reports a removed *directory* as a single event carrying only the
+    // directory path, so exact matching would miss every open tab whose file
+    // lived inside it — those tabs would get no signal at all.
+    const wasRemoved = (p: string): boolean => change.paths.some((r) => isAtOrUnder(p, r));
+
     // Cancel any reconcile still queued for a path that no longer exists: it
     // would fail both read attempts and leave an `error` divergence that no
     // later event can clear, blocking the very save promised below. The epoch
-    // bump does the same for a reconcile already in flight.
-    for (const path of change.paths) {
-      const pending = reconcileTimers.get(path);
-      if (pending) {
-        clearTimeout(pending);
-        reconcileTimers.delete(path);
-      }
-      removalEpoch.set(path, (removalEpoch.get(path) ?? 0) + 1);
+    // bump does the same for a reconcile already in flight — keyed by tab path,
+    // which is what `reconcile` reads (a removed directory's own path is not).
+    for (const [path, pending] of reconcileTimers) {
+      if (!wasRemoved(path)) continue;
+      clearTimeout(pending);
+      reconcileTimers.delete(path);
     }
 
-    // A sync daemon deleting a file the user has open must not vaporize their
-    // buffer. Keep it, mark it dirty; the next save recreates the file.
     for (const tab of tabs.list()) {
-      if (tab.path && change.paths.includes(tab.path)) {
-        // A reconcile that errored *before* this event arrived (the deletion is
-        // what it tripped over) left a divergence with no user-actionable exit.
-        // Deletion is a state this branch has an answer for, so clear it. A
-        // `conflict` divergence is left alone: its `theirs` is real content the
-        // user can still park, and resolving it releases the tab.
-        if (tab.diverged?.reason === "error") tabs.setDiverged(tab.id, null);
-        tabs.setDirty(tab.id, true);
-        setStatus(`${tab.name} was removed on disk — save to recreate it`);
-      }
+      if (!tab.path || !wasRemoved(tab.path)) continue;
+      removalEpoch.set(tab.path, (removalEpoch.get(tab.path) ?? 0) + 1);
+      markRemovedOnDisk(tab);
     }
     updateTitle();
     renderConflictBar();
@@ -1009,8 +1119,17 @@ window.addEventListener("DOMContentLoaded", async () => {
       writeJournal: (entries) => (entries.length > 0 ? saveRecovery(entries) : clearRecovery()),
       saveDirtySaved: async () => {
         captureActiveBuffer();
-        await saveTabsToDisk(selectDirtySaved(tabs.list()));
+        // Autosave is the write path that must never guess: it runs with the
+        // user's attention elsewhere, so writing over an external change here is
+        // precisely the silent overwrite §3 forbids. Re-check every candidate
+        // against disk — the diverged ones included, since reconciling is what
+        // can clear a stale divergence — then write only what is still savable.
+        for (const tab of selectDirtySaved(tabs.list())) {
+          await reconcile(tab);
+        }
+        await saveTabsToDisk(selectSavable(tabs.list()));
         updateTitle();
+        renderConflictBar();
       },
       reportError: (err) => setStatus(`Autosave failed: ${String(err)}`),
     },
