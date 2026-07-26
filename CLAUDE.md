@@ -293,7 +293,7 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 | `list_history` | `path` | `SnapshotMeta[]` | version list for a note, newest first; empty if none (`crates/snapshots`, ROADMAP I.3) |
 | `read_snapshot` | `path, hash` | `content` | exact stored content of one version (for the diff view) |
 | `restore_snapshot` | `path, hash` | `()` | snapshots current on-disk content **first**, then atomically writes the chosen version — restore is undoable (§3) |
-| `merge_external` | `path, base, mine` | `{ outcome, content?, theirs? }` | Reads the file and 3-way merges via `mergemd`. **Never writes.** `outcome` is one of `unchanged` / `theirsOnly` / `merged` / `conflict` / `missing` — `missing` is a deleted file (`io::ErrorKind::NotFound`), distinct from an unreadable one, so a gone file can be recreated by an explicit save rather than blocked forever. `content` is set only for `merged`; `theirs` (the bytes now on disk) is set for every outcome except `unchanged`, so the caller can set its new merge base and park the losing side without a second read that would race the writer (ROADMAP I.4) |
+| `merge_external` | `path, base, mine` | `{ outcome, content?, theirs? }` | Reads the file and 3-way merges via `mergemd`. **Never writes.** `outcome` is one of `unchanged` / `theirsOnly` / `merged` / `conflict` / `missing` — `missing` is a deleted file (`io::ErrorKind::NotFound`), distinct from an unreadable one, so a gone file can be recreated by an explicit save rather than blocked forever. `content` is set only for `merged`; `theirs` (the bytes now on disk) is set for every outcome **except `unchanged` and `missing`** — nothing to park in either case — so the caller can set its new merge base and park the losing side without a second read that would race the writer (ROADMAP I.4) |
 | `write_conflict_copy` | `path, content` | `conflict_path` | Parks the losing side as `note (conflict 2026-07-25 14-32-05).md` beside the original — **atomic** via `fsatomic`, and `-2`/`-3`… suffixed rather than overwritten on a timestamp collision (§3) |
 | `take_launch_path` | — | `path?` | file the app was launched with (double-click / "Open with"); returns it **once**, then `null` (§file-open) |
 
@@ -424,9 +424,12 @@ Phases 0–3 are complete and Phase 4 (polish) is in progress; the shipped detai
   typing the syntax, and asserts **no raw-markdown-text insertion** (§3.2).
 - **Export:** `cargo test -p mdhtml -p mdrtf` (render configs) + `tests/export.test.ts` (builder + the
   §3.3 sanitization chokepoint).
-- **Merge core:** `cargo test -p mergemd` — the five `merge_external` outcomes, convergent edits, CRLF
-  line-terminator preservation, conflict-filename collisions, and a property test (500 randomized
-  cases) that a clean merge never drops a line.
+- **Merge core:** `cargo test -p mergemd` — the crate's four `Divergence` outcomes (`Unchanged`,
+  `TheirsOnly`, `Merged`, `Conflict`), convergent edits, CRLF line-terminator preservation,
+  conflict-filename collisions, and a property test (500 randomized cases) that a clean merge
+  never drops a line. The wire protocol's fifth outcome, `missing`, is produced one layer up in
+  `src-tauri/src/commands/sync.rs` (an `io::ErrorKind::NotFound` on the read, before `mergemd` is
+  even called) — that file has **no tests of its own**, so `missing` is exercised on-device only.
 - **External-change policy:** `tests/sync.test.ts` — `decideAction`'s outcome→action mapping is total
   and fails closed, HTML never auto-merges, and `selectSavable` excludes a diverged tab from every
   bulk write path (§5).
