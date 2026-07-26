@@ -45,7 +45,7 @@ import {
 } from "./ipc";
 import { AutosaveScheduler, type RecoveryEntry, selectDirtySaved, snapshotDirty } from "./autosave";
 import { isAtOrUnder } from "./paths";
-import { blocksWrite, decideAction, selectSavable } from "./sync";
+import { blocksWrite, decideAction, selectMine, selectSavable } from "./sync";
 import { ConflictBar } from "./ui/conflictbar";
 import { History } from "./ui/history";
 import { Outline } from "./ui/outline";
@@ -671,7 +671,10 @@ function markRemovedOnDisk(tab: TabState): void {
 async function reconcile(tab: TabState): Promise<void> {
   if (!tab.path) return;
   const path = tab.path;
-  const mine = tab.id === tabs.active()?.id ? serializeEditor(tab.format) : tab.content;
+
+  /** The live editor for the active tab; `null` means "this tab isn't on screen". */
+  const liveBuffer = (): string | null =>
+    tab.id === tabs.active()?.id ? serializeEditor(tab.format) : null;
 
   // The file may be deleted while we await IPC below; the `remove` branch of the
   // watcher owns that tab from then on, and applying a stale merge over the top
@@ -679,101 +682,130 @@ async function reconcile(tab: TabState): Promise<void> {
   const epoch = removalEpoch.get(path) ?? 0;
   const removedMeanwhile = (): boolean => (removalEpoch.get(path) ?? 0) !== epoch;
 
-  let report: MergeReport;
-  try {
-    report = await mergeExternal(path, tab.base, mine);
-  } catch {
-    // One retry: a sync client may hold the file open for a moment mid-write.
-    await new Promise((r) => setTimeout(r, 200));
+  // Up to two attempts, because `mine` is captured *before* an await and the two
+  // outcomes that end in `loadIntoEditor` replace the ProseMirror document
+  // wholesale. Anything typed while `merge_external` was in flight is on screen
+  // but not in `mine`, so it is not in the merged text either — applying it
+  // destroys those keystrokes, and the `reload` branch also clears `dirty`, so
+  // the loss isn't even flagged. Detect it by re-selecting `mine` after the
+  // await and comparing; recompute once against the buffer that actually exists.
+  //
+  // A second race falls through to a conflict rather than bailing out. Bailing
+  // would leave the tab un-diverged with an external change unaccounted for, and
+  // this function is also the pre-write check (`recheckBeforeWrite`,
+  // `reconcileWritableTabs`) — a silent "no result" there reads as "clear to
+  // write" and the save clobbers the external change. Failing closed keeps both
+  // sides: the banner parks the loser whichever way the user answers.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const mine = selectMine(tab, liveBuffer);
+
+    let report: MergeReport;
     try {
       report = await mergeExternal(path, tab.base, mine);
-    } catch (e) {
-      if (removedMeanwhile()) return; // deleted, not unreadable — already handled
-      // Fail closed — block writes rather than risk overwriting something we
-      // could not read (§3).
-      tabs.setDiverged(tab.id, {
-        theirs: "",
-        reason: "error",
-        message:
-          `could not be read from disk (${String(e)}). ` +
-          `Your edits are untouched here; saving is paused until the file can be read again`,
-      });
+    } catch {
+      // One retry: a sync client may hold the file open for a moment mid-write.
+      await new Promise((r) => setTimeout(r, 200));
+      try {
+        report = await mergeExternal(path, tab.base, mine);
+      } catch (e) {
+        if (removedMeanwhile()) return; // deleted, not unreadable — already handled
+        // Fail closed — block writes rather than risk overwriting something we
+        // could not read (§3).
+        tabs.setDiverged(tab.id, {
+          theirs: "",
+          reason: "error",
+          message:
+            `could not be read from disk (${String(e)}). ` +
+            `Your edits are untouched here; saving is paused until the file can be read again`,
+        });
+        renderConflictBar();
+        return;
+      }
+    }
+    if (removedMeanwhile()) return;
+
+    // The file is gone. That is not a conflict and not an error: there is no
+    // "theirs" to weigh against, the buffer is the only copy left, and the answer
+    // is to recreate the file on the next save. Handled here rather than in
+    // `decideAction` because it is the one outcome that must *unblock* a write —
+    // and it does not depend on `mine`, so a raced buffer cannot make it wrong.
+    if (report.outcome === "missing") {
+      markRemovedOnDisk(tab);
+      updateTitle();
       renderConflictBar();
       return;
     }
-  }
-  if (removedMeanwhile()) return;
+    // The read succeeded, so the file exists — a previous removal has been undone
+    // (restored by the sync client, or recreated by a save). Clear the flag here
+    // rather than only on our own writes, so an externally restored file starts
+    // autosaving again without the user having to do anything.
+    tabs.setRemovedOnDisk(tab.id, false);
 
-  // The file is gone. That is not a conflict and not an error: there is no
-  // "theirs" to weigh against, the buffer is the only copy left, and the answer
-  // is to recreate the file on the next save. Handled here rather than in
-  // `decideAction` because it is the one outcome that must *unblock* a write.
-  if (report.outcome === "missing") {
-    markRemovedOnDisk(tab);
-    updateTitle();
-    renderConflictBar();
-    return;
-  }
-  // The read succeeded, so the file exists — a previous removal has been undone
-  // (restored by the sync client, or recreated by a save). Clear the flag here
-  // rather than only on our own writes, so an externally restored file starts
-  // autosaving again without the user having to do anything.
-  tabs.setRemovedOnDisk(tab.id, false);
+    // Only the two buffer-replacing outcomes are gated. `unchanged` means disk
+    // equals base — a fact about disk alone — and `conflict` writes nothing and
+    // blocks the tab, which is the safe direction to be wrong in.
+    if (report.outcome === "theirsOnly" || report.outcome === "merged") {
+      if (selectMine(tab, liveBuffer) !== mine) {
+        if (attempt === 0) continue;
+        report = { outcome: "conflict", content: null, theirs: report.theirs };
+      }
+    }
 
-  const action = decideAction(report, tab.format);
-  switch (action.kind) {
-    case "none":
-      // If an external writer reverted their change, the conflict resolves
-      // itself and the banner goes away.
-      if (tab.diverged) {
+    const action = decideAction(report, tab.format, tab.dirty);
+    switch (action.kind) {
+      case "none":
+        // If an external writer reverted their change, the conflict resolves
+        // itself and the banner goes away.
+        if (tab.diverged) {
+          tabs.setDiverged(tab.id, null);
+          renderConflictBar();
+        }
+        return;
+
+      case "reload":
+        tab.content = action.theirs;
+        tabs.setBase(tab.id, action.theirs);
         tabs.setDiverged(tab.id, null);
+        tabs.setDirty(tab.id, false);
+        if (tab.id === tabs.active()?.id) {
+          loadIntoEditor(action.theirs, tab.format);
+          outline?.refresh();
+          statusBar?.refresh();
+        }
+        updateTitle();
         renderConflictBar();
-      }
-      return;
+        setStatus(`Reloaded ${tab.name}`);
+        return;
 
-    case "reload":
-      tab.content = action.theirs;
-      tabs.setBase(tab.id, action.theirs);
-      tabs.setDiverged(tab.id, null);
-      tabs.setDirty(tab.id, false);
-      if (tab.id === tabs.active()?.id) {
-        loadIntoEditor(action.theirs, tab.format);
-        outline?.refresh();
-        statusBar?.refresh();
-      }
-      updateTitle();
-      renderConflictBar();
-      setStatus(`Reloaded ${tab.name}`);
-      return;
+      case "applyMerge":
+        tab.content = action.merged;
+        // base becomes THEIRS, not the merged text: theirs is what is on disk now.
+        tabs.setBase(tab.id, action.theirs);
+        tabs.setDiverged(tab.id, null);
+        tabs.setDirty(tab.id, !action.clean);
+        if (tab.id === tabs.active()?.id) {
+          loadIntoEditor(action.merged, tab.format);
+          outline?.refresh();
+          statusBar?.refresh();
+        }
+        updateTitle();
+        renderConflictBar();
+        setStatus(
+          action.clean
+            ? `${tab.name}: external changes matched yours`
+            : `Merged external changes into ${tab.name} — review and save`,
+        );
+        return;
 
-    case "applyMerge":
-      tab.content = action.merged;
-      // base becomes THEIRS, not the merged text: theirs is what is on disk now.
-      tabs.setBase(tab.id, action.theirs);
-      tabs.setDiverged(tab.id, null);
-      tabs.setDirty(tab.id, !action.clean);
-      if (tab.id === tabs.active()?.id) {
-        loadIntoEditor(action.merged, tab.format);
-        outline?.refresh();
-        statusBar?.refresh();
-      }
-      updateTitle();
-      renderConflictBar();
-      setStatus(
-        action.clean
-          ? `${tab.name}: external changes matched yours`
-          : `Merged external changes into ${tab.name} — review and save`,
-      );
-      return;
-
-    case "conflict":
-      tabs.setDiverged(tab.id, {
-        theirs: action.theirs,
-        reason: "conflict",
-        message: action.message,
-      });
-      renderConflictBar();
-      return;
+      case "conflict":
+        tabs.setDiverged(tab.id, {
+          theirs: action.theirs,
+          reason: "conflict",
+          message: action.message,
+        });
+        renderConflictBar();
+        return;
+    }
   }
 }
 
@@ -818,7 +850,11 @@ async function resolveConflict(tab: TabState, keepMine: boolean): Promise<void> 
     return;
   }
   const theirs = tab.diverged.theirs;
-  const mine = tab.id === tabs.active()?.id ? serializeEditor(tab.format) : tab.content;
+  // Same rule as `reconcile`: "my version" of a tab with no unsaved edits is the
+  // merge base, not a fresh canonical serialization of the buffer (`selectMine`).
+  const mine = selectMine(tab, () =>
+    tab.id === tabs.active()?.id ? serializeEditor(tab.format) : null,
+  );
 
   let parked: string;
   try {
