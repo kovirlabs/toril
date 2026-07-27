@@ -160,6 +160,67 @@ impl SecretStore for MemoryStore {
     }
 }
 
+/// Keychain *service* name. Matches the app identifier in `tauri.conf.json`;
+/// the *account* is `Provider::as_str()`. Changing either orphans stored keys.
+pub const SERVICE: &str = "com.toril.app";
+
+/// The real store: Windows Credential Manager, macOS Keychain, or the
+/// freedesktop Secret Service on Linux.
+///
+/// **Not covered by `cargo test -p keystore`.** It needs a logged-in desktop
+/// session, and CI's Linux runners have no Secret Service — a test here would
+/// either fail or silently skip, and a silently-skipping test is worse than an
+/// absent one. Verified on-device instead; the `MemoryStore` tests pin the
+/// contract this is expected to honor.
+pub struct OsKeychain;
+
+impl OsKeychain {
+    pub fn new() -> Self {
+        Self
+    }
+
+    fn entry(provider: Provider) -> Result<keyring::Entry, KeystoreError> {
+        keyring::Entry::new(SERVICE, provider.as_str())
+            .map_err(|e| KeystoreError::Backend(e.to_string()))
+    }
+}
+
+impl Default for OsKeychain {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SecretStore for OsKeychain {
+    fn set(&self, provider: Provider, secret: &str) -> Result<(), KeystoreError> {
+        validate_secret(secret)?;
+        Self::entry(provider)?
+            .set_password(secret)
+            .map_err(|e| KeystoreError::Backend(e.to_string()))
+    }
+
+    fn get(&self, provider: Provider) -> Result<Option<Zeroizing<String>>, KeystoreError> {
+        match Self::entry(provider)?.get_password() {
+            Ok(secret) => Ok(Some(Zeroizing::new(secret))),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(e) => Err(KeystoreError::Backend(e.to_string())),
+        }
+    }
+
+    fn clear(&self, provider: Provider) -> Result<(), KeystoreError> {
+        // Idempotent: a missing entry is the desired end state, not a failure.
+        // Pressing Clear twice must not raise an error at the user.
+        match Self::entry(provider)?.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(KeystoreError::Backend(e.to_string())),
+        }
+    }
+
+    fn contains(&self, provider: Provider) -> Result<bool, KeystoreError> {
+        Ok(self.get(provider)?.is_some())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
