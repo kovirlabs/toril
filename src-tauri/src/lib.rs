@@ -74,6 +74,12 @@ pub fn run() {
             commands::snapshots::restore_snapshot,
             commands::sync::merge_external,
             commands::sync::write_conflict_copy,
+            // No `get_api_key` here — by design, not by omission. A stored key
+            // must never cross into the webview; see commands/secrets.rs.
+            commands::secrets::set_api_key,
+            commands::secrets::clear_api_key,
+            commands::secrets::has_api_key,
+            commands::secrets::list_api_keys,
             take_launch_path,
         ])
         .run(tauri::generate_context!())
