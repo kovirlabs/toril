@@ -291,3 +291,39 @@ export function readSnapshot(path: string, hash: string): Promise<string> {
 export function restoreSnapshot(path: string, hash: string): Promise<void> {
   return invoke<void>("restore_snapshot", { path, hash });
 }
+
+/** Providers that take an API key (mirrors Rust `keystore::Provider`). */
+export type ProviderId = "anthropic" | "openai";
+
+/** Whether one provider has a key stored (mirrors Rust `ProviderStatus`). */
+export interface ProviderStatus {
+  provider: ProviderId;
+  configured: boolean;
+}
+
+/**
+ * Store an API key in the OS keychain (§5, ROADMAP Movement IV).
+ *
+ * Note the absence of a `getApiKey`: the backend exposes no command that
+ * returns a key, so the frontend *cannot* read one back. That is deliberate —
+ * §3.3 treats webview content as untrusted, so the key stays on the Rust side.
+ * Do not add a getter here; there is nothing to call.
+ */
+export function setApiKey(provider: ProviderId, key: string): Promise<void> {
+  return invoke<void>("set_api_key", { provider, key });
+}
+
+/** Remove a stored key. Succeeds even when none was stored. */
+export function clearApiKey(provider: ProviderId): Promise<void> {
+  return invoke<void>("clear_api_key", { provider });
+}
+
+/** Whether a key is stored for `provider`. */
+export function hasApiKey(provider: ProviderId): Promise<boolean> {
+  return invoke<boolean>("has_api_key", { provider });
+}
+
+/** Configured/not-set status for every provider, in one round trip. */
+export function listApiKeys(): Promise<ProviderStatus[]> {
+  return invoke<ProviderStatus[]>("list_api_keys");
+}
