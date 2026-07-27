@@ -27,6 +27,8 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .text("menu_export_html", "Export HTML… (Ctrl+E)")
         .text("menu_export_rtf", "Export RTF…")
         .separator()
+        .text("menu_api_keys", "API Keys…")
+        .separator()
         .quit()
         .build()?;
 
