@@ -81,18 +81,41 @@ Installers are on the
 <details>
 <summary><b>Installing on Windows</b></summary>
 
-Download `Toril_1.0.0-beta.1_x64-setup.exe` and run it. It installs per-user, so
-there is no administrator prompt:
+**1. Download** `Toril_1.0.0-beta.1_x64-setup.exe` from the table above.
 
-- Copies the app into `%LOCALAPPDATA%\Toril`.
-- Adds a Start Menu entry, and offers a Desktop shortcut during setup.
-- Registers in **Apps & features** for clean uninstallation.
+**2. Unblock it if Windows marked it.** Files downloaded from the internet carry
+a "mark of the web". If the installer refuses to start, right-click it →
+**Properties** → tick **Unblock** at the bottom → **OK**.
 
-On first run, SmartScreen may say "Windows protected your PC" because the build
-is unsigned. Choose **More info → Run anyway**.
+**3. Run the installer.** It installs per-user, so there is no administrator
+prompt. It copies the app into `%LOCALAPPDATA%\Toril`, adds a Start Menu entry,
+offers a Desktop shortcut during setup, and registers in **Apps & features** for
+clean uninstallation. Because the install is per-user, other accounts on the same
+PC will not see Toril.
 
-To uninstall: **Settings → Apps → Installed apps → Toril → Uninstall**, or run
-the uninstaller in `%LOCALAPPDATA%\Toril`.
+**4. Get past the unsigned-build warning.** The build is not code-signed, so
+Windows objects on first run. Which warning you get depends on your settings:
+
+- **SmartScreen** — "Windows protected your PC". Choose **More info → Run
+  anyway**.
+- **Smart App Control** — on Windows 11 24H2 and later this can *block* the
+  installer outright, with no "Run anyway" to click. If that happens, the only
+  way through is to turn Smart App Control off in **Windows Security → App &
+  browser control → Smart App Control settings**. Decide deliberately: once it
+  is off, Windows will not let you turn it back on without reinstalling.
+
+Both are expected for an unsigned build, not a sign of a problem. Signed
+installers are on the roadmap.
+
+**5. Optional — make Toril your default Markdown editor.** Setup registers
+`.md`, `.markdown`, `.html`, and `.htm`, but Windows 11 no longer shows a
+one-click "always use this app" prompt, so registering is not the same as
+becoming the default. To set it: **Settings → Apps → Default apps** → search for
+`Toril` → choose each file type you want it to own. Or right-click any `.md`
+file → **Open with → Choose another app** → Toril → **Always**.
+
+**To uninstall:** **Settings → Apps → Installed apps → Toril → Uninstall**, or
+run the uninstaller in `%LOCALAPPDATA%\Toril`.
 
 </details>
 
@@ -130,6 +153,16 @@ The branch-by-branch plan is in **[ROADMAP.md](./ROADMAP.md)**.
 
 ## Building from source
 
+You need these on every platform, before anything else:
+
+- **Rust** (stable), via [rustup](https://rustup.rs).
+- **Node.js** LTS.
+- **pnpm**, enabled through Corepack — `corepack enable pnpm`. Toril pins its
+  dependencies through the pnpm lockfile, and `pnpm install` is what applies the
+  patch in `patches/`, so npm and yarn are not substitutes.
+
+Then:
+
 ```bash
 pnpm install
 pnpm tauri dev      # run with hot reload
@@ -140,8 +173,11 @@ The first run compiles the Rust backend and takes a while; later runs are fast.
 
 Platform build dependencies:
 
-- **Windows:** Microsoft C++ Build Tools (MSVC) and the WebView2 runtime
-  (preinstalled on Windows 11).
+- **Windows:** [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+  with the **Desktop development with C++** workload ticked — the default
+  download does not include it, and without it the Rust link step fails. Plus the
+  WebView2 runtime, which is preinstalled on Windows 11 and bootstrapped by the
+  installer on Windows 10.
 - **macOS:** Xcode Command Line Tools (`xcode-select --install`).
 - **Linux:**
   ```bash

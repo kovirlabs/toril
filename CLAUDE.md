@@ -474,7 +474,15 @@ pnpm tauri build        # production -> .exe + installer
 Output: `src-tauri/target/release/` (raw `.exe`) and `…/bundle/` (NSIS installer). In
 `tauri.conf.json`: `bundle.targets` is an explicit list (`nsis` on Windows; `app`/`dmg` on macOS;
 `deb`/`rpm`/`appimage` on Linux); `bundle.windows.webviewInstallMode = "downloadBootstrapper"`
-(handles Win10 WebView2); set icon, product name, version, publisher.
+(handles Win10 WebView2) and `bundle.windows.nsis.installMode = "currentUser"` (per-user install into
+`%LOCALAPPDATA%\Toril`, no UAC prompt); set icon, product name, version, publisher.
+
+> **Both Windows keys are set explicitly on purpose**, even though they match Tauri's current
+> defaults. `README.md` documents them as user-facing guarantees ("installs per-user, so there is no
+> administrator prompt"), and a claim that rests on an inherited default has no failure signal — a
+> Tauri minor bump that flipped `installMode` to `both` would make the README false with nothing in
+> the repo going red. Writing them down converts an assumption into a contract. Verified on-device
+> (bundling is outside every headless gate).
 
 > **MSI is intentionally excluded.** Windows Installer versions are 4-part numeric and only accept a
 > *numeric* pre-release field, so a semver tag like `1.0.0-beta.1` cannot be bundled as MSI — it fails
