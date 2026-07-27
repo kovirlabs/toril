@@ -647,3 +647,84 @@ body {
 .conflict-bar-btn:hover {
   background: rgba(255, 255, 255, 0.08);
 }
+
+/* API keys dialog (ROADMAP Movement IV). A centered overlay rather than a panel
+   row: it is modal and rare, so it must not take layout space from the editor.
+   All colors come from the theme variables, so it follows System/Light/Dark. */
+.secrets-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 40;
+  min-width: 28rem;
+  max-width: min(34rem, 92vw);
+  padding: 1.25rem;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--toolbar-bg);
+  color: var(--fg);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 35%);
+}
+
+.secrets-dialog h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
+.secrets-blurb {
+  margin: 0 0 1rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.secrets-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: end;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.secrets-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8125rem;
+}
+
+.secrets-row input {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+.secrets-row button {
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--btn-bg);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+/* Spans the full row so a multi-line backend error wraps instead of squeezing
+   the buttons. */
+.secrets-state {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.secrets-close {
+  padding: 0.35rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--btn-bg);
+  color: var(--fg);
+  cursor: pointer;
+}

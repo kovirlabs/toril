@@ -102,8 +102,8 @@ pnpm tauri build      # production .exe + installer (Windows; see §9)
 pnpm test             # vitest — round-trip + toolbar + theme + export + tabs + security (jsdom)
 pnpm typecheck        # tsc --noEmit (TS strict)
 pnpm build            # tsc + vite build (frontend only)
-# logic crates — the same eight CI runs (plain `cargo test` also builds the app crate)
-cd src-tauri && cargo test -p fsatomic -p vaultscan -p mdhtml -p mdrtf -p imgasset -p trashbin -p snapshots -p mergemd
+# logic crates — the same nine CI runs (plain `cargo test` also builds the app crate)
+cd src-tauri && cargo test -p fsatomic -p vaultscan -p mdhtml -p mdrtf -p imgasset -p trashbin -p snapshots -p mergemd -p keystore
 cd src-tauri && cargo fmt --all && cargo clippy   # clean before commit (§10)
 ```
 
@@ -231,7 +231,8 @@ toril/
 │   │   ├── theme.ts           # theme preference controller (System/Light/Dark)
 │   │   ├── statusbar.ts       # word/char count + reading time + cursor
 │   │   ├── search.ts          # Find & Replace (decoration plugin + bar)
-│   │   └── conflictbar.ts     # non-blocking per-tab conflict banner (§5)
+│   │   ├── conflictbar.ts     # non-blocking per-tab conflict banner (§5)
+│   │   └── secrets.ts         # API key dialog — write-only, cannot display a key (§5)
 │   ├── export/html.ts         # standalone HTML-document builder (§7)
 │   ├── styles.css             # app chrome + theme CSS variables (per data-theme)
 │   ├── sanitize.ts            # HTML sanitization (§3.3)
@@ -248,7 +249,8 @@ toril/
     │   ├── imgasset/          # save pasted clipboard images beside the doc (§6)
     │   ├── trashbin/          # soft-delete to workspace .trash/ + restore (§3)
     │   ├── snapshots/         # content-addressed local version history (§3, ROADMAP I.3)
-    │   └── mergemd/           # line-based 3-way merge + conflict filenames (§3, ROADMAP I.4)
+    │   ├── mergemd/           # line-based 3-way merge + conflict filenames (§3, ROADMAP I.4)
+    │   └── keystore/          # OS-keychain API key storage (§3, ROADMAP IV.20)
     └── src/
         ├── main.rs            # bin entry → lib::run()
         ├── lib.rs             # Tauri builder + menu + command registration
@@ -258,7 +260,8 @@ toril/
         │   ├── workspace.rs   # open folder, list tree, watch (notify crate)
         │   ├── export.rs      # markdown_to_html + export_html; export_rtf (all-Rust)
         │   ├── images.rs      # save_clipboard_image (imgasset)
-        │   └── sync.rs        # merge_external / write_conflict_copy (§5)
+        │   ├── sync.rs        # merge_external / write_conflict_copy (§5)
+        │   └── secrets.rs     # API key commands — no getter, by design (§5)
         └── settings.rs        # persisted prefs (theme, last folder, open files, sidebar_visible)
 ```
 > comrak lives in `crates/mdhtml`/`mdrtf` (not the app crate) so its render config is unit-testable
@@ -296,6 +299,20 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 | `merge_external` | `path, base, mine` | `{ outcome, content?, theirs? }` | Reads the file and 3-way merges via `mergemd`. **Never writes.** `outcome` is one of `unchanged` / `theirsOnly` / `merged` / `conflict` / `missing` — `missing` is a deleted file (`io::ErrorKind::NotFound`), distinct from an unreadable one, so a gone file can be recreated by an explicit save rather than blocked forever. `content` is set only for `merged`; `theirs` (the bytes now on disk) is set for every outcome **except `unchanged` and `missing`** — nothing to park in either case — so the caller can set its new merge base and park the losing side without a second read that would race the writer (ROADMAP I.4) |
 | `write_conflict_copy` | `path, content` | `conflict_path` | Parks the losing side as `note (conflict 2026-07-25 14-32-05).md` beside the original — **atomic** via `fsatomic`, and `-2`/`-3`… suffixed rather than overwritten on a timestamp collision (§3) |
 | `take_launch_path` | — | `path?` | file the app was launched with (double-click / "Open with"); returns it **once**, then `null` (§file-open) |
+| `set_api_key` | `provider, key` | `()` | Validate and store an API key in the **OS keychain** (`keystore`) — Credential Manager / Keychain / Secret Service. Replaces any existing key for that provider (ROADMAP IV.20) |
+| `clear_api_key` | `provider` | `()` | Remove a stored key. **Idempotent** — clearing an absent key succeeds, so pressing Clear twice is not an error |
+| `has_api_key` | `provider` | `bool` | Whether a key is stored. The **only** read the webview is permitted |
+| `list_api_keys` | — | `[{provider, configured}]` | Status of every provider in one round trip; never carries a key |
+
+> **There is deliberately no `get_api_key`, and there must never be one.**
+> `keystore::SecretStore::get` exists so Rust-side provider calls (Movement IV) can use a key;
+> it is never registered with `invoke_handler`. §3.3 already treats webview content as untrusted,
+> so a key that never crosses the IPC boundary turns a future sanitizer bypass into a rendering
+> bug rather than a stolen credential — **the security property comes from the API shape, not the
+> storage backend.** A "show key" toggle is not worth reversing that. `provider` is a closed set
+> (`"anthropic" | "openai"`), mirroring the Rust enum, so a typo cannot create an orphaned entry.
+> Secrets never enter `session.json`, `recovery.json`, `history/`, or any vault file, and no
+> error string embeds one.
 
 > **HTML export is split** across two commands to hold the single sanitization path (§3.3):
 > `markdown_to_html` renders (raw HTML passed through), the **frontend** runs it through `sanitize.ts`
@@ -437,11 +454,20 @@ Phases 0–3 are complete and Phase 4 (polish) is in progress; the shipped detai
 - **External-change policy:** `tests/sync.test.ts` — `decideAction`'s outcome→action mapping is total
   and fails closed, HTML never auto-merges, and `selectSavable` excludes a diverged tab from every
   bulk write path (§5).
+- **Secret storage:** `cargo test -p keystore` — key-shape validation (empty, control characters
+  that would corrupt an HTTP header, length bounds), the `SecretStore` contract against the
+  in-memory double, provider isolation, idempotent `clear`, and that **no error string can contain
+  the secret** (they reach the UI, so one could otherwise leak a key into a screenshot). Plus
+  `tests/secrets.test.ts` — the field is `type=password`, is blanked after a successful save, and
+  configured state comes from the backend rather than a cached key. **`OsKeychain` itself is not
+  covered**: it needs a logged-in desktop session and CI's Linux runners have no Secret Service, so
+  a test there could only fail or silently skip — and a silently-skipping test reads as coverage
+  without being coverage. On-device only.
 - Plus `vaultscan`, `imgasset`, `theme`, `statusbar`, `search`, `security`, `tabs` suites.
 
 **CI runs these automatically** on every pull request and on pushes to `main`
 (`.github/workflows/ci.yml`): `pnpm typecheck` + `pnpm test` + `pnpm build`, and `cargo test` over the
-eight logic crates — each on **Ubuntu and Windows**, plus `cargo fmt --all --check` on Ubuntu. The
+nine logic crates — each on **Ubuntu and Windows**, plus `cargo fmt --all --check` on Ubuntu. The
 Windows leg is not ceremony: `pnpm install --frozen-lockfile` is what applies the Milkdown patch, and
 `fsatomic` is the §3.1 gate whose replace-over-existing semantics differ from POSIX there.
 

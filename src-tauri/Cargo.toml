@@ -11,6 +11,7 @@ members = [
     "crates/trashbin",
     "crates/snapshots",
     "crates/mergemd",
+    "crates/keystore",
 ]
 # Vendored, security-patched glib (see [patch.crates-io] below). Excluded so it
 # is never a workspace member — we don't fmt/clippy/test upstream third-party code.
@@ -55,6 +56,7 @@ imgasset = { path = "crates/imgasset" }
 trashbin = { path = "crates/trashbin" }
 snapshots = { path = "crates/snapshots" }
 mergemd = { path = "crates/mergemd" }
+keystore = { path = "crates/keystore" }
 
 # Security patch for glib (Linux/gtk3 transitive dep via Tauri).
 # GHSA-wrw7-89jp-8q8g: VariantStrIter::impl_get passed a NULL out-pointer as

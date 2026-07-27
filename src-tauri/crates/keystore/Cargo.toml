@@ -1,0 +1,18 @@
+[package]
+name = "keystore"
+version = "0.1.0"
+edition = "2024"
+description = "OS-keychain-backed API key storage for Toril (CLAUDE.md §3, ROADMAP Movement IV). A SecretStore trait over the platform keychain plus an in-memory double, so the contract is testable without a desktop session. No Tauri dep."
+
+# Both vetted against crates.io before adoption (§2): keyring 4.1.5 (published
+# 2026-07-14, 7.08M recent downloads, open-source-cooperative) and zeroize 1.9.0
+# (RustCrypto, 149M recent downloads). Neither deprecated, neither yanked at
+# these versions.
+#
+# keyring's default feature is `v1`, which selects the Apple Keychain,
+# Windows-native, and zbus Secret Service backends — exactly the three we want.
+# Do not "helpfully" add `apple-native`/`windows-native`/`sync-secret-service`:
+# those are keyring 3.x names and do not exist in 4.x.
+[dependencies]
+keyring = "4.1.5"
+zeroize = "1.9.0"

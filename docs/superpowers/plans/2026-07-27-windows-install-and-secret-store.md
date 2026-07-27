@@ -202,9 +202,13 @@ description = "OS-keychain-backed API key storage for Toril (CLAUDE.md §3, ROAD
 # Both vetted against crates.io before adoption (§2): keyring 4.1.5 (published
 # 2026-07-14, 7.08M recent downloads, open-source-cooperative) and zeroize 1.9.0
 # (RustCrypto, 149M recent downloads). Neither deprecated nor yanked.
+# keyring 4.x `default = ["v1"]` already selects the Apple Keychain,
+# Windows-native, and zbus Secret Service backends. (The explicit
+# `apple-native` / `windows-native` / `sync-secret-service` flags are 3.x names
+# and do not exist here.)
 [dependencies]
-keyring = { version = "4.1.5", features = ["apple-native", "windows-native", "sync-secret-service"] }
-zeroize = { version = "1.9.0", features = ["derive"] }
+keyring = "4.1.5"
+zeroize = "1.9.0"
 ```
 
 Add `"crates/keystore"` to the `members` list in `src-tauri/Cargo.toml`.

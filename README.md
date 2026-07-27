@@ -194,7 +194,7 @@ Platform build dependencies:
 | Frontend tests | `pnpm test` |
 | Type-check | `pnpm typecheck` |
 | Frontend build only | `pnpm build` |
-| Backend logic tests | `cd src-tauri && cargo test -p fsatomic -p vaultscan -p mdhtml -p mdrtf -p imgasset -p trashbin -p snapshots` |
+| Backend logic tests | `cd src-tauri && cargo test -p fsatomic -p vaultscan -p mdhtml -p mdrtf -p imgasset -p trashbin -p snapshots -p mergemd -p keystore` |
 | Formatting and lints | `cd src-tauri && cargo fmt --all && cargo clippy` |
 
 CI runs the frontend suite, the type-check, the build, and the backend logic
