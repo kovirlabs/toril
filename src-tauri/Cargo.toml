@@ -11,6 +11,7 @@ members = [
     "crates/trashbin",
     "crates/snapshots",
     "crates/mergemd",
+    "crates/keystore",
 ]
 # Vendored, security-patched glib (see [patch.crates-io] below). Excluded so it
 # is never a workspace member — we don't fmt/clippy/test upstream third-party code.
