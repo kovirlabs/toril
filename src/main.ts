@@ -57,7 +57,6 @@ import { ConflictBar } from "./ui/conflictbar";
 import { History } from "./ui/history";
 import { Outline } from "./ui/outline";
 import { SearchBar } from "./ui/search";
-import { SecretsDialog } from "./ui/secrets";
 import { Sidebar } from "./ui/sidebar";
 import { StatusBar } from "./ui/statusbar";
 import { type TabState, type DocFormat, TabManager } from "./ui/tabs";
@@ -78,7 +77,6 @@ let outline: Outline | null = null;
 let history: History | null = null;
 let searchBar: SearchBar | null = null;
 let conflictBar: ConflictBar | null = null;
-let secretsDialog: SecretsDialog | null = null;
 let autosave: AutosaveScheduler | null = null;
 let autosaveEnabled = false;
 let autosaveDebounceMs = 2000;
@@ -1153,9 +1151,6 @@ function handleMenuAction(id: string): void {
     case "menu_export_rtf":
       void doExportRtf();
       break;
-    case "menu_api_keys":
-      void secretsDialog?.open();
-      break;
     case "menu_about":
       void showAbout();
       break;
@@ -1243,9 +1238,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   // belongs above the document, not inside the surface that scrolls away.
   const conflictEl = document.querySelector<HTMLElement>("#conflictbar");
   if (conflictEl) conflictBar = new ConflictBar(conflictEl);
-  // An overlay on <body> rather than a row in #main: it is modal and rare, and
-  // must not take layout space from the editor.
-  secretsDialog = new SecretsDialog(document.body);
 
   autosave = new AutosaveScheduler(
     {

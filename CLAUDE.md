@@ -313,6 +313,19 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 > (`"anthropic" | "openai"`), mirroring the Rust enum, so a typo cannot create an orphaned entry.
 > Secrets never enter `session.json`, `recovery.json`, `history/`, or any vault file, and no
 > error string embeds one.
+>
+> **These four commands are registered but deliberately unsurfaced.** `crates/keystore`, the
+> commands, `src/ui/secrets.ts` and its gates all exist and are green, but **no menu item, button
+> or keybinding reaches the dialog** — `SecretsDialog` is constructed nowhere. Nothing in the app
+> consumes a stored key until the AI panel lands (ROADMAP branch 20), and a live "API Keys…" item
+> would promise a feature that does not exist — a user could save a key and get nothing. It was
+> briefly wired on `main` (PR #33) and unwired again for exactly that reason. This is also the
+> §7 *trust-before-reach* ordering: a Movement IV component may sit dormant ahead of the Movement I
+> floor, but it must not be *reachable* ahead of it. **Branch 20 re-adds the menu item** — the
+> storage layer is already built and tested, so that branch wires the UI rather than starting over.
+> Note that branch 20's provider set is still an **open decision** (ROADMAP §8 leans Anthropic +
+> Ollama); the shipped enum is `anthropic | openai`, so revisit it there rather than treating it
+> as settled.
 
 > **HTML export is split** across two commands to hold the single sanitization path (§3.3):
 > `markdown_to_html` renders (raw HTML passed through), the **frontend** runs it through `sanitize.ts`
