@@ -27,8 +27,10 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .text("menu_export_html", "Export HTML… (Ctrl+E)")
         .text("menu_export_rtf", "Export RTF…")
         .separator()
-        .text("menu_api_keys", "API Keys…")
-        .separator()
+        // No "API Keys…" item: the secret store (`crates/keystore` + the
+        // `*_api_key` commands) is built and gated, but nothing consumes a key
+        // until the AI panel lands (ROADMAP branch 20). Surfacing it now would
+        // promise a feature that does not exist. Re-add it there.
         .quit()
         .build()?;
 
