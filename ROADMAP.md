@@ -277,6 +277,27 @@ between an editor that works and one that is pleasant to spend hours in.
 
 **Branches**
 
+- [ ] **12b. `feat/chrome-ux`** — the UI shell around the editor: a **single tabbed right
+    rail** (outline and history become alternatives, not two rails), pane collapse/expand
+    that actually animates, drag-to-resize with persisted widths, pointer-adaptive touch
+    targets, a real design-token layer, and **real menu accelerators**. Taken out of
+    numbering order because it is *infrastructure*: the search panel (Movement II) and the
+    AI panel (Movement IV) both plug into the rail, and building them against four
+    independent rails would mean building them twice.
+    - *Motivating defects (found by driving the app, not reading it):* collapse cannot
+      animate (`display:none` cancels transitions); four rails leave a Surface Pro 580px
+      for a 720px measure; hover and selection share a color; `Inter` is named in the font
+      stack but never bundled, so **Windows renders the UI in Arial**; menu shortcuts are
+      baked into label text instead of registered as accelerators.
+    - *New:* `src/ui/panes.ts` (pure state), `src/ui/resizer.ts` (pure geometry),
+      `src/ui/rail.ts`; `src/styles/` split into tokens/chrome/editor.
+    - *Touches:* `tabs.ts`, `toolbar.ts`, `app.html`, `menu.rs`, `settings.rs`.
+    - *Gate:* `tests/panes.test.ts` + `tests/resizer.test.ts`, plus a browser-harness
+      sweep (`dev-harness.html`) covering target sizes, reduced motion, focus rings, and
+      keyboard traversal of collapsed panes.
+    - *Design:* `docs/superpowers/specs/2026-08-12-ui-ux-chrome-rework-design.md`;
+      human-only checks in `docs/ON-DEVICE-VERIFICATION.md` §A.
+
 - [ ] **13. `feat/code-highlighting`** — syntax-highlighted code blocks (a gray code block
     looks *broken* to a developer).
     - *New crate (or JS):* `crates/highlight` on **`syntect`** (use its `fancy-regex`
@@ -461,6 +482,11 @@ floor supports. Everything else is execution.
   (2026-07-08): hand-rolled CAS** (`crates/snapshots`). We only need blob-by-hash + a
   manifest + custom time-decay thinning, not git semantics; a ~200-LOC pure-Rust crate
   fits the house ethos and avoids `gix`'s large surface.
+- ~~**Right-rail coexistence:** should the outline and version-history panels be
+  independent rails, stacked accordions, or mutually exclusive?~~ **Resolved (2026-08-12):
+  one tabbed rail** (`feat/chrome-ux`). Two independent rails cost 460px, leaving a
+  Surface Pro less than the editor's 720px measure; a tabbed rail bounds chrome at 240px
+  and gives later panels (search, AI) a defined place to live.
 - **AI providers at launch:** Anthropic + Ollama only, or also OpenAI? (Lean Anthropic +
   Ollama first — on-brand and covers free/local.)
 - **Beta graduation bar:** which exact branches must be green to drop `-alpha`? (Proposed:
