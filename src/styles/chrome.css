@@ -1,0 +1,824 @@
+/* ---- Chrome -----------------------------------------------------------------
+   Everything around the writing surface: workspace grid, side panes, the rail,
+   the tab row, the format toolbar, search, the conflict banner, the status bar
+   and the dialogs. Consumes tokens.css only — no literal colours or sizes here.
+---------------------------------------------------------------------------- */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100vh;
+}
+
+body {
+  display: grid;
+  /* workspace · status bar. The old command toolbar is gone: all eleven of its
+     buttons already existed as native menu items, so it was ~50px of permanent
+     chrome duplicating the menu bar. */
+  grid-template-rows: 1fr auto;
+  overflow: hidden;
+  background: var(--chrome-bg);
+}
+
+/* ---- Workspace: sidebar | main | rail ------------------------------------ */
+#workspace {
+  position: relative; /* resize handles are positioned against this */
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 0;
+}
+
+/* Panes carry their own width and transition it, rather than the grid animating
+   `grid-template-columns`. Both work in Chromium, but transitioning a plain
+   `width` is portable to every engine we ship on, and the grid track follows the
+   item. See the design doc §3.5. */
+#sidebar,
+#rail {
+  width: var(--pane-w, 0px);
+  min-width: 0;
+  overflow: hidden;
+  background: var(--chrome-bg);
+  transition: width var(--dur-base) var(--ease);
+}
+
+#sidebar {
+  --pane-w: var(--sidebar-w, 240px);
+  border-right: 1px solid var(--border);
+}
+
+#rail {
+  --pane-w: var(--rail-w, 260px);
+  border-left: 1px solid var(--border);
+}
+
+/* Collapsing sets the width to zero and nothing else. The pane also gets `inert`
+   from panes wiring, which is what actually removes it from the tab order and
+   the accessibility tree — the job `display: none` used to do, minus the part
+   where it cancelled the transition. */
+#workspace.sidebar-hidden #sidebar,
+#workspace.rail-hidden #rail {
+  width: 0;
+  border-width: 0;
+}
+
+/* The inner scroller keeps the pane's *stored* width while the pane itself
+   animates to zero, so content slides out of view instead of reflowing into a
+   narrowing column. */
+.pane-scroll {
+  width: var(--pane-w);
+  height: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+/* ---- Resize handles ------------------------------------------------------ */
+/* Positioned against #workspace and offset by the same variables that size the
+   panes, so a handle tracks its pane through both drags and collapse animations
+   without any JS keeping them in sync. */
+.pane-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: var(--z-panel);
+  width: 9px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background var(--dur-fast) var(--ease);
+  touch-action: none; /* required for pointer capture to survive a touch drag */
+}
+
+.pane-resize[data-edge="left"] {
+  left: calc(var(--sidebar-w, 240px) - 4px);
+}
+
+.pane-resize[data-edge="right"] {
+  right: calc(var(--rail-w, 260px) - 4px);
+}
+
+.pane-resize::after {
+  content: "";
+  position: absolute;
+  inset: 0 4px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+
+.pane-resize:hover::after,
+.pane-resize[data-dragging="true"]::after,
+.pane-resize:focus-visible::after {
+  opacity: 1;
+}
+
+.pane-resize:focus-visible {
+  outline: none; /* the ::after bar is the focus affordance here */
+}
+
+#workspace.sidebar-hidden .pane-resize[data-edge="left"],
+#workspace.rail-hidden .pane-resize[data-edge="right"] {
+  display: none;
+}
+
+/* ---- Sidebar ------------------------------------------------------------- */
+#sidebar .pane-scroll {
+  padding: var(--sp-2);
+  font-size: var(--text-md);
+}
+
+.sidebar-empty,
+.rail-empty {
+  color: var(--muted);
+  font-style: italic;
+  padding: var(--sp-2);
+}
+
+.sidebar-root {
+  font-weight: 600;
+  padding: var(--sp-1) var(--sp-1) var(--sp-2);
+  text-transform: uppercase;
+  font-size: var(--text-xs);
+  letter-spacing: 0.06em;
+  color: var(--dim);
+}
+
+#sidebar .tree {
+  list-style: none;
+  margin: 0;
+  padding-left: var(--sp-3);
+}
+
+#sidebar summary,
+.file-entry {
+  display: flex;
+  align-items: center;
+  min-height: var(--target-sm);
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  border: 0;
+  background: none;
+  color: inherit;
+  padding: 0 var(--sp-1);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#sidebar summary:hover,
+.file-entry:hover {
+  background: var(--hover-bg);
+}
+
+/* Selection is a different weight from hover, not the same colour at a different
+   time — before this pass both resolved to --active-bg, so the pointer position
+   was indistinguishable from the selection. */
+.file-entry[data-active="true"] {
+  background: var(--active-bg);
+  color: var(--active-fg);
+  font-weight: 600;
+}
+
+/* ---- Rail (tabbed: outline | history) ------------------------------------ */
+#rail .pane-scroll {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.rail-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.rail-tab {
+  flex: 1 1 0;
+  min-height: var(--target);
+  padding: 0 var(--sp-2);
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--muted);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+
+.rail-tab:hover {
+  background: var(--hover-bg);
+  color: var(--fg);
+}
+
+.rail-tab[aria-selected="true"] {
+  color: var(--fg);
+  font-weight: 600;
+  border-bottom-color: var(--accent);
+}
+
+.rail-tab[disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.rail-tab[disabled]:hover {
+  background: none;
+  color: var(--muted);
+}
+
+.rail-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--sp-2);
+}
+
+.rail-panel[hidden] {
+  display: none;
+}
+
+/* ---- Outline ------------------------------------------------------------- */
+.outline-list,
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.outline-entry {
+  display: flex;
+  align-items: center;
+  min-height: var(--target-sm);
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-size: var(--text-sm);
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 var(--sp-1);
+  border-radius: var(--r-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.outline-entry[data-level="1"] { font-weight: 600; }
+.outline-entry[data-level="2"] { padding-left: var(--sp-3); }
+.outline-entry[data-level="3"] { padding-left: var(--sp-5); }
+.outline-entry[data-level="4"] { padding-left: var(--sp-6); }
+.outline-entry[data-level="5"] { padding-left: calc(var(--sp-6) + var(--sp-3)); }
+.outline-entry[data-level="6"] { padding-left: calc(var(--sp-6) + var(--sp-5)); }
+
+.outline-entry:hover {
+  background: var(--hover-bg);
+}
+
+.outline-entry[data-active="true"] {
+  background: var(--active-bg);
+  color: var(--active-fg);
+  font-weight: 600;
+}
+
+.outline-empty {
+  color: var(--muted);
+  font-style: italic;
+  padding: var(--sp-2);
+}
+
+/* ---- Version history ----------------------------------------------------- */
+.history-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  min-height: var(--target-sm);
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-size: var(--text-sm);
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 var(--sp-1);
+  border-radius: var(--r-sm);
+}
+
+.history-entry:hover {
+  background: var(--hover-bg);
+}
+
+.history-entry[data-active="true"] {
+  background: var(--active-bg);
+  color: var(--active-fg);
+  font-weight: 600;
+}
+
+.history-size {
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.history-empty {
+  color: var(--muted);
+  font-style: italic;
+  padding: var(--sp-2);
+}
+
+.history-header {
+  font-weight: 600;
+  font-size: var(--text-xs);
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: var(--sp-1) var(--sp-1) var(--sp-2);
+}
+
+.history-diff {
+  margin-top: var(--sp-2);
+  border-top: 1px solid var(--border);
+  padding-top: var(--sp-2);
+}
+
+.history-diff-body {
+  margin: 0 0 var(--sp-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+.history-diff-line[data-op="add"] {
+  background: rgb(31 164 99 / 18%);
+}
+
+.history-diff-line[data-op="del"] {
+  background: rgb(214 73 75 / 18%);
+}
+
+.history-restore {
+  cursor: pointer;
+}
+
+/* ---- Main column --------------------------------------------------------- */
+#main {
+  display: grid;
+  /* tab row · format toolbar · search · conflict banner · editor */
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  min-height: 0;
+  min-width: 0;
+  background: var(--editor-bg);
+}
+
+/* ---- Tab row: ☰ | tabs | ≡ ⟲ --------------------------------------------- */
+/* Each pane toggle sits on the side it controls, so the control's position is
+   itself the affordance. */
+#tabrow {
+  display: flex;
+  align-items: stretch;
+  gap: var(--sp-1);
+  padding: 0 var(--sp-1);
+  background: var(--chrome-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.pane-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  align-self: center;
+  min-width: var(--target);
+  height: var(--target);
+  padding: 0 var(--sp-1);
+  font: inherit;
+  font-size: var(--text-base);
+  line-height: 1;
+  color: var(--muted);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.pane-toggle:hover {
+  background: var(--hover-bg);
+  color: var(--fg);
+}
+
+.pane-toggle[data-active="true"] {
+  background: var(--active-bg);
+  color: var(--active-fg);
+}
+
+.rail-toggles {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+#tabbar {
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: var(--target);
+  max-width: 15rem;
+  padding: 0 var(--sp-1) 0 var(--sp-2);
+  font-size: var(--text-sm);
+  color: var(--muted);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  transition:
+    color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
+}
+
+.tab:hover {
+  background: var(--hover-bg);
+}
+
+.tab[data-active="true"] {
+  color: var(--fg);
+  font-weight: 600;
+  background: var(--editor-bg);
+  border-bottom-color: var(--accent);
+}
+
+.tab-label {
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--target-sm);
+  height: var(--target-sm);
+  font: inherit;
+  line-height: 1;
+  border: 0;
+  background: none;
+  color: var(--dim);
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  flex: 0 0 auto;
+}
+
+.tab-close:hover {
+  background: var(--border);
+  color: var(--fg);
+}
+
+/* ---- Format toolbar ------------------------------------------------------ */
+.format-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-2);
+  background: var(--editor-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.fmt-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--target);
+  height: var(--target);
+  padding: 0 var(--sp-1);
+  font: inherit;
+  font-size: var(--text-md);
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  line-height: 1;
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.fmt-btn:hover {
+  background: var(--hover-bg);
+  color: var(--fg);
+}
+
+.fmt-btn[data-active="true"] {
+  background: var(--active-bg);
+  color: var(--active-fg);
+  border-color: var(--border-strong);
+}
+
+.fmt-heading {
+  font: inherit;
+  font-size: var(--text-sm);
+  height: var(--target);
+  padding: 0 var(--sp-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--chrome-raised);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.fmt-sep {
+  width: 1px;
+  height: 1.1rem;
+  margin: 0 var(--sp-1);
+  background: var(--border);
+  flex: 0 0 auto;
+}
+
+.fmt-emoji {
+  position: relative;
+  display: inline-flex;
+}
+
+.fmt-emoji-menu {
+  position: absolute;
+  top: calc(var(--target) + var(--sp-1));
+  left: 0;
+  z-index: var(--z-bubble);
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: var(--sp-1);
+  padding: var(--sp-2);
+  background: var(--chrome-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-panel);
+}
+
+.fmt-emoji-item {
+  font-size: 1.1rem;
+  width: var(--target);
+  height: var(--target);
+  border: 0;
+  border-radius: var(--r-md);
+  background: none;
+  cursor: pointer;
+}
+
+.fmt-emoji-item:hover {
+  background: var(--hover-bg);
+}
+
+/* ---- Find & Replace ------------------------------------------------------ */
+.searchbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--chrome-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.searchbar[hidden] {
+  display: none;
+}
+
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.search-input {
+  font: inherit;
+  font-size: var(--text-md);
+  flex: 1;
+  max-width: 20rem;
+  height: var(--target);
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--editor-bg);
+  color: var(--fg);
+}
+
+.search-count {
+  font-size: var(--text-sm);
+  color: var(--muted);
+  min-width: 5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.search-btn {
+  font: inherit;
+  font-size: var(--text-sm);
+  height: var(--target);
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--chrome-raised);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.search-btn:hover {
+  border-color: var(--border-strong);
+  background: var(--hover-bg);
+}
+
+/* ---- Conflict banner ----------------------------------------------------- */
+/* The warning role rather than danger: nothing has been lost, a decision is due. */
+.conflict-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+  border-bottom: 1px solid var(--warn-border);
+  font-size: var(--text-md);
+}
+
+.conflict-bar[hidden] {
+  display: none;
+}
+
+.conflict-bar-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.conflict-bar-btn {
+  flex: 0 0 auto;
+  min-height: var(--target-sm);
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--warn-border);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.conflict-bar-btn:hover {
+  background: rgb(255 255 255 / 12%);
+}
+
+/* ---- Status bar ---------------------------------------------------------- */
+#statusbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: 0 var(--sp-3);
+  min-height: 1.75rem;
+  font-size: var(--text-xs);
+  color: var(--muted);
+  background: var(--chrome-bg);
+  border-top: 1px solid var(--border);
+}
+
+.status-right {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+#docstats {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The theme picker lives here now that the command toolbar is gone: it is a
+   preference, consulted rarely, and the status bar is where preferences live in
+   every editor a user is likely to arrive from. */
+#theme-select {
+  font: inherit;
+  font-size: var(--text-xs);
+  height: 1.5rem;
+  padding: 0 var(--sp-1);
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+#theme-select:hover {
+  background: var(--hover-bg);
+  border-color: var(--border);
+  color: var(--fg);
+}
+
+/* ---- Focus --------------------------------------------------------------- */
+/* One rule for every interactive element. There was no visible focus state at
+   all before this pass, which made the app unusable by keyboard alone. Gold is
+   reserved for exactly this, so a ring can never be mistaken for a selection. */
+:where(button, select, input, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+/* ---- API keys dialog ----------------------------------------------------- */
+.secrets-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: var(--z-dialog);
+  min-width: 28rem;
+  max-width: min(34rem, 92vw);
+  padding: var(--sp-5);
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--chrome-raised);
+  color: var(--fg);
+  box-shadow: var(--shadow-dialog);
+}
+
+.secrets-dialog h2 {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--text-base);
+}
+
+.secrets-blurb {
+  margin: 0 0 var(--sp-4);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
+.secrets-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: end;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-4);
+}
+
+.secrets-row label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  font-size: var(--text-sm);
+}
+
+.secrets-row input {
+  height: var(--target);
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--editor-bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+.secrets-row button,
+.secrets-close {
+  min-height: var(--target);
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--chrome-raised);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+/* Spans the full row so a multi-line backend error wraps instead of squeezing
+   the buttons. */
+.secrets-state {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: var(--text-xs);
+}

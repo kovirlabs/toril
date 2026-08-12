@@ -53,8 +53,12 @@
         active_file: "/vault/Welcome.md",
         theme: "system",
         sidebar_visible: true,
-        outline_visible: true,
-        history_visible: false,
+        sidebar_width: 240,
+        rail_visible: true,
+        rail_width: 260,
+        rail_tab: "outline",
+        outline_visible: null,
+        history_visible: null,
         autosave: false,
         autosave_debounce_ms: 2000,
       };
@@ -134,44 +138,109 @@
   </head>
 
   <body>
-    <header id="toolbar">
-      <div class="actions">
-        <button id="btn-toggle-sidebar" title="Toggle Sidebar (Ctrl+\)">☰</button>
-        <button id="btn-toggle-outline" title="Toggle Outline (Ctrl+Shift+\)">≣</button>
-        <button id="btn-toggle-history" title="Toggle Version History">⟲</button>
-        <button id="btn-new" title="New (Ctrl+N)">New</button>
-        <button id="btn-open" title="Open File (Ctrl+O)">Open</button>
-        <button id="btn-open-folder" title="Open Folder (Ctrl+Shift+O)">Open Folder</button>
-        <button id="btn-save" title="Save (Ctrl+S)">Save</button>
-        <button id="btn-save-as" title="Save As (Ctrl+Shift+S)">Save As</button>
-        <button id="btn-save-all" title="Save All (Ctrl+Alt+S)">Save All</button>
-        <button id="btn-export" title="Export to HTML (Ctrl+E)">Export HTML</button>
-        <button id="btn-export-rtf" title="Export to RTF (Word/LibreOffice)">Export RTF</button>
-      </div>
-      <div id="doc-title" class="doc-title">Toril</div>
-      <select id="theme-select" title="Theme" aria-label="Theme">
-        <option value="system">System</option>
-        <option value="light">Light</option>
-        <option value="dark">Dark</option>
-      </select>
-    </header>
+    <div id="workspace">
+      <aside id="sidebar" aria-label="Workspace files">
+        <div class="pane-scroll" id="sidebar-body"></div>
+      </aside>
 
-    <div id="workspace" class="history-hidden">
-      <aside id="sidebar"></aside>
+      <!-- Positioned against #workspace and offset by the same variables that
+           size the panes, so a handle tracks its pane through drags and
+           collapse animations without JS keeping them in sync. -->
+      <div class="pane-resize" data-edge="left" id="resize-sidebar"></div>
+
       <section id="main">
-        <nav id="tabbar"></nav>
+        <!-- Each pane toggle sits on the side it controls: ☰ opens the files
+             pane on the left, ≡ / ⟲ the rail on the right. -->
+        <nav id="tabrow">
+          <button
+            id="btn-toggle-sidebar"
+            class="pane-toggle"
+            type="button"
+            title="Toggle Sidebar (Ctrl+\)"
+            aria-label="Toggle files pane"
+          >
+            ☰
+          </button>
+
+          <div id="tabbar"></div>
+
+          <div class="rail-toggles">
+            <button
+              id="btn-rail-outline"
+              class="pane-toggle"
+              type="button"
+              title="Outline (Ctrl+Shift+\)"
+              aria-label="Toggle outline"
+            >
+              ≡
+            </button>
+            <button
+              id="btn-rail-history"
+              class="pane-toggle"
+              type="button"
+              title="Version History"
+              aria-label="Toggle version history"
+            >
+              ⟲
+            </button>
+          </div>
+        </nav>
+
         <div id="format-toolbar" class="format-toolbar"></div>
         <div id="searchbar"></div>
         <div id="conflictbar"></div>
         <main id="editor" class="editor"></main>
       </section>
-      <aside id="outline"></aside>
-      <aside id="history"></aside>
+
+      <div class="pane-resize" data-edge="right" id="resize-rail"></div>
+
+      <!-- One rail, two panels. Outline and History are alternatives rather than
+           two rails, so chrome stays bounded at a single rail width however many
+           panels exist later (search, AI). -->
+      <aside id="rail" aria-label="Panels">
+        <div class="pane-scroll">
+          <div class="rail-tabs" role="tablist" aria-label="Rail panels">
+            <button
+              class="rail-tab"
+              id="rail-tab-outline"
+              type="button"
+              role="tab"
+              data-tab="outline"
+              aria-controls="outline"
+              aria-selected="true"
+            >
+              Outline
+            </button>
+            <button
+              class="rail-tab"
+              id="rail-tab-history"
+              type="button"
+              role="tab"
+              data-tab="history"
+              aria-controls="history"
+              aria-selected="false"
+            >
+              History
+            </button>
+          </div>
+          <div class="rail-body">
+            <div class="rail-panel" id="outline" role="tabpanel" aria-labelledby="rail-tab-outline"></div>
+            <div class="rail-panel" id="history" role="tabpanel" aria-labelledby="rail-tab-history" hidden></div>
+          </div>
+        </div>
+      </aside>
     </div>
 
     <footer id="statusbar">
       <span id="status"></span>
-      <span id="docstats"></span>
+      <div class="status-right">
+        <span id="docstats"></span>
+        <select id="theme-select" title="Theme" aria-label="Theme">
+          <option value="system">System</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+      </div>
     </footer>
   </body>
 </html>

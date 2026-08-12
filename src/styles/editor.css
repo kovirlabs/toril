@@ -1,0 +1,231 @@
+/* ---- Editor surface ---------------------------------------------------------
+   The writing surface itself. Milkdown ships the nord theme (configured in
+   milkdown.ts); these rules outrank its single-class selectors so the prose
+   tracks our chosen theme even when it disagrees with the OS scheme.
+
+   Nothing here changes the document model — every rule is presentational, so the
+   §3.2 round-trip contract is untouched by this file.
+---------------------------------------------------------------------------- */
+
+.editor {
+  overflow-y: auto;
+  background: var(--editor-bg);
+  padding: var(--sp-6) 0 var(--sp-6);
+}
+
+.editor .milkdown {
+  max-width: 45rem; /* ~720px measure */
+  margin: 0 auto;
+  padding: 0 var(--sp-5);
+  font-family: var(--font-prose);
+  line-height: 1.65;
+  color: var(--fg);
+}
+
+/* ---- Prose rhythm -------------------------------------------------------- */
+/* Headings had almost no hierarchy: an h3 rendered at the same weight as body
+   text, so "Task list" and the paragraph under it read as one block. */
+.editor .milkdown :where(h1, h2, h3, h4, h5, h6) {
+  font-weight: 600;
+  line-height: 1.25;
+  margin: var(--sp-5) 0 var(--sp-2);
+}
+
+.editor .milkdown h1 { font-size: 1.9rem; letter-spacing: -0.02em; }
+.editor .milkdown h2 { font-size: 1.45rem; letter-spacing: -0.01em; }
+.editor .milkdown h3 { font-size: 1.2rem; }
+.editor .milkdown h4 { font-size: 1.05rem; }
+.editor .milkdown h5 { font-size: 0.95rem; color: var(--muted); }
+.editor .milkdown h6 {
+  font-size: 0.85rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* The first heading in a document should not push itself away from the top. */
+.editor .milkdown > :first-child {
+  margin-top: 0;
+}
+
+.editor .milkdown p {
+  margin: 0 0 var(--sp-3);
+}
+
+.editor .milkdown :where(ul, ol) {
+  margin: 0 0 var(--sp-3);
+  padding-left: var(--sp-5);
+}
+
+.editor .milkdown li > p {
+  margin-bottom: var(--sp-1);
+}
+
+.editor .milkdown blockquote {
+  margin: 0 0 var(--sp-3);
+  padding-left: var(--sp-4);
+  border-left: 3px solid var(--border-strong);
+  color: var(--muted);
+}
+
+.editor .milkdown hr {
+  margin: var(--sp-5) 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.editor .milkdown a {
+  color: var(--accent);
+  text-underline-offset: 2px;
+}
+
+/* ---- Task lists ---------------------------------------------------------- */
+/* `- [x]` and `- [ ]` were rendering as identical plain bullets: the document
+   model was correct (`data-checked` is present and round-trips), but nothing
+   drew a checkbox, so the two states were indistinguishable on screen.
+   Presentational only — no element is added to the document.
+
+   `cursor: default` is deliberate: this is a state *indicator*, not a control.
+   Click-to-toggle needs a ProseMirror transaction and belongs in a branch that
+   touches the editor, not the chrome. */
+.editor .milkdown li[data-item-type="task"] {
+  list-style: none;
+  position: relative;
+  cursor: default;
+}
+
+.editor .milkdown li[data-item-type="task"]::before {
+  content: "";
+  position: absolute;
+  left: calc(var(--sp-5) * -1);
+  top: 0.42em;
+  width: 1em;
+  height: 1em;
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--editor-bg);
+  transition:
+    background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+
+.editor .milkdown li[data-item-type="task"][data-checked="true"]::before {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* The tick. Drawn rather than a glyph so it centres identically at every size. */
+.editor .milkdown li[data-item-type="task"][data-checked="true"]::after {
+  content: "";
+  position: absolute;
+  left: calc(var(--sp-5) * -1 + 0.3em);
+  top: 0.63em;
+  width: 0.42em;
+  height: 0.22em;
+  border-left: 2px solid var(--editor-bg);
+  border-bottom: 2px solid var(--editor-bg);
+  transform: rotate(-45deg);
+}
+
+.editor .milkdown li[data-item-type="task"][data-checked="true"] > p {
+  color: var(--muted);
+}
+
+/* ---- Code ---------------------------------------------------------------- */
+.editor .milkdown :where(pre, code) {
+  background-color: var(--code-bg);
+  font-family: var(--font-mono);
+}
+
+.editor .milkdown code {
+  font-size: 0.9em;
+  padding: 0.1em 0.35em;
+  border-radius: var(--r-sm);
+}
+
+.editor .milkdown pre {
+  padding: var(--sp-3);
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  overflow-x: auto;
+}
+
+.editor .milkdown pre code {
+  padding: 0;
+  background: none;
+}
+
+/* ---- Tables -------------------------------------------------------------- */
+.editor .milkdown :where(tr, th, td) {
+  border-color: var(--border);
+}
+
+.editor .milkdown :where(td, th):nth-child(odd) {
+  background-color: var(--table-stripe);
+}
+
+/* ---- Emoji --------------------------------------------------------------- */
+/* @milkdown/plugin-emoji renders twemoji <img> at their intrinsic 72×72 (twemoji
+   sets no width/height, it relies on CSS). Constrain them to the surrounding
+   text so they sit inline instead of towering over neighbouring characters. */
+.editor .milkdown img.emoji {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin: 0 0.05em 0 0.1em;
+  vertical-align: -0.1em;
+}
+
+.editor .milkdown img:not(.emoji) {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--r-md);
+}
+
+/* ---- Search hits --------------------------------------------------------- */
+.search-hit {
+  background: rgb(255 214 0 / 35%);
+  border-radius: 2px;
+}
+
+.search-hit-active {
+  background: rgb(255 145 0 / 55%);
+}
+
+/* ---- HTML-only constructs (§6) ------------------------------------------- */
+.editor .milkdown .callout {
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r-md);
+  background: var(--chrome-sunken);
+}
+
+.editor .milkdown details {
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+
+.editor .milkdown summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.editor .milkdown mark {
+  background: rgb(255 214 0 / 45%);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 0.15em;
+}
+
+.editor .milkdown dt {
+  font-weight: 600;
+  margin-top: var(--sp-2);
+}
+
+.editor .milkdown dd {
+  margin: 0 0 var(--sp-2) var(--sp-4);
+  color: var(--muted);
+}

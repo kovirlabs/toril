@@ -35,9 +35,22 @@ pub struct Settings {
     pub theme: Option<String>,
     /// Whether the workspace sidebar is shown. `None` ⇒ visible (default).
     pub sidebar_visible: Option<bool>,
-    /// Whether the outline panel is shown. `None` ⇒ visible (default).
+    /// Sidebar width in px. `None` ⇒ frontend default. Clamped against the
+    /// current viewport on restore, so a width saved on a larger monitor cannot
+    /// restore into something unusable.
+    pub sidebar_width: Option<u32>,
+    /// Whether the right-hand rail is shown. `None` ⇒ migrate from the legacy
+    /// `outline_visible` / `history_visible` pair.
+    pub rail_visible: Option<bool>,
+    /// Rail width in px. `None` ⇒ frontend default; clamped as above.
+    pub rail_width: Option<u32>,
+    /// Which panel the rail shows: `"outline"` | `"history"`. `None` ⇒ outline.
+    pub rail_tab: Option<String>,
+    /// Legacy (pre-`feat/chrome-ux`): the outline panel was its own rail. Read
+    /// once to migrate into `rail_visible` / `rail_tab`, then never written
+    /// again — which is what keeps the migration one-directional.
     pub outline_visible: Option<bool>,
-    /// Whether the version-history panel is shown. `None` ⇒ hidden (default).
+    /// Legacy; see [`Settings::outline_visible`].
     pub history_visible: Option<bool>,
     /// Whether debounced autosave of dirty, saved files is on. `None` ⇒ off.
     pub autosave: Option<bool>,
