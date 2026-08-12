@@ -25,19 +25,29 @@ body {
 }
 
 /* ---- Workspace: sidebar | main | rail ------------------------------------ */
+/* **Flex, not grid, on purpose.** This is one row of three things — a
+   one-dimensional layout, which is what flexbox is for. It was a grid with
+   `auto` side tracks, and in that arrangement a track can be sized either from
+   the item's specified width or from its max-content contribution; engines
+   disagree, and WebKitGTK sized the middle column such that it painted over the
+   right rail. Flex items are laid out sequentially and cannot overlap, in any
+   engine — so the fix is to stop depending on the behaviour that differs rather
+   than to chase the quirk. */
 #workspace {
   position: relative; /* resize handles are positioned against this */
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  display: flex;
+  align-items: stretch;
   min-height: 0;
+  min-width: 0;
+  overflow: hidden;
 }
 
-/* Panes carry their own width and transition it, rather than the grid animating
-   `grid-template-columns`. Both work in Chromium, but transitioning a plain
-   `width` is portable to every engine we ship on, and the grid track follows the
-   item. See the design doc §3.5. */
+/* Panes carry their own width and transition it. `flex: 0 0 auto` keeps flex
+   from resizing them behind the width's back, and `min-width: 0` lets the pane
+   actually reach zero when collapsed. */
 #sidebar,
 #rail {
+  flex: 0 0 auto;
   width: var(--pane-w, 0px);
   min-width: 0;
   overflow: hidden;
@@ -394,12 +404,19 @@ body {
 }
 
 /* ---- Main column --------------------------------------------------------- */
+/* `flex: 1 1 0` with `min-width: 0` is what keeps the editor inside the space
+   the two panes leave: it takes the remainder and is allowed to shrink below its
+   content's intrinsic width instead of pushing past the rail. Without the
+   `min-width: 0`, a flex item's automatic minimum size is its content, and a
+   wide table or a long unbroken line would force the column wider than its
+   share — the overlap this layout is here to make impossible. */
 #main {
+  flex: 1 1 0;
+  min-width: 0;
   display: grid;
   /* tab row · format toolbar · search · conflict banner · editor */
   grid-template-rows: auto auto auto auto minmax(0, 1fr);
   min-height: 0;
-  min-width: 0;
   background: var(--editor-bg);
 }
 

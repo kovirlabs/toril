@@ -33,6 +33,21 @@ export interface PaneState {
   railVisible: boolean;
   railWidth: number;
   railTab: RailTab;
+  /**
+   * Which side pane the user reached for most recently. Only consulted on a
+   * window too narrow for both — see {@link effectiveLayout}.
+   */
+  lastOpened: PaneName;
+}
+
+export type PaneName = "sidebar" | "rail";
+
+/** What the layout actually renders, once the window has had its say. */
+export interface EffectiveLayout {
+  sidebarVisible: boolean;
+  railVisible: boolean;
+  sidebarWidth: number;
+  railWidth: number;
 }
 
 /**
@@ -59,6 +74,17 @@ const MAX_VIEWPORT_SHARE = 0.4;
  */
 const MIN_MAIN_WIDTH = 480;
 
+/**
+ * Below this, the window cannot hold both side panes *and* a usable editor:
+ * two minimum-width panes plus the editor's minimum. Rather than shrink
+ * everything into uselessness, only one side pane shows at a time — the
+ * tablet-style behaviour.
+ *
+ * Derived from the same numbers as everything else, so changing a pane minimum
+ * cannot leave this threshold quietly wrong.
+ */
+export const EXCLUSIVE_BELOW = PANE_LIMITS.sidebar.min + PANE_LIMITS.rail.min + MIN_MAIN_WIDTH;
+
 export function defaultPaneState(): PaneState {
   return {
     sidebarVisible: true,
@@ -66,6 +92,7 @@ export function defaultPaneState(): PaneState {
     railVisible: true,
     railWidth: PANE_LIMITS.rail.preferred,
     railTab: "outline",
+    lastOpened: "sidebar",
   };
 }
 
@@ -97,37 +124,63 @@ export function clampWidth(
 }
 
 /**
- * The widths to actually render, given the window we have right now.
+ * What the layout renders right now, given the window we actually have.
  *
- * Derived, never stored. Two panes can each honour the 40%-of-viewport clamp and
- * still take 70% of the window between them, so the combined budget is enforced
- * here by shrinking both proportionally — and because this is recomputed every
- * render, widening the window restores the user's chosen widths automatically.
+ * **Derived, never stored** — the same discipline as widths, for the same
+ * reason. A narrow window must not *edit* what the user chose, or widening it
+ * again would never give their layout back.
+ *
+ * Two rules, in order:
+ *
+ * 1. Below {@link EXCLUSIVE_BELOW} the window cannot hold both side panes and a
+ *    usable editor, so only the most recently opened one shows. The other stays
+ *    open in state and reappears when there is room.
+ * 2. Whatever is left on screen is shrunk proportionally until the editor keeps
+ *    {@link MIN_MAIN_WIDTH}. Two panes can each honour the 40%-of-viewport clamp
+ *    and still take 70% between them, so the combined budget needs its own pass.
  */
-export function effectiveWidths(
-  state: PaneState,
-  viewportWidth: number,
-): { sidebar: number; rail: number } {
-  const sidebar = clampWidth(state.sidebarWidth, PANE_LIMITS.sidebar, viewportWidth);
-  const rail = clampWidth(state.railWidth, PANE_LIMITS.rail, viewportWidth);
-  if (!Number.isFinite(viewportWidth)) return { sidebar, rail };
+export function effectiveLayout(state: PaneState, viewportWidth: number): EffectiveLayout {
+  let sidebarVisible = state.sidebarVisible;
+  let railVisible = state.railVisible;
 
-  const onScreen = (state.sidebarVisible ? sidebar : 0) + (state.railVisible ? rail : 0);
+  if (Number.isFinite(viewportWidth) && viewportWidth < EXCLUSIVE_BELOW) {
+    if (sidebarVisible && railVisible) {
+      if (state.lastOpened === "rail") sidebarVisible = false;
+      else railVisible = false;
+    }
+  }
+
+  const sidebarWidth = clampWidth(state.sidebarWidth, PANE_LIMITS.sidebar, viewportWidth);
+  const railWidth = clampWidth(state.railWidth, PANE_LIMITS.rail, viewportWidth);
+  if (!Number.isFinite(viewportWidth)) {
+    return { sidebarVisible, railVisible, sidebarWidth, railWidth };
+  }
+
+  const onScreen = (sidebarVisible ? sidebarWidth : 0) + (railVisible ? railWidth : 0);
   const budget = viewportWidth - MIN_MAIN_WIDTH;
-  if (onScreen <= budget || onScreen === 0) return { sidebar, rail };
+  if (onScreen <= budget || onScreen === 0) {
+    return { sidebarVisible, railVisible, sidebarWidth, railWidth };
+  }
 
   const scale = budget / onScreen;
   return {
-    sidebar: state.sidebarVisible
-      ? Math.max(PANE_LIMITS.sidebar.min, Math.round(sidebar * scale))
-      : sidebar,
-    rail: state.railVisible ? Math.max(PANE_LIMITS.rail.min, Math.round(rail * scale)) : rail,
+    sidebarVisible,
+    railVisible,
+    sidebarWidth: sidebarVisible
+      ? Math.max(PANE_LIMITS.sidebar.min, Math.round(sidebarWidth * scale))
+      : sidebarWidth,
+    railWidth: railVisible
+      ? Math.max(PANE_LIMITS.rail.min, Math.round(railWidth * scale))
+      : railWidth,
   };
 }
 
 /** Collapse/expand the sidebar. Width is preserved across the toggle. */
 export function toggleSidebar(state: PaneState): PaneState {
-  return { ...state, sidebarVisible: !state.sidebarVisible };
+  const sidebarVisible = !state.sidebarVisible;
+  // Opening a pane makes it the one that wins on a narrow window. The other
+  // pane's *stored* visibility is untouched, so widening brings it back.
+  return { ...state, sidebarVisible, lastOpened: sidebarVisible ? "sidebar" : state.lastOpened };
 }
 
 /**
@@ -139,8 +192,10 @@ export function toggleSidebar(state: PaneState): PaneState {
  * - rail open, same tab    → close it (so ≡ still reads as a toggle)
  */
 export function selectRailTab(state: PaneState, tab: RailTab): PaneState {
-  if (!state.railVisible) return { ...state, railVisible: true, railTab: tab };
-  if (state.railTab !== tab) return { ...state, railTab: tab };
+  if (!state.railVisible) {
+    return { ...state, railVisible: true, railTab: tab, lastOpened: "rail" };
+  }
+  if (state.railTab !== tab) return { ...state, railTab: tab, lastOpened: "rail" };
   return { ...state, railVisible: false };
 }
 
@@ -196,6 +251,7 @@ export function restorePaneState(settings: Settings, viewportWidth: number): Pan
       railVisible: settings.rail_visible,
       railWidth,
       railTab: settings.rail_tab === "history" ? "history" : "outline",
+      lastOpened: base.lastOpened,
     };
   }
 
@@ -207,6 +263,7 @@ export function restorePaneState(settings: Settings, viewportWidth: number): Pan
     railVisible: legacyOutline || legacyHistory,
     railWidth,
     railTab: legacyOutline ? "outline" : legacyHistory ? "history" : "outline",
+    lastOpened: base.lastOpened,
   };
 }
 
@@ -238,9 +295,9 @@ export function toSettingsPatch(
  * CSS, so the variable survives to animate back out on expand.
  */
 export function paneCssVars(state: PaneState, viewportWidth: number): Record<string, string> {
-  const { sidebar, rail } = effectiveWidths(state, viewportWidth);
+  const { sidebarWidth, railWidth } = effectiveLayout(state, viewportWidth);
   return {
-    "--sidebar-w": `${sidebar}px`,
-    "--rail-w": `${rail}px`,
+    "--sidebar-w": `${sidebarWidth}px`,
+    "--rail-w": `${railWidth}px`,
   };
 }

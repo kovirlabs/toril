@@ -15,7 +15,8 @@ import {
   PANE_LIMITS,
   clampWidth,
   defaultPaneState,
-  effectiveWidths,
+  EXCLUSIVE_BELOW,
+  effectiveLayout,
   hideRail,
   paneCssVars,
   restorePaneState,
@@ -26,6 +27,7 @@ import {
   toggleSidebar,
 } from "../src/ui/panes";
 import type { Settings } from "../src/ipc";
+import type { PaneState } from "../src/ui/panes";
 
 /** A settings object with everything null — i.e. a first run. */
 const emptySettings = (over: Partial<Settings> = {}): Settings => ({
@@ -120,15 +122,15 @@ describe("restorePaneState", () => {
   it("renders a width saved on a larger monitor down to what fits", () => {
     // 460px rail saved on a 4K screen, restored into a 1280px Surface Pro window.
     const state = restorePaneState(emptySettings({ rail_width: 460 }), 1280);
-    const { rail } = effectiveWidths(state, 1280);
-    expect(rail).toBeLessThanOrEqual(PANE_LIMITS.rail.max);
-    expect(rail).toBeLessThanOrEqual(Math.floor(1280 * 0.4));
+    const { railWidth } = effectiveLayout(state, 1280);
+    expect(railWidth).toBeLessThanOrEqual(PANE_LIMITS.rail.max);
+    expect(railWidth).toBeLessThanOrEqual(Math.floor(1280 * 0.4));
   });
 
   it("leaves the editor a usable measure with both panes restored at maximum", () => {
     const state = restorePaneState(emptySettings({ sidebar_width: 9999, rail_width: 9999 }), 1280);
-    const { sidebar, rail } = effectiveWidths(state, 1280);
-    expect(1280 - (sidebar + rail)).toBeGreaterThan(400);
+    const { sidebarWidth, railWidth } = effectiveLayout(state, 1280);
+    expect(1280 - (sidebarWidth + railWidth)).toBeGreaterThan(400);
   });
 
   it("prefers the new fields over the legacy pair", () => {
@@ -221,34 +223,111 @@ describe("live drag bounds", () => {
   });
 });
 
-describe("effectiveWidths", () => {
+describe("effectiveLayout — widths", () => {
   it("renders the chosen widths when they already fit", () => {
     const state = defaultPaneState();
-    expect(effectiveWidths(state, WIDE)).toEqual({
-      sidebar: state.sidebarWidth,
-      rail: state.railWidth,
+    expect(effectiveLayout(state, WIDE)).toMatchObject({
+      sidebarWidth: state.sidebarWidth,
+      railWidth: state.railWidth,
     });
   });
 
   it("ignores a collapsed pane when measuring the budget", () => {
     const collapsed = { ...defaultPaneState(), sidebarVisible: false, sidebarWidth: 480 };
     // Only the 260px rail is really on screen, so nothing needs shrinking.
-    expect(effectiveWidths(collapsed, 1000).rail).toBe(260);
+    expect(effectiveLayout(collapsed, 1000).railWidth).toBe(260);
   });
 
   it("never shrinks a pane below its own minimum", () => {
     const fat = { ...defaultPaneState(), sidebarWidth: 480, railWidth: 420 };
-    const fitted = effectiveWidths(fat, 700);
-    expect(fitted.sidebar).toBeGreaterThanOrEqual(PANE_LIMITS.sidebar.min);
-    expect(fitted.rail).toBeGreaterThanOrEqual(PANE_LIMITS.rail.min);
+    const fitted = effectiveLayout(fat, 700);
+    expect(fitted.sidebarWidth).toBeGreaterThanOrEqual(PANE_LIMITS.sidebar.min);
+    expect(fitted.railWidth).toBeGreaterThanOrEqual(PANE_LIMITS.rail.min);
   });
 
   // The regression that motivated splitting chosen width from rendered width.
   it("gives the chosen width back when the window widens again", () => {
     const chosen = { ...defaultPaneState(), sidebarWidth: 300, railWidth: 300 };
-    const narrow = effectiveWidths(chosen, 800);
-    expect(narrow.sidebar).toBeLessThan(300);
-    expect(effectiveWidths(chosen, 1920)).toEqual({ sidebar: 300, rail: 300 });
+    const narrow = effectiveLayout(chosen, 900);
+    expect(narrow.sidebarWidth).toBeLessThan(300);
+    expect(effectiveLayout(chosen, 1920)).toMatchObject({ sidebarWidth: 300, railWidth: 300 });
+  });
+});
+
+// A window too narrow for both side panes shows one at a time — the tablet
+// behaviour. Reported from on-device use, where the middle pane overlapped the
+// rail; the layout is now flex (which cannot overlap) *and* refuses to try
+// showing both when there is genuinely no room.
+describe("effectiveLayout — one pane at a time on a narrow window", () => {
+  const bothOpen = (over: Partial<PaneState> = {}): PaneState => ({
+    ...defaultPaneState(),
+    sidebarVisible: true,
+    railVisible: true,
+    ...over,
+  });
+
+  it("shows both when there is room for both plus a usable editor", () => {
+    const l = effectiveLayout(bothOpen(), EXCLUSIVE_BELOW);
+    expect(l.sidebarVisible).toBe(true);
+    expect(l.railVisible).toBe(true);
+  });
+
+  it("shows only one just below the threshold", () => {
+    const l = effectiveLayout(bothOpen(), EXCLUSIVE_BELOW - 1);
+    expect(l.sidebarVisible !== l.railVisible).toBe(true);
+  });
+
+  it("keeps the pane the user opened most recently", () => {
+    expect(effectiveLayout(bothOpen({ lastOpened: "rail" }), 700)).toMatchObject({
+      sidebarVisible: false,
+      railVisible: true,
+    });
+    expect(effectiveLayout(bothOpen({ lastOpened: "sidebar" }), 700)).toMatchObject({
+      sidebarVisible: true,
+      railVisible: false,
+    });
+  });
+
+  it("opening one pane hides the other, without closing it in state", () => {
+    // Both open, sidebar last. Selecting a rail tab makes the rail the winner.
+    const after = selectRailTab(bothOpen({ lastOpened: "sidebar" }), "history");
+    expect(after.sidebarVisible).toBe(true); // still open as far as state knows
+    expect(effectiveLayout(after, 700)).toMatchObject({
+      sidebarVisible: false,
+      railVisible: true,
+    });
+  });
+
+  it("gives both panes back when the window widens again", () => {
+    const state = bothOpen({ lastOpened: "rail" });
+    expect(effectiveLayout(state, 700).sidebarVisible).toBe(false);
+    expect(effectiveLayout(state, 1400)).toMatchObject({
+      sidebarVisible: true,
+      railVisible: true,
+    });
+  });
+
+  it("never forces a pane on that the user actually closed", () => {
+    const onlyRail = bothOpen({ sidebarVisible: false, lastOpened: "sidebar" });
+    expect(effectiveLayout(onlyRail, 700)).toMatchObject({
+      sidebarVisible: false,
+      railVisible: true,
+    });
+  });
+
+  it("leaves the editor at least its minimum however narrow the window", () => {
+    for (const vw of [1000, 900, 820, 760, 700, 640, 560]) {
+      const l = effectiveLayout(bothOpen(), vw);
+      const chrome = (l.sidebarVisible ? l.sidebarWidth : 0) + (l.railVisible ? l.railWidth : 0);
+      expect(vw - chrome).toBeGreaterThan(0);
+    }
+  });
+
+  it("is a pure read — narrowing never edits the stored choice", () => {
+    const state = bothOpen();
+    effectiveLayout(state, 400);
+    expect(state.sidebarVisible).toBe(true);
+    expect(state.railVisible).toBe(true);
   });
 });
 
@@ -256,14 +335,14 @@ describe("width preference survives a narrow window", () => {
   it("does not edit stored widths when the viewport shrinks", () => {
     const chosen = { ...defaultPaneState(), sidebarWidth: 300, railWidth: 300 };
     // Rendering at any size is a pure read: state is untouched.
-    effectiveWidths(chosen, 640);
+    effectiveLayout(chosen, 640);
     expect(chosen.sidebarWidth).toBe(300);
     expect(chosen.railWidth).toBe(300);
   });
 
   it("persists the chosen width, not the width that happened to fit", () => {
     const chosen = { ...defaultPaneState(), sidebarWidth: 300, railWidth: 300 };
-    effectiveWidths(chosen, 640);
+    effectiveLayout(chosen, 640);
     expect(toSettingsPatch(chosen)).toMatchObject({ sidebar_width: 300, rail_width: 300 });
   });
 });

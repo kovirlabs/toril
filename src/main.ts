@@ -62,6 +62,7 @@ import {
   type PaneState,
   type RailTab,
   defaultPaneState,
+  effectiveLayout,
   hideRail,
   paneCssVars,
   restorePaneState,
@@ -468,37 +469,44 @@ function applyPanes(): void {
   const workspace = document.querySelector<HTMLElement>("#workspace");
   if (!workspace) return;
 
+  // What is rendered is *derived* from the stored choice plus the window we
+  // actually have: on a window too narrow for both side panes, only the most
+  // recently opened one shows. `panes` itself is untouched, so widening the
+  // window brings the other one straight back.
+  const layout = effectiveLayout(panes, window.innerWidth);
+
   for (const [name, value] of Object.entries(paneCssVars(panes, window.innerWidth))) {
     workspace.style.setProperty(name, value);
   }
-  workspace.classList.toggle("sidebar-hidden", !panes.sidebarVisible);
-  workspace.classList.toggle("rail-hidden", !panes.railVisible);
+  workspace.classList.toggle("sidebar-hidden", !layout.sidebarVisible);
+  workspace.classList.toggle("rail-hidden", !layout.railVisible);
 
-  // `inert` is what actually removes a collapsed pane from the tab order and the
+  // `inert` is what removes a collapsed pane from the tab order and the
   // accessibility tree. That was `display: none`'s job, but `display: none` also
-  // cancels transitions — which is why collapse could never animate (§3.5).
+  // cancels transitions — which is why collapse could never animate. A delayed
+  // `visibility: hidden` in CSS guards the same thing engine-independently (§3.5).
   const sidebarEl = document.querySelector<HTMLElement>("#sidebar");
-  if (sidebarEl) sidebarEl.inert = !panes.sidebarVisible;
+  if (sidebarEl) sidebarEl.inert = !layout.sidebarVisible;
   const railEl = document.querySelector<HTMLElement>("#rail");
-  if (railEl) railEl.inert = !panes.railVisible;
+  if (railEl) railEl.inert = !layout.railVisible;
 
   const sidebarBtn = document.querySelector<HTMLElement>("#btn-toggle-sidebar");
-  if (sidebarBtn) sidebarBtn.dataset.active = String(panes.sidebarVisible);
+  if (sidebarBtn) sidebarBtn.dataset.active = String(layout.sidebarVisible);
   const outlineBtn = document.querySelector<HTMLElement>("#btn-rail-outline");
   if (outlineBtn) {
-    outlineBtn.dataset.active = String(panes.railVisible && panes.railTab === "outline");
+    outlineBtn.dataset.active = String(layout.railVisible && panes.railTab === "outline");
   }
   const historyBtn = document.querySelector<HTMLElement>("#btn-rail-history");
   if (historyBtn) {
-    historyBtn.dataset.active = String(panes.railVisible && panes.railTab === "history");
+    historyBtn.dataset.active = String(layout.railVisible && panes.railTab === "history");
   }
 
   rail?.setActive(panes.railTab);
 
   const sidebarHandle = document.querySelector<HTMLElement>("#resize-sidebar");
-  if (sidebarHandle) syncHandleValue(sidebarHandle, panes.sidebarWidth, PANE_LIMITS.sidebar);
+  if (sidebarHandle) syncHandleValue(sidebarHandle, layout.sidebarWidth, PANE_LIMITS.sidebar);
   const railHandle = document.querySelector<HTMLElement>("#resize-rail");
-  if (railHandle) syncHandleValue(railHandle, panes.railWidth, PANE_LIMITS.rail);
+  if (railHandle) syncHandleValue(railHandle, layout.railWidth, PANE_LIMITS.rail);
 }
 
 function setPanes(next: PaneState, persist = true): void {
