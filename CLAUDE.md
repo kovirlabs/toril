@@ -614,6 +614,61 @@ WYSIWYG feel that is the whole point. Decision is closed.*
 
 ---
 
+## 12b. Layout rules — earned, not preferences
+
+Toril renders in **two different engines**: WebView2 (Chromium) on Windows, WebKitGTK on
+Linux. `feat/chrome-ux` produced two overlap bugs that reproduced *only* in WebKitGTK and
+never in Chromium, plus one that silently destroyed persisted state. All three had the same
+shape, so these are rules rather than style notes.
+
+**When two engines can disagree, the layout is under-specified — remove the ambiguity, do
+not tune around it.** Cross-engine bugs cluster wherever the spec permits more than one
+resolution. Chasing the quirk requires an engine you can inspect; removing the freedom does
+not, which matters because the Linux webview here cannot be inspected (§0).
+
+1. **One-dimensional layout uses flex, not grid.** A single-row or single-column grid is a
+   flex line with extra degrees of freedom. Both overlap bugs were grids doing flex's job —
+   `#workspace` (one row of three) and `#main` (one column of five).
+2. **Never leave an implicit track.** A grid declaring only `grid-template-rows` gets an
+   implicit column sized `auto` = `minmax(min-content, max-content)`; engines may resolve
+   that against the container's definite width *or* the content's max-content. A ProseMirror
+   contenteditable has a large max-content, so the second reading grows the column and its
+   children paint over the neighbouring pane.
+3. **`min-width: 0` on anything that must shrink** (`min-height: 0` in a column). A flex or
+   grid item's *automatic minimum size is its content* — without this it refuses to shrink
+   and pushes out over its neighbour. The most common overflow cause by a distance.
+4. **Contain overflow at the scroll container, never the page.** Wide content (tables, code
+   lines) scrolls inside its own pane. Prose carries `overflow-wrap: anywhere` — one pasted
+   URL with no spaces otherwise sets the min-content width of the whole document.
+5. **Never animate around `display: none`** — it cancels transitions. Animate width or
+   transform, and delay `visibility: hidden` by exactly the duration
+   (`visibility 0s linear var(--dur-base)`) to keep the element out of the tab order. Treat
+   `inert` as a semantic bonus, never the only guard, unless verified in *both* engines.
+6. **Derived, never stored.** What *fits* is a function of (the user's choice × the current
+   viewport), recomputed per render — never written back into persisted state. Narrowing the
+   window once used to shrink stored pane widths, widening never restored them, and the next
+   session save wrote the shrunken value over the user's preference. Same discipline governs
+   pane visibility.
+7. **Responsive means dropping content, not shrinking everything.** Below a threshold
+   *derived from the same constants as the pane minimums* (`EXCLUSIVE_BELOW` in `panes.ts`,
+   never a hardcoded breakpoint), show one side pane rather than squeezing both into
+   uselessness. The hidden pane stays open in state and returns when there is room.
+
+**Verifying layout** (§8's harness is what makes this possible):
+
+- **Measure rectangles; do not look at screenshots.** Assert non-overlap
+  (`a.right > b.left`), containment, and that widths sum to the viewport.
+  `scrollWidth > clientWidth` **misses an element painting over another** — it passed green
+  while the overlap bug was live.
+- Sweep widths **including exactly at the threshold and ±1**.
+- Use **adversarial content**: `Wide.md` in the harness (long unbroken URL, wide table, long
+  code line) exists for this. Normal prose proves nothing.
+- **Ask which parts *don't* misbehave.** "The editor menu obeys the boundaries, the text area
+  doesn't" was the entire diagnosis — short chrome rows never exceed the width, so only a
+  large-max-content row could escape. The asymmetry names the cause faster than staring does.
+
+---
+
 ## 13. Quality-of-life backlog (unscheduled, but fair game)
 
 Concrete QoL features to pull from when polishing — **in scope** (unlike §12), just not yet scheduled.
