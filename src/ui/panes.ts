@@ -15,6 +15,18 @@ import type { Settings } from "../ipc";
 /** Which panel the single right-hand rail is currently showing. */
 export type RailTab = "outline" | "history";
 
+/**
+ * Pane state.
+ *
+ * `sidebarWidth` / `railWidth` are the widths the user *chose*, not the widths
+ * currently on screen. What fits is derived per render by {@link effectiveWidths}
+ * against the live viewport.
+ *
+ * Keeping those separate is load-bearing. When they were one field, narrowing
+ * the window shrank the stored value, widening it again never restored it, and
+ * the next session save wrote the shrunken number over the user's preference —
+ * so a moment at a small window size permanently destroyed their layout.
+ */
 export interface PaneState {
   sidebarVisible: boolean;
   sidebarWidth: number;
@@ -85,28 +97,31 @@ export function clampWidth(
 }
 
 /**
- * Shrink both panes proportionally until the editor gets {@link MIN_MAIN_WIDTH}.
+ * The widths to actually render, given the window we have right now.
  *
- * Applied after per-pane clamping on restore, where both widths arrive at once
- * and neither is "the one being dragged". Live drags use `reserved` instead, so
- * dragging one pane never silently resizes the other under the pointer.
+ * Derived, never stored. Two panes can each honour the 40%-of-viewport clamp and
+ * still take 70% of the window between them, so the combined budget is enforced
+ * here by shrinking both proportionally — and because this is recomputed every
+ * render, widening the window restores the user's chosen widths automatically.
  */
-export function fitPanes(state: PaneState, viewportWidth: number): PaneState {
-  if (!Number.isFinite(viewportWidth)) return state;
-  const sidebar = state.sidebarVisible ? state.sidebarWidth : 0;
-  const rail = state.railVisible ? state.railWidth : 0;
-  const budget = viewportWidth - MIN_MAIN_WIDTH;
-  if (sidebar + rail <= budget || sidebar + rail === 0) return state;
+export function effectiveWidths(
+  state: PaneState,
+  viewportWidth: number,
+): { sidebar: number; rail: number } {
+  const sidebar = clampWidth(state.sidebarWidth, PANE_LIMITS.sidebar, viewportWidth);
+  const rail = clampWidth(state.railWidth, PANE_LIMITS.rail, viewportWidth);
+  if (!Number.isFinite(viewportWidth)) return { sidebar, rail };
 
-  const scale = budget / (sidebar + rail);
+  const onScreen = (state.sidebarVisible ? sidebar : 0) + (state.railVisible ? rail : 0);
+  const budget = viewportWidth - MIN_MAIN_WIDTH;
+  if (onScreen <= budget || onScreen === 0) return { sidebar, rail };
+
+  const scale = budget / onScreen;
   return {
-    ...state,
-    sidebarWidth: state.sidebarVisible
-      ? Math.max(PANE_LIMITS.sidebar.min, Math.round(state.sidebarWidth * scale))
-      : state.sidebarWidth,
-    railWidth: state.railVisible
-      ? Math.max(PANE_LIMITS.rail.min, Math.round(state.railWidth * scale))
-      : state.railWidth,
+    sidebar: state.sidebarVisible
+      ? Math.max(PANE_LIMITS.sidebar.min, Math.round(sidebar * scale))
+      : sidebar,
+    rail: state.railVisible ? Math.max(PANE_LIMITS.rail.min, Math.round(rail * scale)) : rail,
   };
 }
 
@@ -175,30 +190,24 @@ export function restorePaneState(settings: Settings, viewportWidth: number): Pan
   // never been persisted, so a post-migration "rail closed" is not overridden by
   // a stale `outline_visible: true` that no longer gets written.
   if (settings.rail_visible !== null && settings.rail_visible !== undefined) {
-    return fitPanes(
-      {
-        sidebarVisible,
-        sidebarWidth,
-        railVisible: settings.rail_visible,
-        railWidth,
-        railTab: settings.rail_tab === "history" ? "history" : "outline",
-      },
-      viewportWidth,
-    );
+    return {
+      sidebarVisible,
+      sidebarWidth,
+      railVisible: settings.rail_visible,
+      railWidth,
+      railTab: settings.rail_tab === "history" ? "history" : "outline",
+    };
   }
 
   const legacyOutline = settings.outline_visible ?? true;
   const legacyHistory = settings.history_visible ?? false;
-  return fitPanes(
-    {
-      sidebarVisible,
-      sidebarWidth,
-      railVisible: legacyOutline || legacyHistory,
-      railWidth,
-      railTab: legacyOutline ? "outline" : legacyHistory ? "history" : "outline",
-    },
-    viewportWidth,
-  );
+  return {
+    sidebarVisible,
+    sidebarWidth,
+    railVisible: legacyOutline || legacyHistory,
+    railWidth,
+    railTab: legacyOutline ? "outline" : legacyHistory ? "history" : "outline",
+  };
 }
 
 /**
@@ -223,13 +232,15 @@ export function toSettingsPatch(
 }
 
 /**
- * The CSS custom properties the grid reads. A hidden pane still reports its
- * width here — collapsing is done by the `*-hidden` class zeroing the variable,
- * so the stored width survives to animate back out on expand.
+ * The CSS custom properties the grid reads, for the current viewport.
+ *
+ * A hidden pane still reports a width: collapsing zeroes the pane's own width in
+ * CSS, so the variable survives to animate back out on expand.
  */
-export function paneCssVars(state: PaneState): Record<string, string> {
+export function paneCssVars(state: PaneState, viewportWidth: number): Record<string, string> {
+  const { sidebar, rail } = effectiveWidths(state, viewportWidth);
   return {
-    "--sidebar-w": `${state.sidebarWidth}px`,
-    "--rail-w": `${state.railWidth}px`,
+    "--sidebar-w": `${sidebar}px`,
+    "--rail-w": `${rail}px`,
   };
 }

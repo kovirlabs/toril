@@ -55,14 +55,32 @@ body {
   border-left: 1px solid var(--border);
 }
 
-/* Collapsing sets the width to zero and nothing else. The pane also gets `inert`
-   from panes wiring, which is what actually removes it from the tab order and
-   the accessibility tree — the job `display: none` used to do, minus the part
-   where it cancelled the transition. */
+/* Collapsing animates the width to zero, then hides.
+
+   A zero-width pane with `overflow: hidden` is invisible but its contents are
+   still focusable, so Tab would walk into a pane that is not on screen. Two
+   independent guards close that:
+
+   1. `visibility: hidden`, delayed by exactly the collapse duration so it lands
+      after the animation rather than cancelling it (`0s linear var(--dur-base)`
+      — a *delay*, not a duration). Visibility removes an element from the tab
+      order in every engine, which is what `display: none` was really providing.
+   2. `inert`, set from the panes wiring, which also removes it from the
+      accessibility tree.
+
+   Deliberately belt-and-braces: `inert` is the better semantic but is verified
+   only in Chromium (= WebView2 = the Windows target). The visibility rule needs
+   no feature support anywhere, so correctness does not depend on which engine
+   the app happens to be running in. On expand the delay is 0, so the pane
+   becomes visible immediately and animates open. */
 #workspace.sidebar-hidden #sidebar,
 #workspace.rail-hidden #rail {
   width: 0;
   border-width: 0;
+  visibility: hidden;
+  transition:
+    width var(--dur-base) var(--ease),
+    visibility 0s linear var(--dur-base);
 }
 
 /* The inner scroller keeps the pane's *stored* width while the pane itself

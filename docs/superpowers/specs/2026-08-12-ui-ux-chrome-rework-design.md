@@ -145,9 +145,26 @@ something that keeps that property while remaining animatable:
 ```
 
 **Verified before adoption** (2026-08-12, Chromium = WebView2 = the Windows target):
-`inert` exists on `HTMLElement.prototype`, blocks focus, and reflects to an attribute;
-`grid-template-columns` is transitionable. WebKitGTK to be confirmed on-device.
-Fallback if it fails there: toggle `visibility: hidden` on `transitionend`.
+`inert` exists on `HTMLElement.prototype`, blocks focus, and reflects to an attribute.
+
+**Both guards ship, deliberately.** `inert` is engine-dependent and was only verifiable
+in one engine here, so the collapsed state *also* carries a `visibility: hidden` delayed
+by exactly the collapse duration:
+
+```css
+transition: width var(--dur-base) var(--ease), visibility 0s linear var(--dur-base);
+```
+
+A *delay*, not a duration — so it lands after the animation instead of cancelling it, and
+on expand the delay is 0 so the pane reappears immediately. Visibility removes an element
+from the tab order in every engine, so correctness no longer depends on which webview the
+app is running in. Verified in Chromium: mid-collapse the pane is still `visible` (the
+animation is intact), collapsed it is `hidden` + `inert`, and a Tab pass walks straight
+past it.
+
+Widths use a plain `width` transition rather than animating `grid-template-columns`. Both
+work in Chromium, but `width` is portable to every engine we ship on, and the grid track
+follows the item.
 
 ## 4. Backend and contract changes
 

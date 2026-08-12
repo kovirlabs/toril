@@ -216,6 +216,8 @@ toril/
 ├── package.json               # frontend deps + scripts (pinned)
 ├── vite.config.ts             # build input = app.html (not index.html)
 ├── app.html                   # the app's HTML entry (Tauri window loads this)
+├── dev-harness.html           # app.html + a fake Tauri IPC bridge, for headless UI work
+│                              #   (see §8; not part of the build — vite's input is app.html)
 ├── index.html                 # RESERVED for the GitHub Pages landing page — NOT part of the app build
 ├── src/                       # FRONTEND (TypeScript, strict)
 │   ├── main.ts                # bootstrap / app controller
@@ -226,6 +228,9 @@ toril/
 │   │   └── html-constructs.ts # richer HTML-only schema: callout/details/dl/mark/sub/sup (§6)
 │   ├── ui/
 │   │   ├── sidebar.ts         # file tree
+│   │   ├── panes.ts           # PURE pane state: visibility, widths, rail tab (§13)
+│   │   ├── rail.ts            # the single tabbed right rail (outline | history)
+│   │   ├── resizer.ts         # drag-to-resize: pure geometry + thin DOM binding
 │   │   ├── tabs.ts            # open-document tabs (one shared editor + per-tab buffer)
 │   │   ├── toolbar.ts         # formatting toolbar (commands + active state, §6)
 │   │   ├── theme.ts           # theme preference controller (System/Light/Dark)
@@ -234,7 +239,12 @@ toril/
 │   │   ├── conflictbar.ts     # non-blocking per-tab conflict banner (§5)
 │   │   └── secrets.ts         # API key dialog — write-only, cannot display a key (§5)
 │   ├── export/html.ts         # standalone HTML-document builder (§7)
-│   ├── styles.css             # app chrome + theme CSS variables (per data-theme)
+│   ├── actions.ts             # named actions + double-fire guard (menu ∪ keyboard)
+│   ├── styles.css             # entry point only — @imports the three layers below
+│   ├── styles/
+│   │   ├── tokens.css         # colour/space/size/motion/type — the ONLY place values live
+│   │   ├── chrome.css         # everything around the writing surface
+│   │   └── editor.css         # the writing surface itself
 │   ├── sanitize.ts            # HTML sanitization (§3.3)
 │   ├── sync.ts                # pure external-change policy (no DOM/IPC, §5)
 │   ├── paths.ts               # path containment, for directory-level removal (§5)
@@ -286,7 +296,7 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 | `export_rtf` | `content, defaultName` | `path?` | renders (comrak via `mdrtf`) **and** writes, all in Rust; inert output, no sanitize (§7) |
 | `export_pdf` | `content, theme` | `path` | *(deferred — §7)* |
 | `save_clipboard_image` | `bytes, docPath` | `relative_path` | writes pasted image to `./assets/` (`imgasset`), returns MD-relative path (§6) |
-| `load_settings` / `save_settings` | — / `Settings` | `Settings` / `()` | JSON in app config dir; includes `theme` + `sidebar_visible` |
+| `load_settings` / `save_settings` | — / `Settings` | `Settings` / `()` | JSON in app config dir; includes `theme`, `sidebar_visible`/`sidebar_width`, and `rail_visible`/`rail_width`/`rail_tab`. The legacy `outline_visible`/`history_visible` pair is **read once to migrate** into the rail fields and then never written again — that one-directionality is what stops a stale flag from overriding the migrated state |
 | `save_recovery` | `entries` | `()` | **atomic** write of `recovery.json` in the app config dir — crash-recovery journal (§3) |
 | `load_recovery` | — | `RecoveryEntry[]` | empty on missing/corrupt (never bricks startup) |
 | `clear_recovery` | — | `()` | delete `recovery.json` — the clean-shutdown sentinel |
@@ -476,7 +486,32 @@ Phases 0–3 are complete and Phase 4 (polish) is in progress; the shipped detai
   covered**: it needs a logged-in desktop session and CI's Linux runners have no Secret Service, so
   a test there could only fail or silently skip — and a silently-skipping test reads as coverage
   without being coverage. On-device only.
+- **Pane layout:** `tests/panes.test.ts` + `tests/resizer.test.ts` — the tabbed rail's
+  toggle semantics, the migration off the two-rail era, drag direction per edge, and the
+  rule that no persisted width can make a pane unusable on a smaller screen than the one
+  it was saved on. Note the split that makes this testable: `sidebarWidth`/`railWidth` are
+  the width the user *chose*; what currently fits is derived per render by
+  `effectiveWidths`. Collapsing the two lost the preference the first time a window was
+  briefly narrowed.
+- **Action double-fire:** `tests/actions.test.ts` — `menu.rs` carries real accelerators, so
+  one Ctrl+S arrives twice (menu *and* webview keydown). One dispatcher collapses the pair.
 - Plus `vaultscan`, `imgasset`, `theme`, `statusbar`, `search`, `security`, `tabs` suites.
+
+> **The browser harness.** `dev-harness.html` is `app.html` plus a fake Tauri IPC bridge
+> answering every `invoke` from in-memory fixtures. It boots the real frontend — real
+> `main.ts`, real Milkdown, real stylesheet — in an ordinary browser with **no disk
+> access**, so it can never write a note. Run `pnpm dev` and open
+> `localhost:1420/dev-harness.html`.
+>
+> It exists because all disk I/O already sits behind `invoke()` (§5/§10): one choke point
+> is one seam to fake. It makes a class of check possible that CI never covered — computed
+> touch-target sizes under a coarse pointer, `prefers-reduced-motion` actually zeroing
+> durations, focus rings, keyboard traversal of collapsed panes, layout at four viewport
+> widths. Two real defects were found this way that no unit test would have caught.
+>
+> **Chromium against the harness is a closer proxy for the shipping target than the Linux
+> app is:** Windows renders in WebView2 (Chromium); Linux renders in WebKitGTK.
+> Human-only checks are listed in `docs/ON-DEVICE-VERIFICATION.md`.
 
 **CI runs these automatically** on every pull request and on pushes to `main`
 (`.github/workflows/ci.yml`): `pnpm typecheck` + `pnpm test` + `pnpm build`, and `cargo test` over the

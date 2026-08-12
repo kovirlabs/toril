@@ -15,7 +15,7 @@ import {
   PANE_LIMITS,
   clampWidth,
   defaultPaneState,
-  fitPanes,
+  effectiveWidths,
   hideRail,
   paneCssVars,
   restorePaneState,
@@ -117,20 +117,18 @@ describe("restorePaneState", () => {
     expect(restorePaneState(emptySettings(), WIDE)).toEqual(defaultPaneState());
   });
 
-  it("clamps a width saved on a larger monitor", () => {
+  it("renders a width saved on a larger monitor down to what fits", () => {
     // 460px rail saved on a 4K screen, restored into a 1280px Surface Pro window.
     const state = restorePaneState(emptySettings({ rail_width: 460 }), 1280);
-    expect(state.railWidth).toBeLessThanOrEqual(PANE_LIMITS.rail.max);
-    expect(state.railWidth).toBeLessThanOrEqual(Math.floor(1280 * 0.4));
+    const { rail } = effectiveWidths(state, 1280);
+    expect(rail).toBeLessThanOrEqual(PANE_LIMITS.rail.max);
+    expect(rail).toBeLessThanOrEqual(Math.floor(1280 * 0.4));
   });
 
   it("leaves the editor a usable measure with both panes restored at maximum", () => {
-    const state = restorePaneState(
-      emptySettings({ sidebar_width: 9999, rail_width: 9999 }),
-      1280,
-    );
-    const chrome = state.sidebarWidth + state.railWidth;
-    expect(1280 - chrome).toBeGreaterThan(400);
+    const state = restorePaneState(emptySettings({ sidebar_width: 9999, rail_width: 9999 }), 1280);
+    const { sidebar, rail } = effectiveWidths(state, 1280);
+    expect(1280 - (sidebar + rail)).toBeGreaterThan(400);
   });
 
   it("prefers the new fields over the legacy pair", () => {
@@ -187,11 +185,11 @@ describe("paneCssVars", () => {
   it("reports the stored width even while hidden, so expand animates from it", () => {
     const collapsed = toggleSidebar(setSidebarWidth(defaultPaneState(), 300, WIDE));
     expect(collapsed.sidebarVisible).toBe(false);
-    expect(paneCssVars(collapsed)["--sidebar-w"]).toBe("300px");
+    expect(paneCssVars(collapsed, WIDE)["--sidebar-w"]).toBe("300px");
   });
 
   it("emits px units — a bare number would silently invalidate the grid template", () => {
-    for (const value of Object.values(paneCssVars(defaultPaneState()))) {
+    for (const value of Object.values(paneCssVars(defaultPaneState(), WIDE))) {
       expect(value).toMatch(/^\d+px$/);
     }
   });
@@ -223,22 +221,49 @@ describe("live drag bounds", () => {
   });
 });
 
-describe("fitPanes", () => {
-  it("is a no-op when the panes already fit", () => {
+describe("effectiveWidths", () => {
+  it("renders the chosen widths when they already fit", () => {
     const state = defaultPaneState();
-    expect(fitPanes(state, WIDE)).toEqual(state);
+    expect(effectiveWidths(state, WIDE)).toEqual({
+      sidebar: state.sidebarWidth,
+      rail: state.railWidth,
+    });
   });
 
-  it("ignores a collapsed pane's width when measuring the budget", () => {
+  it("ignores a collapsed pane when measuring the budget", () => {
     const collapsed = { ...defaultPaneState(), sidebarVisible: false, sidebarWidth: 480 };
     // Only the 260px rail is really on screen, so nothing needs shrinking.
-    expect(fitPanes(collapsed, 1000)).toEqual(collapsed);
+    expect(effectiveWidths(collapsed, 1000).rail).toBe(260);
   });
 
   it("never shrinks a pane below its own minimum", () => {
     const fat = { ...defaultPaneState(), sidebarWidth: 480, railWidth: 420 };
-    const fitted = fitPanes(fat, 700);
-    expect(fitted.sidebarWidth).toBeGreaterThanOrEqual(PANE_LIMITS.sidebar.min);
-    expect(fitted.railWidth).toBeGreaterThanOrEqual(PANE_LIMITS.rail.min);
+    const fitted = effectiveWidths(fat, 700);
+    expect(fitted.sidebar).toBeGreaterThanOrEqual(PANE_LIMITS.sidebar.min);
+    expect(fitted.rail).toBeGreaterThanOrEqual(PANE_LIMITS.rail.min);
+  });
+
+  // The regression that motivated splitting chosen width from rendered width.
+  it("gives the chosen width back when the window widens again", () => {
+    const chosen = { ...defaultPaneState(), sidebarWidth: 300, railWidth: 300 };
+    const narrow = effectiveWidths(chosen, 800);
+    expect(narrow.sidebar).toBeLessThan(300);
+    expect(effectiveWidths(chosen, 1920)).toEqual({ sidebar: 300, rail: 300 });
+  });
+});
+
+describe("width preference survives a narrow window", () => {
+  it("does not edit stored widths when the viewport shrinks", () => {
+    const chosen = { ...defaultPaneState(), sidebarWidth: 300, railWidth: 300 };
+    // Rendering at any size is a pure read: state is untouched.
+    effectiveWidths(chosen, 640);
+    expect(chosen.sidebarWidth).toBe(300);
+    expect(chosen.railWidth).toBe(300);
+  });
+
+  it("persists the chosen width, not the width that happened to fit", () => {
+    const chosen = { ...defaultPaneState(), sidebarWidth: 300, railWidth: 300 };
+    effectiveWidths(chosen, 640);
+    expect(toSettingsPatch(chosen)).toMatchObject({ sidebar_width: 300, rail_width: 300 });
   });
 });

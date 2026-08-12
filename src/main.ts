@@ -62,7 +62,6 @@ import {
   type PaneState,
   type RailTab,
   defaultPaneState,
-  fitPanes,
   hideRail,
   paneCssVars,
   restorePaneState,
@@ -469,7 +468,7 @@ function applyPanes(): void {
   const workspace = document.querySelector<HTMLElement>("#workspace");
   if (!workspace) return;
 
-  for (const [name, value] of Object.entries(paneCssVars(panes))) {
+  for (const [name, value] of Object.entries(paneCssVars(panes, window.innerWidth))) {
     workspace.style.setProperty(name, value);
   }
   workspace.classList.toggle("sidebar-hidden", !panes.sidebarVisible);
@@ -547,12 +546,10 @@ function installResizers(): void {
     });
   }
 
-  // A window that shrinks below what the saved widths allow re-clamps rather
-  // than pushing the editor off screen. Not persisted: the user did not choose
-  // this width, the window did.
-  window.addEventListener("resize", () => {
-    setPanes(fitPanes(panes, window.innerWidth), false);
-  });
+  // Rendered widths are derived from the viewport, so a resize only needs a
+  // re-render. Nothing is written to state: narrowing the window must not edit
+  // the width the user chose, or widening it again would never give it back.
+  window.addEventListener("resize", () => applyPanes());
 }
 
 /** Open the rail on `tab`, switch to it, or close it — see `selectRailTab`. */

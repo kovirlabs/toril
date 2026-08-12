@@ -81,9 +81,11 @@ Design: [`docs/superpowers/specs/2026-08-12-ui-ux-chrome-rework-design.md`](./su
 - [ ] **A8 — Pane resize by drag.** Handles are grabbable, the drag tracks the pointer,
       dragging below the minimum snaps to collapsed, and the width persists across a
       restart.
-- [ ] **A9 — `inert` in WebKitGTK.** Confirmed in Chromium; needs confirming in the Linux
-      engine. If collapsed panes remain tab-reachable there, fall back to toggling
-      `visibility: hidden` on `transitionend`.
+- [ ] **A9 — Collapsed panes are not tab-reachable.** *(Low risk — belt and braces.)*
+      Two independent guards keep focus out of a collapsed pane: `inert` (verified in
+      Chromium = WebView2, but engine-dependent) and a `visibility: hidden` delayed by the
+      collapse duration (needs no feature support anywhere). Correctness does not rest on
+      either alone. Worth one Tab-key pass to confirm, not worth worrying about.
 - [ ] **A10 — Reduced motion.** Turn on Windows' *Show animations* → off. All pane and
       rail motion should become instant, with no layout breakage.
 
