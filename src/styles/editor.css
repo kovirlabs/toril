@@ -7,7 +7,16 @@
    §3.2 round-trip contract is untouched by this file.
 ---------------------------------------------------------------------------- */
 
+/* `min-width: 0` is load-bearing: a grid item's automatic minimum size is its
+   content, so without it the editor refuses to shrink below what its widest
+   line wants and pushes out over the rail. `overflow-x: auto` then keeps any
+   genuinely-too-wide content (a wide table, a long code line) scrolling *inside*
+   the editor rather than escaping it. */
 .editor {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: auto;
   overflow-y: auto;
   background: var(--editor-bg);
   padding: var(--sp-6) 0 var(--sp-6);
@@ -20,6 +29,15 @@
   font-family: var(--font-prose);
   line-height: 1.65;
   color: var(--fg);
+  /* A pasted URL with no spaces is one unbreakable word; without this it sets
+     the min-content width of the whole document and forces the column wide. */
+  overflow-wrap: anywhere;
+}
+
+/* Wide block content stays inside the measure and scrolls itself, rather than
+   widening the column it sits in. */
+.editor .milkdown :where(pre, table) {
+  max-width: 100%;
 }
 
 /* ---- Prose rhythm -------------------------------------------------------- */

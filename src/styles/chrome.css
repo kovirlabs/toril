@@ -410,14 +410,32 @@ body {
    `min-width: 0`, a flex item's automatic minimum size is its content, and a
    wide table or a long unbroken line would force the column wider than its
    share — the overlap this layout is here to make impossible. */
+/* **Flex column, not grid** — the same reasoning as #workspace, one level in.
+   As a grid, #main declared rows but no column, so it got one *implicit* column
+   sized `auto` (= `minmax(min-content, max-content)`). Engines may resolve that
+   against the container's definite width or against the content's max-content,
+   and a ProseMirror contenteditable has a large max-content — so under the
+   second reading the column grew and its children painted outside #main, over
+   the rail. The chrome rows never revealed it: short content never exceeds the
+   width. Only the editor row did, which is exactly the asymmetry observed
+   on-device.
+
+   A single-column grid is a flex column with extra degrees of freedom. In a flex
+   column, children stretch to the container's width and cannot exceed it. */
 #main {
   flex: 1 1 0;
   min-width: 0;
-  display: grid;
-  /* tab row · format toolbar · search · conflict banner · editor */
-  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   min-height: 0;
   background: var(--editor-bg);
+}
+
+/* tab row · format toolbar · search · conflict banner — intrinsic height, never
+   shrinking away when the document is long. */
+#main > :where(#tabrow, .format-toolbar, #searchbar, #conflictbar) {
+  flex: 0 0 auto;
+  min-width: 0;
 }
 
 /* ---- Tab row: ☰ | tabs | ≡ ⟲ --------------------------------------------- */

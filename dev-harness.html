@@ -22,6 +22,8 @@
           "# Toril\n\n## Architecture\n\nTauri 2 + TypeScript + Milkdown.\n\n### Frontend\n\nThe editor is a single Milkdown instance with per-tab buffers.\n\n### Backend\n\nAll disk I/O lives in Rust.\n\n## Open questions\n\n1. Right-rail coexistence\n2. Touch targets\n",
         "/vault/Projects/Roadmap.md": "# Roadmap\n\n## Movement I\n\nData safety floor.\n\n## Movement II\n\nNotes system.\n",
         "/vault/Notes/Daily/2026-08-12.md": "# 2026-08-12\n\n- Looked at pane UX\n- Built a harness\n",
+        "/vault/Wide.md":
+          "# Width stress\n\nA very long unbroken string that cannot wrap:\n\nhttps://example.com/a/very/long/path/that/keeps/going/and/going/without/any/spaces/at/all/to/break/on/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\n| Column one is wide | Column two is also wide | Column three as well | Column four here |\n|---|---|---|---|\n| some content here | more content here | further content | and yet more text |\n\n```\nconst aLongLineOfCode = somethingVeryLong(withArguments, thatKeepGoing, andGoing, andGoingFurtherStill, untilItOverflows);\n```\n",
         "/vault/Notes/Ideas.md": "# Ideas\n\n- Command palette\n- Split view\n",
       };
 
@@ -44,6 +46,7 @@
           ],
         },
         { name: "Welcome.md", path: "/vault/Welcome.md", is_dir: false, children: [] },
+        { name: "Wide.md", path: "/vault/Wide.md", is_dir: false, children: [] },
       ];
 
       const SETTINGS = {
