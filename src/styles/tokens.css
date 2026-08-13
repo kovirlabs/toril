@@ -1,0 +1,207 @@
+/* ---- Design tokens ----------------------------------------------------------
+   The single place colour, space, size, motion and type are decided. Everything
+   in chrome.css and editor.css consumes these; no component invents a value.
+
+   Colours follow BRAND.md ("Deep Sea", sampled from the app icon) rather than a
+   palette invented here — BRAND.md is the stated source of truth for every Toril
+   surface, and the app was the one surface not following it.
+
+   Theme resolution is unchanged (§6): `theme.ts` resolves "system" to a concrete
+   light/dark value and writes `html[data-theme]`, so an explicit choice fully
+   overrides the OS. Light is the default on :root; the media query is a no-flash
+   fallback for the instant before theme.ts runs.
+---------------------------------------------------------------------------- */
+
+:root {
+  /* -- Brand ---------------------------------------------------------------- */
+  --brand-teal: #08626a;
+  --brand-blue: #0575c9;
+  --brand-azure: #0a92cc;
+  --brand-cyan: #39f9fe;
+  --brand-gold: #e8a33d;
+  --brand-gold-bright: #f6b53f;
+
+  /* -- Surfaces (light) ----------------------------------------------------- */
+  /* Semantic rather than literal: the editor is the *paper*, chrome is the desk
+     it sits on. Which of the two is lighter flips between themes, so naming them
+     by role keeps every consumer rule identical in both. */
+  --editor-bg: #ffffff;
+  --chrome-bg: #f5fafb;
+  --chrome-raised: #ffffff;
+  --chrome-sunken: #eaf3f6;
+
+  --fg: #06303b;
+  --muted: #3c5a63;
+  --dim: #6b8792;
+  --border: #d8e7ec;
+  --border-strong: #b9d3dc;
+
+  /* Interaction. Hover and selection are deliberately different weights — they
+     shared a colour before this pass, which made the pointer indistinguishable
+     from the selection. */
+  --hover-bg: #e8f2f5;
+  --active-bg: #d7e9f3;
+  --active-fg: #06303b;
+  --accent: var(--brand-blue);
+  --accent-quiet: #4a9bd8;
+  /* Gold reads as "the user's attention is here" and appears nowhere else, so a
+     focus ring is never confusable with a selection or a hover. */
+  --focus-ring: var(--brand-gold);
+
+  --code-bg: #eef4f6;
+  --table-stripe: #f5fafb;
+
+  --warn-bg: #fdf3d9;
+  --warn-fg: #5a4413;
+  --warn-border: #e3c876;
+  --success: #1fa463;
+  --danger: #d6494b;
+
+  --shadow-panel: 0 4px 16px rgb(6 48 59 / 12%);
+  --shadow-dialog: 0 10px 30px rgb(6 48 59 / 22%);
+
+  /* -- Type ----------------------------------------------------------------- */
+  /* `Inter` used to head this list without ever being bundled — no dependency,
+     no @font-face — so it fell through to Helvetica, which Windows aliases to
+     Arial. The UI shipped in Arial on its primary platform. `system-ui` gets
+     Segoe UI Variable on Win11, San Francisco on macOS, and the desktop default
+     on Linux, with no dependency and no network fetch. */
+  --font-ui: system-ui, "Segoe UI", -apple-system, "Noto Sans", sans-serif;
+  /* Split from --font-ui on purpose: an editor's UI type and its prose type have
+     different jobs, and this makes changing the writing face a one-line edit. */
+  --font-prose: var(--font-ui);
+  --font-mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+
+  --text-xs: 0.72rem;
+  --text-sm: 0.8125rem;
+  --text-md: 0.875rem;
+  --text-base: 1rem;
+
+  /* -- Space & shape -------------------------------------------------------- */
+  --sp-1: 0.25rem;
+  --sp-2: 0.5rem;
+  --sp-3: 0.75rem;
+  --sp-4: 1rem;
+  --sp-5: 1.5rem;
+  --sp-6: 2rem;
+
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 10px;
+
+  /* -- Hit targets ---------------------------------------------------------- */
+  /* One token, one override — touch adaptation is not a per-component decision. */
+  --target: 28px;
+  --target-sm: 24px;
+
+  /* -- Motion --------------------------------------------------------------- */
+  --dur-fast: 140ms;
+  --dur-base: 180ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+
+  /* -- Layering ------------------------------------------------------------- */
+  --z-panel: 10;
+  --z-bubble: 20;
+  --z-dialog: 40;
+
+  font-family: var(--font-ui);
+  font-size: 16px;
+  color: var(--fg);
+  background-color: var(--editor-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ---- Dark ---------------------------------------------------------------- */
+html[data-theme="dark"],
+html:not([data-theme]) {
+  color-scheme: dark;
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+}
+
+/* Only the tokens that differ are redeclared, so a new token added above cannot
+   be silently missing in dark. */
+html[data-theme="dark"] {
+  --editor-bg: #08171e;
+  --chrome-bg: #0e2630;
+  --chrome-raised: #143744;
+  --chrome-sunken: #0a1f28;
+
+  --fg: #e9f5f7;
+  --muted: #9cc3ce;
+  --dim: #5e8793;
+  --border: #1e4350;
+  --border-strong: #2c5b6b;
+
+  --hover-bg: #143744;
+  --active-bg: #1c4b5c;
+  --active-fg: #e9f5f7;
+  --accent: var(--brand-azure);
+  --accent-quiet: #6fd0ef;
+
+  --code-bg: #0f2a35;
+  --table-stripe: #0d222b;
+
+  --warn-bg: #4a3a1a;
+  --warn-fg: #f4e2be;
+  --warn-border: #6b5424;
+
+  --shadow-panel: 0 4px 16px rgb(0 0 0 / 40%);
+  --shadow-dialog: 0 10px 30px rgb(0 0 0 / 55%);
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme]) {
+    --editor-bg: #08171e;
+    --chrome-bg: #0e2630;
+    --chrome-raised: #143744;
+    --chrome-sunken: #0a1f28;
+
+    --fg: #e9f5f7;
+    --muted: #9cc3ce;
+    --dim: #5e8793;
+    --border: #1e4350;
+    --border-strong: #2c5b6b;
+
+    --hover-bg: #143744;
+    --active-bg: #1c4b5c;
+    --active-fg: #e9f5f7;
+    --accent: var(--brand-azure);
+    --accent-quiet: #6fd0ef;
+
+    --code-bg: #0f2a35;
+    --table-stripe: #0d222b;
+
+    --warn-bg: #4a3a1a;
+    --warn-fg: #f4e2be;
+    --warn-border: #6b5424;
+
+    --shadow-panel: 0 4px 16px rgb(0 0 0 / 40%);
+    --shadow-dialog: 0 10px 30px rgb(0 0 0 / 55%);
+  }
+}
+
+/* ---- Touch --------------------------------------------------------------- */
+/* `pointer: coarse` is the *primary* pointer, not `any-pointer`. A Surface Pro
+   with its keyboard attached reports a coarse pointer as available while the
+   primary input stays precise — keying on the primary keeps the docked
+   experience dense and expands targets only in tablet mode. */
+@media (pointer: coarse) {
+  :root {
+    --target: 40px;
+    --target-sm: 36px;
+  }
+}
+
+/* ---- Reduced motion ------------------------------------------------------ */
+/* One override rather than per-rule guards: any transition added later inherits
+   the accommodation automatically instead of having to remember it. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur-base: 0ms;
+  }
+}

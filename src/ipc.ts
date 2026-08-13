@@ -163,9 +163,21 @@ export interface Settings {
   theme: string | null;
   /** Whether the workspace sidebar is shown. `null` ⇒ visible (default). */
   sidebar_visible: boolean | null;
-  /** Whether the outline panel is shown. `null` ⇒ visible (default). */
+  /** Sidebar width in px. `null` ⇒ frontend default; clamped on restore. */
+  sidebar_width: number | null;
+  /** Whether the right-hand rail is shown. `null` ⇒ migrate from the legacy pair. */
+  rail_visible: boolean | null;
+  /** Rail width in px. `null` ⇒ frontend default; clamped on restore. */
+  rail_width: number | null;
+  /** Which panel the rail shows: "outline" | "history". `null` ⇒ outline. */
+  rail_tab: string | null;
+  /**
+   * Legacy (pre-`feat/chrome-ux`) independent panel flags. Read once to migrate
+   * into `rail_visible` / `rail_tab`, then never written again — see
+   * `restorePaneState` for why the fallback must stay one-directional.
+   */
   outline_visible: boolean | null;
-  /** Whether the version-history panel is shown. `null` ⇒ hidden (default). */
+  /** Legacy; see {@link Settings.outline_visible}. */
   history_visible: boolean | null;
   /** Whether debounced autosave is enabled. `null` ⇒ off (default). */
   autosave: boolean | null;

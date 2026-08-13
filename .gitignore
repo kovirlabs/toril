@@ -9,6 +9,11 @@ dist
 dist-ssr
 *.local
 
+# UI harness output — screenshots and Playwright scratch (the harness itself is tracked)
+/.playwright-mcp/
+/toril-harness-*.png
+/sweep-*.png
+
 # Editor / OS
 .DS_Store
 .idea/

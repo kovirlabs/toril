@@ -1,0 +1,249 @@
+<!doctype html>
+<!--
+  UI/UX harness — app.html with a fake Tauri IPC bridge.
+
+  Lets the real frontend (chrome, panes, tabs, editor, theming) boot in a plain
+  browser so UI work can be driven and screenshotted headlessly. Every `invoke`
+  is answered from in-memory fixtures; nothing touches disk, so this can never
+  write a note. Not part of the build (vite's input is app.html, §4) — scratch
+  tooling only.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Toril — UI harness</title>
+    <script>
+      // ---- fake backend state -------------------------------------------------
+      const FILES = {
+        "/vault/Welcome.md":
+          "# Welcome to Toril\n\nA WYSIWYG markdown editor.\n\n## Getting started\n\n- Type `# ` to make a heading\n- Use **bold** and *italic*\n- Tables, task lists, and footnotes all work\n\n### Task list\n\n- [x] Ship the editor\n- [ ] Make the panes feel good\n\n## Why\n\nFiles stay plain `.md` in ordinary folders.\n",
+        "/vault/Projects/Toril.md":
+          "# Toril\n\n## Architecture\n\nTauri 2 + TypeScript + Milkdown.\n\n### Frontend\n\nThe editor is a single Milkdown instance with per-tab buffers.\n\n### Backend\n\nAll disk I/O lives in Rust.\n\n## Open questions\n\n1. Right-rail coexistence\n2. Touch targets\n",
+        "/vault/Projects/Roadmap.md": "# Roadmap\n\n## Movement I\n\nData safety floor.\n\n## Movement II\n\nNotes system.\n",
+        "/vault/Notes/Daily/2026-08-12.md": "# 2026-08-12\n\n- Looked at pane UX\n- Built a harness\n",
+        "/vault/Wide.md":
+          "# Width stress\n\nA very long unbroken string that cannot wrap:\n\nhttps://example.com/a/very/long/path/that/keeps/going/and/going/without/any/spaces/at/all/to/break/on/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\n| Column one is wide | Column two is also wide | Column three as well | Column four here |\n|---|---|---|---|\n| some content here | more content here | further content | and yet more text |\n\n```\nconst aLongLineOfCode = somethingVeryLong(withArguments, thatKeepGoing, andGoing, andGoingFurtherStill, untilItOverflows);\n```\n",
+        "/vault/Notes/Ideas.md": "# Ideas\n\n- Command palette\n- Split view\n",
+      };
+
+      const TREE = [
+        {
+          name: "Notes", path: "/vault/Notes", is_dir: true,
+          children: [
+            {
+              name: "Daily", path: "/vault/Notes/Daily", is_dir: true,
+              children: [{ name: "2026-08-12.md", path: "/vault/Notes/Daily/2026-08-12.md", is_dir: false, children: [] }],
+            },
+            { name: "Ideas.md", path: "/vault/Notes/Ideas.md", is_dir: false, children: [] },
+          ],
+        },
+        {
+          name: "Projects", path: "/vault/Projects", is_dir: true,
+          children: [
+            { name: "Roadmap.md", path: "/vault/Projects/Roadmap.md", is_dir: false, children: [] },
+            { name: "Toril.md", path: "/vault/Projects/Toril.md", is_dir: false, children: [] },
+          ],
+        },
+        { name: "Welcome.md", path: "/vault/Welcome.md", is_dir: false, children: [] },
+        { name: "Wide.md", path: "/vault/Wide.md", is_dir: false, children: [] },
+      ];
+
+      const SETTINGS = {
+        version: 1,
+        last_folder: "/vault",
+        open_files: ["/vault/Welcome.md", "/vault/Projects/Toril.md"],
+        active_file: "/vault/Welcome.md",
+        theme: "system",
+        sidebar_visible: true,
+        sidebar_width: 240,
+        rail_visible: true,
+        rail_width: 260,
+        rail_tab: "outline",
+        outline_visible: null,
+        history_visible: null,
+        autosave: false,
+        autosave_debounce_ms: 2000,
+      };
+
+      const HISTORY = [
+        { hash: "a1b2c3d4", saved_at: Date.now() - 60_000, bytes: 412 },
+        { hash: "e5f6a7b8", saved_at: Date.now() - 3_600_000, bytes: 388 },
+        { hash: "c9d0e1f2", saved_at: Date.now() - 86_400_000 * 3, bytes: 201 },
+      ];
+
+      // ---- fake Tauri bridge --------------------------------------------------
+      const callbacks = new Map();
+      let nextCallbackId = 1;
+
+      const HANDLERS = {
+        "plugin:app|version": () => "0.0.0-harness",
+        "plugin:event|listen": () => 0,
+        "plugin:event|unlisten": () => null,
+        "plugin:dialog|open": () => null,
+        "plugin:dialog|ask": () => true,
+        "plugin:dialog|message": () => null,
+        load_settings: () => SETTINGS,
+        save_settings: () => null,
+        load_recovery: () => [],
+        save_recovery: () => null,
+        clear_recovery: () => null,
+        take_launch_path: () => null,
+        open_folder: () => TREE,
+        watch_folder: () => null,
+        open_file: ({ path }) => {
+          if (!(path in FILES)) throw new Error(`no such file: ${path}`);
+          return { path, content: FILES[path] };
+        },
+        save_file: ({ path, content }) => { FILES[path] = content; return null; },
+        save_file_as: () => null,
+        merge_external: () => ({ outcome: "unchanged" }),
+        list_history: () => HISTORY,
+        read_snapshot: ({ path }) => FILES[path] ?? "",
+        restore_snapshot: () => null,
+        list_trash: () => [],
+        list_api_keys: () => [
+          { provider: "anthropic", configured: false },
+          { provider: "openai", configured: false },
+        ],
+        has_api_key: () => false,
+        markdown_to_html: ({ content }) => `<pre>${content.replace(/[<&]/g, (c) => (c === "<" ? "&lt;" : "&amp;"))}</pre>`,
+        export_html: () => null,
+        export_rtf: () => null,
+        save_clipboard_image: () => "assets/pasted.png",
+      };
+
+      window.__TAURI_INTERNALS__ = {
+        transformCallback(cb, once) {
+          const id = nextCallbackId++;
+          callbacks.set(id, { cb, once });
+          return id;
+        },
+        convertFileSrc: (p) => p,
+        // getCurrentWindow() reads this rather than going through invoke.
+        metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main" } },
+        async invoke(cmd, args) {
+          const handler = HANDLERS[cmd];
+          if (!handler) {
+            console.warn(`[harness] unstubbed command: ${cmd}`, args);
+            return null;
+          }
+          return handler(args ?? {});
+        },
+      };
+
+      // Surface anything the harness swallowed, so a stub gap is visible rather
+      // than looking like a UI bug.
+      window.addEventListener("error", (e) => console.error("[harness] error:", e.message));
+      window.addEventListener("unhandledrejection", (e) => console.error("[harness] rejection:", e.reason));
+    </script>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+
+  <body>
+    <div id="workspace">
+      <aside id="sidebar" aria-label="Workspace files">
+        <div class="pane-scroll" id="sidebar-body"></div>
+      </aside>
+
+      <!-- Positioned against #workspace and offset by the same variables that
+           size the panes, so a handle tracks its pane through drags and
+           collapse animations without JS keeping them in sync. -->
+      <div class="pane-resize" data-edge="left" id="resize-sidebar"></div>
+
+      <section id="main">
+        <!-- Each pane toggle sits on the side it controls: ☰ opens the files
+             pane on the left, ≡ / ⟲ the rail on the right. -->
+        <nav id="tabrow">
+          <button
+            id="btn-toggle-sidebar"
+            class="pane-toggle"
+            type="button"
+            title="Toggle Sidebar (Ctrl+\)"
+            aria-label="Toggle files pane"
+          >
+            ☰
+          </button>
+
+          <div id="tabbar"></div>
+
+          <div class="rail-toggles">
+            <button
+              id="btn-rail-outline"
+              class="pane-toggle"
+              type="button"
+              title="Outline (Ctrl+Shift+\)"
+              aria-label="Toggle outline"
+            >
+              ≡
+            </button>
+            <button
+              id="btn-rail-history"
+              class="pane-toggle"
+              type="button"
+              title="Version History"
+              aria-label="Toggle version history"
+            >
+              ⟲
+            </button>
+          </div>
+        </nav>
+
+        <div id="format-toolbar" class="format-toolbar"></div>
+        <div id="searchbar"></div>
+        <div id="conflictbar"></div>
+        <main id="editor" class="editor"></main>
+      </section>
+
+      <div class="pane-resize" data-edge="right" id="resize-rail"></div>
+
+      <!-- One rail, two panels. Outline and History are alternatives rather than
+           two rails, so chrome stays bounded at a single rail width however many
+           panels exist later (search, AI). -->
+      <aside id="rail" aria-label="Panels">
+        <div class="pane-scroll">
+          <div class="rail-tabs" role="tablist" aria-label="Rail panels">
+            <button
+              class="rail-tab"
+              id="rail-tab-outline"
+              type="button"
+              role="tab"
+              data-tab="outline"
+              aria-controls="outline"
+              aria-selected="true"
+            >
+              Outline
+            </button>
+            <button
+              class="rail-tab"
+              id="rail-tab-history"
+              type="button"
+              role="tab"
+              data-tab="history"
+              aria-controls="history"
+              aria-selected="false"
+            >
+              History
+            </button>
+          </div>
+          <div class="rail-body">
+            <div class="rail-panel" id="outline" role="tabpanel" aria-labelledby="rail-tab-outline"></div>
+            <div class="rail-panel" id="history" role="tabpanel" aria-labelledby="rail-tab-history" hidden></div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <footer id="statusbar">
+      <span id="status"></span>
+      <div class="status-right">
+        <span id="docstats"></span>
+        <select id="theme-select" title="Theme" aria-label="Theme">
+          <option value="system">System</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -1,31 +1,62 @@
 //! Native application menu (CLAUDE.md §8 Phase 4).
 //!
 //! Our custom items emit a `menu` event carrying the item id; the frontend
-//! (`main.ts`) maps that id to the same handlers the toolbar buttons use, so the
-//! menu adds discoverability + mouse access without a second action path. The
-//! Edit menu uses the OS's predefined undo/cut/copy/paste/etc. items.
+//! (`main.ts`) maps that id to a named action. The Edit menu uses the OS's
+//! predefined undo/cut/copy/paste/etc. items.
 //!
-//! Items intentionally carry **no accelerators** — the frontend keydown handler
-//! stays the single shortcut path, so a menu click and a keyboard shortcut can
-//! never double-fire (which would, e.g., open two Save dialogs). The shortcut is
-//! shown in the label purely for discoverability.
+//! **Accelerators are real** (`feat/chrome-ux`). They used to be baked into the
+//! label text — `"New (Ctrl+N)"` — because a registered accelerator and the
+//! frontend's keydown handler would both fire on one keypress, opening two Save
+//! dialogs. The cost was that Windows, which renders accelerators right-aligned
+//! in grey, showed a literal parenthetical instead: the shortcut column simply
+//! did not exist on the platform Toril targets.
+//!
+//! The double-fire is now handled where it belongs — one dispatcher in
+//! `src/actions.ts` collapses the same action arriving twice within 80ms — so
+//! both delivery paths can stay and the platform gets to render the menu the way
+//! its users expect. See `tests/actions.test.ts`.
 
-use tauri::menu::{Menu, MenuBuilder, MenuEvent, SubmenuBuilder};
+use tauri::menu::{Menu, MenuBuilder, MenuEvent, MenuItemBuilder, SubmenuBuilder};
 use tauri::{AppHandle, Emitter, Runtime};
 
-/// Build the application menu (File / Edit / Help).
+/// Build the application menu (File / Edit / View / Help).
 pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
+    // `CmdOrCtrl` maps to Ctrl on Windows/Linux and Cmd on macOS, so one string
+    // is correct everywhere.
+    let new = MenuItemBuilder::with_id("menu_new", "New")
+        .accelerator("CmdOrCtrl+N")
+        .build(app)?;
+    let open = MenuItemBuilder::with_id("menu_open", "Open File…")
+        .accelerator("CmdOrCtrl+O")
+        .build(app)?;
+    let open_folder = MenuItemBuilder::with_id("menu_open_folder", "Open Folder…")
+        .accelerator("CmdOrCtrl+Shift+O")
+        .build(app)?;
+    let save = MenuItemBuilder::with_id("menu_save", "Save")
+        .accelerator("CmdOrCtrl+S")
+        .build(app)?;
+    let save_as = MenuItemBuilder::with_id("menu_save_as", "Save As…")
+        .accelerator("CmdOrCtrl+Shift+S")
+        .build(app)?;
+    let save_all = MenuItemBuilder::with_id("menu_save_all", "Save All")
+        .accelerator("CmdOrCtrl+Alt+S")
+        .build(app)?;
+    let export_html = MenuItemBuilder::with_id("menu_export_html", "Export HTML…")
+        .accelerator("CmdOrCtrl+E")
+        .build(app)?;
+    let export_rtf = MenuItemBuilder::with_id("menu_export_rtf", "Export RTF…").build(app)?;
+
     let file = SubmenuBuilder::new(app, "File")
-        .text("menu_new", "New (Ctrl+N)")
-        .text("menu_open", "Open File… (Ctrl+O)")
-        .text("menu_open_folder", "Open Folder… (Ctrl+Shift+O)")
+        .item(&new)
+        .item(&open)
+        .item(&open_folder)
         .separator()
-        .text("menu_save", "Save (Ctrl+S)")
-        .text("menu_save_as", "Save As… (Ctrl+Shift+S)")
-        .text("menu_save_all", "Save All (Ctrl+Alt+S)")
+        .item(&save)
+        .item(&save_as)
+        .item(&save_all)
         .separator()
-        .text("menu_export_html", "Export HTML… (Ctrl+E)")
-        .text("menu_export_rtf", "Export RTF…")
+        .item(&export_html)
+        .item(&export_rtf)
         .separator()
         // No "API Keys…" item: the secret store (`crates/keystore` + the
         // `*_api_key` commands) is built and gated, but nothing consumes a key
@@ -44,12 +75,31 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .select_all()
         .build()?;
 
+    let find = MenuItemBuilder::with_id("menu_find", "Find & Replace…")
+        .accelerator("CmdOrCtrl+F")
+        .build(app)?;
+    let toggle_sidebar = MenuItemBuilder::with_id("menu_toggle_sidebar", "Files Pane")
+        .accelerator("CmdOrCtrl+\\")
+        .build(app)?;
+    // One rail, two panels: these select a tab rather than toggling independent
+    // columns, so choosing Outline while History is open switches instead of
+    // widening the chrome (see `src/ui/panes.ts`).
+    let toggle_outline = MenuItemBuilder::with_id("menu_toggle_outline", "Outline")
+        .accelerator("CmdOrCtrl+Shift+\\")
+        .build(app)?;
+    let toggle_history =
+        MenuItemBuilder::with_id("menu_toggle_history", "Version History").build(app)?;
+    let toggle_autosave =
+        MenuItemBuilder::with_id("menu_toggle_autosave", "Autosave").build(app)?;
+
     let view = SubmenuBuilder::new(app, "View")
-        .text("menu_toggle_sidebar", "Toggle Sidebar (Ctrl+\\)")
-        .text("menu_toggle_outline", "Toggle Outline (Ctrl+Shift+\\)")
-        .text("menu_toggle_history", "Toggle Version History")
+        .item(&find)
         .separator()
-        .text("menu_toggle_autosave", "Toggle Autosave")
+        .item(&toggle_sidebar)
+        .item(&toggle_outline)
+        .item(&toggle_history)
+        .separator()
+        .item(&toggle_autosave)
         .build()?;
 
     let help = SubmenuBuilder::new(app, "Help")

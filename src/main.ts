@@ -43,6 +43,7 @@ import {
   watchFolder,
   writeConflictCopy,
 } from "./ipc";
+import { ActionDispatcher } from "./actions";
 import { AutosaveScheduler, type RecoveryEntry, selectDirtySaved, snapshotDirty } from "./autosave";
 import { isAtOrUnder } from "./paths";
 import {
@@ -56,6 +57,23 @@ import {
 import { ConflictBar } from "./ui/conflictbar";
 import { History } from "./ui/history";
 import { Outline } from "./ui/outline";
+import {
+  PANE_LIMITS,
+  type PaneState,
+  type RailTab,
+  defaultPaneState,
+  effectiveLayout,
+  hideRail,
+  paneCssVars,
+  restorePaneState,
+  selectRailTab,
+  setRailWidth,
+  setSidebarWidth,
+  toSettingsPatch,
+  toggleSidebar as togglePaneSidebar,
+} from "./ui/panes";
+import { Rail } from "./ui/rail";
+import { attachResizer, initResizeHandle, syncHandleValue } from "./ui/resizer";
 import { SearchBar } from "./ui/search";
 import { Sidebar } from "./ui/sidebar";
 import { StatusBar } from "./ui/statusbar";
@@ -83,9 +101,8 @@ let autosaveDebounceMs = 2000;
 let theme: ThemeController | null = null;
 
 let workspaceRoot: string | null = null;
-let sidebarVisible = true;
-let outlineVisible = true;
-let historyVisible = false;
+let panes: PaneState = defaultPaneState();
+let rail: Rail | null = null;
 let unwatch: UnlistenFn | null = null;
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 let sessionTimer: ReturnType<typeof setTimeout> | null = null;
@@ -114,12 +131,10 @@ function setStatus(msg: string): void {
 function updateTitle(): void {
   const tab = tabs.active();
   const shown = tab ? `${tab.name}${tab.dirty ? " *" : ""}` : "Toril";
+  // The window title is the only place the document name is shown now: the old
+  // #doc-title element repeated what the active tab already says, two inches
+  // away from it.
   document.title = tab ? `${shown} — Toril` : "Toril";
-  const el = document.querySelector<HTMLElement>("#doc-title");
-  if (el) {
-    el.textContent = shown;
-    el.dataset.dirty = String(tab?.dirty ?? false);
-  }
   sidebar.setActivePath(tab?.path ?? null);
 }
 
@@ -442,56 +457,120 @@ function doNew(): void {
   setStatus("New document");
 }
 
-// ---- Sidebar visibility ----------------------------------------------------
+// ---- Pane layout (sidebar + tabbed rail) -----------------------------------
+//
+// All pane decisions live in `panes.ts` as value transforms; this half only
+// writes the result to the DOM and schedules a save. The split is what lets the
+// interesting behaviour — toggle semantics, restore clamping, the migration off
+// the two-rail era — be gated headlessly (§8).
 
-/** Apply the sidebar visibility to the DOM (a class on #workspace drives CSS). */
-function applySidebar(): void {
-  document.querySelector("#workspace")?.classList.toggle("sidebar-hidden", !sidebarVisible);
-  const btn = document.querySelector<HTMLElement>("#btn-toggle-sidebar");
-  if (btn) btn.dataset.active = String(sidebarVisible);
+/** Push the current pane state into the DOM. */
+function applyPanes(): void {
+  const workspace = document.querySelector<HTMLElement>("#workspace");
+  if (!workspace) return;
+
+  // What is rendered is *derived* from the stored choice plus the window we
+  // actually have: on a window too narrow for both side panes, only the most
+  // recently opened one shows. `panes` itself is untouched, so widening the
+  // window brings the other one straight back.
+  const layout = effectiveLayout(panes, window.innerWidth);
+
+  for (const [name, value] of Object.entries(paneCssVars(panes, window.innerWidth))) {
+    workspace.style.setProperty(name, value);
+  }
+  workspace.classList.toggle("sidebar-hidden", !layout.sidebarVisible);
+  workspace.classList.toggle("rail-hidden", !layout.railVisible);
+
+  // `inert` is what removes a collapsed pane from the tab order and the
+  // accessibility tree. That was `display: none`'s job, but `display: none` also
+  // cancels transitions — which is why collapse could never animate. A delayed
+  // `visibility: hidden` in CSS guards the same thing engine-independently (§3.5).
+  const sidebarEl = document.querySelector<HTMLElement>("#sidebar");
+  if (sidebarEl) sidebarEl.inert = !layout.sidebarVisible;
+  const railEl = document.querySelector<HTMLElement>("#rail");
+  if (railEl) railEl.inert = !layout.railVisible;
+
+  const sidebarBtn = document.querySelector<HTMLElement>("#btn-toggle-sidebar");
+  if (sidebarBtn) sidebarBtn.dataset.active = String(layout.sidebarVisible);
+  const outlineBtn = document.querySelector<HTMLElement>("#btn-rail-outline");
+  if (outlineBtn) {
+    outlineBtn.dataset.active = String(layout.railVisible && panes.railTab === "outline");
+  }
+  const historyBtn = document.querySelector<HTMLElement>("#btn-rail-history");
+  if (historyBtn) {
+    historyBtn.dataset.active = String(layout.railVisible && panes.railTab === "history");
+  }
+
+  rail?.setActive(panes.railTab);
+
+  const sidebarHandle = document.querySelector<HTMLElement>("#resize-sidebar");
+  if (sidebarHandle) syncHandleValue(sidebarHandle, layout.sidebarWidth, PANE_LIMITS.sidebar);
+  const railHandle = document.querySelector<HTMLElement>("#resize-rail");
+  if (railHandle) syncHandleValue(railHandle, layout.railWidth, PANE_LIMITS.rail);
+}
+
+function setPanes(next: PaneState, persist = true): void {
+  panes = next;
+  applyPanes();
+  if (persist) scheduleSessionSave();
 }
 
 function toggleSidebar(): void {
-  sidebarVisible = !sidebarVisible;
-  applySidebar();
-  scheduleSessionSave();
+  setPanes(togglePaneSidebar(panes));
 }
 
-// ---- Outline visibility -----------------------------------------------------
+/**
+ * Bind the two drag handles.
+ *
+ * Widths are applied live during the drag but only persisted on release —
+ * otherwise a single drag would queue a session write per pointer event.
+ */
+function installResizers(): void {
+  const sidebarHandle = document.querySelector<HTMLElement>("#resize-sidebar");
+  if (sidebarHandle) {
+    initResizeHandle(sidebarHandle, "Resize files pane");
+    attachResizer(sidebarHandle, "left", PANE_LIMITS.sidebar, {
+      currentWidth: () => panes.sidebarWidth,
+      reservedWidth: () => (panes.railVisible ? panes.railWidth : 0),
+      onWidth: (w) => setPanes(setSidebarWidth(panes, w, window.innerWidth), false),
+      onCollapse: () => {
+        if (panes.sidebarVisible) setPanes(togglePaneSidebar(panes), false);
+      },
+      onCommit: () => scheduleSessionSave(),
+    });
+  }
 
-/** Apply the outline-panel visibility to the DOM (a class on #workspace drives CSS). */
-function applyOutline(): void {
-  document.querySelector("#workspace")?.classList.toggle("outline-hidden", !outlineVisible);
-  const btn = document.querySelector<HTMLElement>("#btn-toggle-outline");
-  if (btn) btn.dataset.active = String(outlineVisible);
+  const railHandle = document.querySelector<HTMLElement>("#resize-rail");
+  if (railHandle) {
+    initResizeHandle(railHandle, "Resize panel rail");
+    attachResizer(railHandle, "right", PANE_LIMITS.rail, {
+      currentWidth: () => panes.railWidth,
+      reservedWidth: () => (panes.sidebarVisible ? panes.sidebarWidth : 0),
+      onWidth: (w) => setPanes(setRailWidth(panes, w, window.innerWidth), false),
+      onCollapse: () => {
+        if (panes.railVisible) setPanes(hideRail(panes), false);
+      },
+      onCommit: () => scheduleSessionSave(),
+    });
+  }
+
+  // Rendered widths are derived from the viewport, so a resize only needs a
+  // re-render. Nothing is written to state: narrowing the window must not edit
+  // the width the user chose, or widening it again would never give it back.
+  window.addEventListener("resize", () => applyPanes());
 }
 
-function toggleOutline(): void {
-  outlineVisible = !outlineVisible;
-  applyOutline();
-  scheduleSessionSave();
-}
-
-// ---- Version-history panel (ROADMAP Movement I.3) ---------------------------
-
-/** Apply the history-panel visibility to the DOM (a class on #workspace drives CSS). */
-function applyHistory(): void {
-  document.querySelector("#workspace")?.classList.toggle("history-hidden", !historyVisible);
-  const btn = document.querySelector<HTMLElement>("#btn-toggle-history");
-  if (btn) btn.dataset.active = String(historyVisible);
-}
-
-function toggleHistory(): void {
-  historyVisible = !historyVisible;
-  applyHistory();
-  refreshHistory(); // populate on show; a no-op read when hidden
-  scheduleSessionSave();
+/** Open the rail on `tab`, switch to it, or close it — see `selectRailTab`. */
+function selectRail(tab: RailTab): void {
+  setPanes(selectRailTab(panes, tab));
+  // Populate on show; a no-op read while hidden or on another tab.
+  if (tab === "history") refreshHistory();
 }
 
 /** Point the panel at the active note's current buffer. Skipped while hidden so
  *  it never reads the store needlessly. */
 function refreshHistory(): void {
-  if (!history || !historyVisible) return;
+  if (!history || !panes.railVisible || panes.railTab !== "history") return;
   const tab = tabs.active();
   const path = tab?.path ?? null;
   const content = tab ? serializeEditor(tab.format) : "";
@@ -984,9 +1063,11 @@ function scheduleSessionSave(): void {
         .filter((p): p is string => p !== null),
       active_file: tabs.active()?.path ?? null,
       theme: theme?.current() ?? null,
-      sidebar_visible: sidebarVisible,
-      outline_visible: outlineVisible,
-      history_visible: historyVisible,
+      ...toSettingsPatch(panes),
+      // Legacy pane flags are read once to migrate and then never written, so
+      // the migration in `restorePaneState` cannot fire a second time.
+      outline_visible: null,
+      history_visible: null,
       autosave: autosaveEnabled,
       autosave_debounce_ms: autosaveDebounceMs,
     };
@@ -1013,18 +1094,11 @@ async function restoreSession(): Promise<void> {
     theme.applyInitial(settings.theme);
     syncThemeSelect();
   }
-  if (settings.sidebar_visible !== null) {
-    sidebarVisible = settings.sidebar_visible;
-    applySidebar();
-  }
-  if (settings.outline_visible !== null) {
-    outlineVisible = settings.outline_visible;
-    applyOutline();
-  }
-  if (settings.history_visible !== null) {
-    historyVisible = settings.history_visible;
-    applyHistory();
-  }
+  // Widths are clamped against the *current* viewport, so a layout saved on a
+  // larger monitor cannot restore into something unusable here. Applied without
+  // persisting: restoring is not a user edit, and writing back immediately would
+  // make a clamp permanent for the wider screen too.
+  setPanes(restorePaneState(settings, window.innerWidth), false);
   if (settings.autosave !== null) autosaveEnabled = settings.autosave;
   if (settings.autosave_debounce_ms !== null) autosaveDebounceMs = settings.autosave_debounce_ms;
   autosave?.setConfig({ enabled: autosaveEnabled, debounceMs: autosaveDebounceMs });
@@ -1106,94 +1180,86 @@ async function recoverCrashedBuffers(): Promise<void> {
 
 // ---- Wiring ----------------------------------------------------------------
 
-/** Reflect the current theme preference in the header selector. */
+/** Reflect the current theme preference in the status-bar selector. */
 function syncThemeSelect(): void {
   const select = document.querySelector<HTMLSelectElement>("#theme-select");
   if (select && theme) select.value = theme.current();
 }
 
-/** Route a native menu click (`menu_*` id) to the matching action. */
-function handleMenuAction(id: string): void {
-  switch (id) {
-    case "menu_new":
-      doNew();
-      break;
-    case "menu_open":
-      void doOpenFile();
-      break;
-    case "menu_open_folder":
-      void doOpenFolder();
-      break;
-    case "menu_save":
-      void doSave();
-      break;
-    case "menu_save_as":
-      void doSaveAs();
-      break;
-    case "menu_save_all":
-      void doSaveAll();
-      break;
-    case "menu_toggle_sidebar":
-      toggleSidebar();
-      break;
-    case "menu_toggle_outline":
-      toggleOutline();
-      break;
-    case "menu_toggle_history":
-      toggleHistory();
-      break;
-    case "menu_toggle_autosave":
-      toggleAutosave();
-      break;
-    case "menu_export_html":
-      void doExportHtml();
-      break;
-    case "menu_export_rtf":
-      void doExportRtf();
-      break;
-    case "menu_about":
-      void showAbout();
-      break;
-  }
+/**
+ * Every command, by name. Both doors — the native menu and the keydown handler
+ * — go through here, so an action exists in exactly one place regardless of how
+ * the user reached it.
+ */
+const ACTIONS: Record<string, () => void> = {
+  menu_new: () => doNew(),
+  menu_open: () => void doOpenFile(),
+  menu_open_folder: () => void doOpenFolder(),
+  menu_save: () => void doSave(),
+  menu_save_as: () => void doSaveAs(),
+  menu_save_all: () => void doSaveAll(),
+  menu_toggle_sidebar: () => toggleSidebar(),
+  menu_toggle_outline: () => selectRail("outline"),
+  menu_toggle_history: () => selectRail("history"),
+  menu_toggle_autosave: () => toggleAutosave(),
+  menu_export_html: () => void doExportHtml(),
+  menu_export_rtf: () => void doExportRtf(),
+  menu_find: () => searchBar?.open(),
+  menu_about: () => void showAbout(),
+};
+
+const dispatcher = new ActionDispatcher();
+
+/**
+ * Run a named action, at most once per physical trigger.
+ *
+ * Now that `menu.rs` carries real accelerators, one Ctrl+S arrives twice — from
+ * the menu and from the webview keydown. The dispatcher collapses the pair; see
+ * `actions.ts` for why both doors are kept rather than one being disabled.
+ */
+function runAction(id: string): void {
+  const action = ACTIONS[id];
+  if (action) dispatcher.dispatch(id, action);
 }
 
 function installShortcuts(): void {
   window.addEventListener("keydown", (e) => {
     if (!(e.ctrlKey || e.metaKey)) return;
-    switch (e.key.toLowerCase()) {
-      case "s":
-        e.preventDefault();
-        void (e.altKey ? doSaveAll() : e.shiftKey ? doSaveAs() : doSave());
-        break;
-      case "\\":
-        e.preventDefault();
-        if (e.shiftKey) toggleOutline();
-        else toggleSidebar();
-        break;
-      case "o":
-        e.preventDefault();
-        void (e.shiftKey ? doOpenFolder() : doOpenFile());
-        break;
-      case "n":
-        e.preventDefault();
-        doNew();
-        break;
-      case "f":
-        e.preventDefault();
-        searchBar?.open();
-        break;
-      case "e":
-        e.preventDefault();
-        void doExportHtml();
-        break;
-    }
+    const id = shortcutAction(e);
+    if (!id) return;
+    e.preventDefault();
+    runAction(id);
   });
+}
+
+/** Map a keydown to an action id, or null if it is not a Toril shortcut. */
+function shortcutAction(e: KeyboardEvent): string | null {
+  switch (e.key.toLowerCase()) {
+    case "s":
+      return e.altKey ? "menu_save_all" : e.shiftKey ? "menu_save_as" : "menu_save";
+    case "\\":
+      return e.shiftKey ? "menu_toggle_outline" : "menu_toggle_sidebar";
+    case "o":
+      return e.shiftKey ? "menu_open_folder" : "menu_open";
+    case "n":
+      return "menu_new";
+    case "f":
+      return "menu_find";
+    case "e":
+      return "menu_export_html";
+    default:
+      return null;
+  }
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
   const editorRoot = document.querySelector<HTMLElement>("#editor");
   const tabbar = document.querySelector<HTMLElement>("#tabbar");
-  const sidebarEl = document.querySelector<HTMLElement>("#sidebar");
+  // The tree renders into the pane's inner scroller, not the pane itself: the
+  // pane animates its width to zero on collapse while the scroller keeps the
+  // stored width, so content slides out of view instead of reflowing into a
+  // narrowing column.
+  const sidebarEl = document.querySelector<HTMLElement>("#sidebar-body");
   const formatBar = document.querySelector<HTMLElement>("#format-toolbar");
   if (!editorRoot || !tabbar || !sidebarEl || !formatBar) return;
 
@@ -1222,6 +1288,11 @@ window.addEventListener("DOMContentLoaded", async () => {
   formatToolbar = new FormattingToolbar(formatBar, editor, editorRoot);
   const docStats = document.querySelector<HTMLElement>("#docstats");
   if (docStats) statusBar = new StatusBar(docStats, editor, editorRoot);
+  // The rail owns which panel is showing; the panels themselves are unchanged
+  // and still render into #outline / #history.
+  const railEl = document.querySelector<HTMLElement>("#rail");
+  if (railEl) rail = new Rail(railEl, { onSelect: (tab) => selectRail(tab) });
+
   const outlineEl = document.querySelector<HTMLElement>("#outline");
   if (outlineEl) outline = new Outline(outlineEl, editor, editorRoot);
   const historyEl = document.querySelector<HTMLElement>("#history");
@@ -1264,19 +1335,16 @@ window.addEventListener("DOMContentLoaded", async () => {
     { enabled: autosaveEnabled, debounceMs: autosaveDebounceMs },
   );
 
-  document.querySelector("#btn-new")?.addEventListener("click", () => doNew());
-  document.querySelector("#btn-open")?.addEventListener("click", () => void doOpenFile());
-  document.querySelector("#btn-open-folder")?.addEventListener("click", () => void doOpenFolder());
-  document.querySelector("#btn-save")?.addEventListener("click", () => void doSave());
-  document.querySelector("#btn-save-as")?.addEventListener("click", () => void doSaveAs());
-  document.querySelector("#btn-save-all")?.addEventListener("click", () => void doSaveAll());
-  document.querySelector("#btn-export")?.addEventListener("click", () => void doExportHtml());
-  document.querySelector("#btn-export-rtf")?.addEventListener("click", () => void doExportRtf());
+  // The eleven command buttons that used to live in a toolbar above the tabs are
+  // gone: every one of them already existed as a native menu item, so the row
+  // was ~50px of permanent chrome duplicating the menu bar. Only the three pane
+  // toggles remain, and they now sit on the side they control.
   document.querySelector("#btn-toggle-sidebar")?.addEventListener("click", () => toggleSidebar());
-  document.querySelector("#btn-toggle-outline")?.addEventListener("click", () => toggleOutline());
-  document.querySelector("#btn-toggle-history")?.addEventListener("click", () => toggleHistory());
+  document.querySelector("#btn-rail-outline")?.addEventListener("click", () => selectRail("outline"));
+  document.querySelector("#btn-rail-history")?.addEventListener("click", () => selectRail("history"));
   installShortcuts();
-  void onMenuAction(handleMenuAction); // native menu → same actions as the buttons
+  installResizers();
+  void onMenuAction(runAction); // native menu → the same named actions as the keyboard
   // Guard against losing unsaved work on close, and clear the recovery journal
   // on every clean close so a leftover journal always means "we crashed" (§3).
   void installCloseGuard(

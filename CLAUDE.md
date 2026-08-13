@@ -216,6 +216,8 @@ toril/
 ├── package.json               # frontend deps + scripts (pinned)
 ├── vite.config.ts             # build input = app.html (not index.html)
 ├── app.html                   # the app's HTML entry (Tauri window loads this)
+├── dev-harness.html           # app.html + a fake Tauri IPC bridge, for headless UI work
+│                              #   (see §8; not part of the build — vite's input is app.html)
 ├── index.html                 # RESERVED for the GitHub Pages landing page — NOT part of the app build
 ├── src/                       # FRONTEND (TypeScript, strict)
 │   ├── main.ts                # bootstrap / app controller
@@ -226,6 +228,9 @@ toril/
 │   │   └── html-constructs.ts # richer HTML-only schema: callout/details/dl/mark/sub/sup (§6)
 │   ├── ui/
 │   │   ├── sidebar.ts         # file tree
+│   │   ├── panes.ts           # PURE pane state: visibility, widths, rail tab (§13)
+│   │   ├── rail.ts            # the single tabbed right rail (outline | history)
+│   │   ├── resizer.ts         # drag-to-resize: pure geometry + thin DOM binding
 │   │   ├── tabs.ts            # open-document tabs (one shared editor + per-tab buffer)
 │   │   ├── toolbar.ts         # formatting toolbar (commands + active state, §6)
 │   │   ├── theme.ts           # theme preference controller (System/Light/Dark)
@@ -234,7 +239,12 @@ toril/
 │   │   ├── conflictbar.ts     # non-blocking per-tab conflict banner (§5)
 │   │   └── secrets.ts         # API key dialog — write-only, cannot display a key (§5)
 │   ├── export/html.ts         # standalone HTML-document builder (§7)
-│   ├── styles.css             # app chrome + theme CSS variables (per data-theme)
+│   ├── actions.ts             # named actions + double-fire guard (menu ∪ keyboard)
+│   ├── styles.css             # entry point only — @imports the three layers below
+│   ├── styles/
+│   │   ├── tokens.css         # colour/space/size/motion/type — the ONLY place values live
+│   │   ├── chrome.css         # everything around the writing surface
+│   │   └── editor.css         # the writing surface itself
 │   ├── sanitize.ts            # HTML sanitization (§3.3)
 │   ├── sync.ts                # pure external-change policy (no DOM/IPC, §5)
 │   ├── paths.ts               # path containment, for directory-level removal (§5)
@@ -286,7 +296,7 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 | `export_rtf` | `content, defaultName` | `path?` | renders (comrak via `mdrtf`) **and** writes, all in Rust; inert output, no sanitize (§7) |
 | `export_pdf` | `content, theme` | `path` | *(deferred — §7)* |
 | `save_clipboard_image` | `bytes, docPath` | `relative_path` | writes pasted image to `./assets/` (`imgasset`), returns MD-relative path (§6) |
-| `load_settings` / `save_settings` | — / `Settings` | `Settings` / `()` | JSON in app config dir; includes `theme` + `sidebar_visible` |
+| `load_settings` / `save_settings` | — / `Settings` | `Settings` / `()` | JSON in app config dir; includes `theme`, `sidebar_visible`/`sidebar_width`, and `rail_visible`/`rail_width`/`rail_tab`. The legacy `outline_visible`/`history_visible` pair is **read once to migrate** into the rail fields and then never written again — that one-directionality is what stops a stale flag from overriding the migrated state |
 | `save_recovery` | `entries` | `()` | **atomic** write of `recovery.json` in the app config dir — crash-recovery journal (§3) |
 | `load_recovery` | — | `RecoveryEntry[]` | empty on missing/corrupt (never bricks startup) |
 | `clear_recovery` | — | `()` | delete `recovery.json` — the clean-shutdown sentinel |
@@ -476,7 +486,32 @@ Phases 0–3 are complete and Phase 4 (polish) is in progress; the shipped detai
   covered**: it needs a logged-in desktop session and CI's Linux runners have no Secret Service, so
   a test there could only fail or silently skip — and a silently-skipping test reads as coverage
   without being coverage. On-device only.
+- **Pane layout:** `tests/panes.test.ts` + `tests/resizer.test.ts` — the tabbed rail's
+  toggle semantics, the migration off the two-rail era, drag direction per edge, and the
+  rule that no persisted width can make a pane unusable on a smaller screen than the one
+  it was saved on. Note the split that makes this testable: `sidebarWidth`/`railWidth` are
+  the width the user *chose*; what currently fits is derived per render by
+  `effectiveWidths`. Collapsing the two lost the preference the first time a window was
+  briefly narrowed.
+- **Action double-fire:** `tests/actions.test.ts` — `menu.rs` carries real accelerators, so
+  one Ctrl+S arrives twice (menu *and* webview keydown). One dispatcher collapses the pair.
 - Plus `vaultscan`, `imgasset`, `theme`, `statusbar`, `search`, `security`, `tabs` suites.
+
+> **The browser harness.** `dev-harness.html` is `app.html` plus a fake Tauri IPC bridge
+> answering every `invoke` from in-memory fixtures. It boots the real frontend — real
+> `main.ts`, real Milkdown, real stylesheet — in an ordinary browser with **no disk
+> access**, so it can never write a note. Run `pnpm dev` and open
+> `localhost:1420/dev-harness.html`.
+>
+> It exists because all disk I/O already sits behind `invoke()` (§5/§10): one choke point
+> is one seam to fake. It makes a class of check possible that CI never covered — computed
+> touch-target sizes under a coarse pointer, `prefers-reduced-motion` actually zeroing
+> durations, focus rings, keyboard traversal of collapsed panes, layout at four viewport
+> widths. Two real defects were found this way that no unit test would have caught.
+>
+> **Chromium against the harness is a closer proxy for the shipping target than the Linux
+> app is:** Windows renders in WebView2 (Chromium); Linux renders in WebKitGTK.
+> Human-only checks are listed in `docs/ON-DEVICE-VERIFICATION.md`.
 
 **CI runs these automatically** on every pull request and on pushes to `main`
 (`.github/workflows/ci.yml`): `pnpm typecheck` + `pnpm test` + `pnpm build`, and `cargo test` over the
@@ -576,6 +611,61 @@ for the GitHub Release body.
 
 *Pure-Rust (egui) split-pane alternative was considered and rejected: it would trade away the inline
 WYSIWYG feel that is the whole point. Decision is closed.*
+
+---
+
+## 12b. Layout rules — earned, not preferences
+
+Toril renders in **two different engines**: WebView2 (Chromium) on Windows, WebKitGTK on
+Linux. `feat/chrome-ux` produced two overlap bugs that reproduced *only* in WebKitGTK and
+never in Chromium, plus one that silently destroyed persisted state. All three had the same
+shape, so these are rules rather than style notes.
+
+**When two engines can disagree, the layout is under-specified — remove the ambiguity, do
+not tune around it.** Cross-engine bugs cluster wherever the spec permits more than one
+resolution. Chasing the quirk requires an engine you can inspect; removing the freedom does
+not, which matters because the Linux webview here cannot be inspected (§0).
+
+1. **One-dimensional layout uses flex, not grid.** A single-row or single-column grid is a
+   flex line with extra degrees of freedom. Both overlap bugs were grids doing flex's job —
+   `#workspace` (one row of three) and `#main` (one column of five).
+2. **Never leave an implicit track.** A grid declaring only `grid-template-rows` gets an
+   implicit column sized `auto` = `minmax(min-content, max-content)`; engines may resolve
+   that against the container's definite width *or* the content's max-content. A ProseMirror
+   contenteditable has a large max-content, so the second reading grows the column and its
+   children paint over the neighbouring pane.
+3. **`min-width: 0` on anything that must shrink** (`min-height: 0` in a column). A flex or
+   grid item's *automatic minimum size is its content* — without this it refuses to shrink
+   and pushes out over its neighbour. The most common overflow cause by a distance.
+4. **Contain overflow at the scroll container, never the page.** Wide content (tables, code
+   lines) scrolls inside its own pane. Prose carries `overflow-wrap: anywhere` — one pasted
+   URL with no spaces otherwise sets the min-content width of the whole document.
+5. **Never animate around `display: none`** — it cancels transitions. Animate width or
+   transform, and delay `visibility: hidden` by exactly the duration
+   (`visibility 0s linear var(--dur-base)`) to keep the element out of the tab order. Treat
+   `inert` as a semantic bonus, never the only guard, unless verified in *both* engines.
+6. **Derived, never stored.** What *fits* is a function of (the user's choice × the current
+   viewport), recomputed per render — never written back into persisted state. Narrowing the
+   window once used to shrink stored pane widths, widening never restored them, and the next
+   session save wrote the shrunken value over the user's preference. Same discipline governs
+   pane visibility.
+7. **Responsive means dropping content, not shrinking everything.** Below a threshold
+   *derived from the same constants as the pane minimums* (`EXCLUSIVE_BELOW` in `panes.ts`,
+   never a hardcoded breakpoint), show one side pane rather than squeezing both into
+   uselessness. The hidden pane stays open in state and returns when there is room.
+
+**Verifying layout** (§8's harness is what makes this possible):
+
+- **Measure rectangles; do not look at screenshots.** Assert non-overlap
+  (`a.right > b.left`), containment, and that widths sum to the viewport.
+  `scrollWidth > clientWidth` **misses an element painting over another** — it passed green
+  while the overlap bug was live.
+- Sweep widths **including exactly at the threshold and ±1**.
+- Use **adversarial content**: `Wide.md` in the harness (long unbroken URL, wide table, long
+  code line) exists for this. Normal prose proves nothing.
+- **Ask which parts *don't* misbehave.** "The editor menu obeys the boundaries, the text area
+  doesn't" was the entire diagnosis — short chrome rows never exceed the width, so only a
+  large-max-content row could escape. The asymmetry names the cause faster than staring does.
 
 ---
 
