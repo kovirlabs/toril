@@ -34,6 +34,12 @@ importers:
       dompurify:
         specifier: 3.4.12
         version: 3.4.12
+      smol-toml:
+        specifier: 1.8.0
+        version: 1.8.0
+      yaml:
+        specifier: 2.9.0
+        version: 2.9.0
     devDependencies:
       '@tauri-apps/cli':
         specifier: 2.11.2
@@ -46,10 +52,10 @@ importers:
         version: 5.6.3
       vite:
         specifier: 6.4.3
-        version: 6.4.3
+        version: 6.4.3(yaml@2.9.0)
       vitest:
         specifier: 4.1.7
-        version: 4.1.7(jsdom@29.1.1)(vite@6.4.3)
+        version: 4.1.7(jsdom@29.1.1)(vite@6.4.3(yaml@2.9.0))
 
 packages:
 
@@ -1146,6 +1152,10 @@ packages:
     resolution: {integrity: sha512-kUMbT1oBJCpgrnKoSr0o6wPtvRWT9W9UKvGLwfJYO2WuahZRHOpEyL1ckyMGgMWh0UdpmaoFqKKD29WTomNEGA==}
     engines: {node: '>=8'}
 
+  smol-toml@1.8.0:
+    resolution: {integrity: sha512-kCZr2V3ch9i00x8zXRhjUNVcjG9ijES5dDudkXvUVCT5QlJNQWElSJdZqyPemffHoLNUYwOcou0Fy+ojN0uHSQ==}
+    engines: {node: '>= 18'}
+
   source-map-js@1.2.1:
     resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
     engines: {node: '>=0.10.0'}
@@ -1358,6 +1368,11 @@ packages:
 
   xmlchars@2.2.0:
     resolution: {integrity: sha512-JZnDKK8B0RCDw84FNdDAIpZK+JuJw+s7Lz8nksI7SIuU3UXJJslUthsi+uWBUYOwPFwW7W7PRLRfUKpxjtjFCw==}
+
+  yaml@2.9.0:
+    resolution: {integrity: sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA==}
+    engines: {node: '>= 14.6'}
+    hasBin: true
 
   zwitch@2.0.4:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
@@ -2005,13 +2020,13 @@ snapshots:
       chai: 6.2.2
       tinyrainbow: 3.1.0
 
-  '@vitest/mocker@4.1.7(vite@6.4.3)':
+  '@vitest/mocker@4.1.7(vite@6.4.3(yaml@2.9.0))':
     dependencies:
       '@vitest/spy': 4.1.7
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
-      vite: 6.4.3
+      vite: 6.4.3(yaml@2.9.0)
 
   '@vitest/pretty-format@4.1.7':
     dependencies:
@@ -2789,6 +2804,8 @@ snapshots:
     dependencies:
       unicode-emoji-modifier-base: 1.0.0
 
+  smol-toml@1.8.0: {}
+
   source-map-js@1.2.1: {}
 
   stackback@0.0.2: {}
@@ -2882,7 +2899,7 @@ snapshots:
       '@types/unist': 3.0.3
       vfile-message: 4.0.3
 
-  vite@6.4.3:
+  vite@6.4.3(yaml@2.9.0):
     dependencies:
       esbuild: 0.25.12
       fdir: 6.5.0(picomatch@4.0.4)
@@ -2892,11 +2909,12 @@ snapshots:
       tinyglobby: 0.2.16
     optionalDependencies:
       fsevents: 2.3.3
+      yaml: 2.9.0
 
-  vitest@4.1.7(jsdom@29.1.1)(vite@6.4.3):
+  vitest@4.1.7(jsdom@29.1.1)(vite@6.4.3(yaml@2.9.0)):
     dependencies:
       '@vitest/expect': 4.1.7
-      '@vitest/mocker': 4.1.7(vite@6.4.3)
+      '@vitest/mocker': 4.1.7(vite@6.4.3(yaml@2.9.0))
       '@vitest/pretty-format': 4.1.7
       '@vitest/runner': 4.1.7
       '@vitest/snapshot': 4.1.7
@@ -2913,7 +2931,7 @@ snapshots:
       tinyexec: 1.2.2
       tinyglobby: 0.2.16
       tinyrainbow: 3.1.0
-      vite: 6.4.3
+      vite: 6.4.3(yaml@2.9.0)
       why-is-node-running: 2.3.0
     optionalDependencies:
       jsdom: 29.1.1
@@ -2956,5 +2974,7 @@ snapshots:
   xml-name-validator@5.0.0: {}
 
   xmlchars@2.2.0: {}
+
+  yaml@2.9.0: {}
 
   zwitch@2.0.4: {}

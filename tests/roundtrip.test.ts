@@ -25,6 +25,7 @@ import { gfm } from "@milkdown/kit/preset/gfm";
 import { emoji } from "@milkdown/plugin-emoji";
 import { useCanonical } from "../src/editor/canonical";
 import { docToMarkdown } from "../src/editor/serializer";
+import { joinFrontMatter, splitFrontMatter } from "../src/editor/frontmatter";
 
 /** Parse `md` into a real editor doc, then serialize it back to markdown. */
 async function roundtrip(md: string): Promise<string> {
@@ -127,6 +128,49 @@ const normalized: Record<string, [input: string, output: string]> = {
   overIndentedNesting: ["- Parent\n    - Child\n", "- Parent\n  - Child\n"],
 };
 
+// 4. `frontMatter` — WHOLE-FILE round trip, the trip main.ts actually performs:
+//    split the block off, round-trip only the body, rejoin. This is the gate item
+//    CLAUDE.md §8 has carried as "add when front matter lands" since Phase 3.
+//
+//    Before the splitter existed, every one of these files was *corrupted*: with
+//    no front-matter plugin the block parsed as rule/paragraph/list, and a key
+//    after a list value was absorbed as a lazy continuation inside the previous
+//    list item — invalid YAML on reopen, so the property vanished in Obsidian.
+const frontMatterPreserved: Record<string, string> = {
+  obsidianNote: "---\ntitle: My Note\ntags:\n  - alpha\n  - beta\ndraft: true\n---\n\n# Heading\n\nBody.\n",
+  noGapBeforeBody: "---\ntitle: T\n---\n# Heading\n",
+  emptyBlock: "---\n---\n\nBody.\n",
+  severalBlankLinesOfGap: "---\ntitle: T\n---\n\n\n\nBody.\n",
+  // A properties-only note (an Obsidian index/stub) has an EMPTY body, so this
+  // pins that an empty document serializes to "" and adds no stray newline.
+  frontMatterOnly: "---\ntitle: T\ntags:\n  - alpha\n---\n",
+  frontMatterOnlyWithTrailingBlank: "---\ntitle: T\n---\n\n",
+  withBom: `${String.fromCharCode(0xfeff)}---\ntitle: T\n---\n\nBody.\n`,
+  // Blocks no serializer could reproduce still survive: the block is bytes here.
+  yamlComment: "---\n# a comment\ntitle: T\n---\n\nBody.\n",
+  blockScalar: "---\nnote: |\n  line one\n  line two\n---\n\nBody.\n",
+  invalidYaml: "---\n\tbad: [unclosed\n:: nope\n---\n\nBody.\n",
+  toml: '+++\ntitle = "T"\ntags = ["a", "b"]\n+++\n\nBody.\n',
+  json: '{\n  "title": "T"\n}\n\nBody.\n',
+  // A note that opens with a rule is NOT front matter, and must keep behaving as
+  // it did before the splitter existed (the §3 regression `mdhtml` also pins).
+  leadingThematicBreak: "---\n\nBody.\n\n---\n\nEnd.\n",
+  // Tight bullets in the body still survive — the split must not disturb the
+  // `preserved` class's guarantee for the part it does hand to the editor.
+  bodyWithTightList: "---\ntitle: T\n---\n\n- one\n- two\n- three\n",
+};
+
+const frontMatterNormalized: Record<string, [input: string, output: string]> = {
+  // A CRLF note keeps CRLF *inside the block* (it is re-emitted byte-exact) while
+  // the body converts to LF like any other body, so the file ends up mixed. That
+  // is deliberate and strictly better than the alternatives: normalizing the block
+  // would rewrite bytes nobody edited, and YAML/TOML/JSON parsers all accept
+  // either ending. See `crlfLineEndings` above for the body-side rule.
+  crlfNote: ["---\r\ntitle: T\r\n---\r\n\r\n- one\r\n- two\r\n", "---\r\ntitle: T\r\n---\r\n\r\n- one\n- two\n"],
+  // The body still normalizes exactly as it does without a block.
+  bodyNormalization: ["---\ntitle: T\n---\n\n* one\n* two\n", "---\ntitle: T\n---\n\n- one\n- two\n"],
+};
+
 describe("round-trip fidelity (Phase 1 gate)", () => {
   for (const [name, md] of Object.entries(fixtures)) {
     it(`is canonical & stable: ${name}`, async () => {
@@ -162,4 +206,40 @@ describe("round-trip fidelity (Phase 1 gate)", () => {
       expect(await roundtrip(once)).toBe(once); // (2) idempotent — no slow drift
     });
   }
+
+  describe("front matter (whole file)", () => {
+    /** Exactly what main.ts does: split, round-trip the body, rejoin. */
+    async function roundtripFile(file: string): Promise<string> {
+      const split = splitFrontMatter(file);
+      return joinFrontMatter({ ...split, body: await roundtrip(split.body) });
+    }
+
+    for (const [name, file] of Object.entries(frontMatterPreserved)) {
+      it(`preserves the whole file: ${name}`, async () => {
+        const once = await roundtripFile(file);
+        expect(once).toBe(file);
+        expect(await roundtripFile(once)).toBe(once); // idempotent
+      });
+    }
+
+    for (const [name, [input, output]] of Object.entries(frontMatterNormalized)) {
+      it(`normalizes to an exact, stable form: ${name}`, async () => {
+        const once = await roundtripFile(input);
+        expect(once).toBe(output);
+        expect(await roundtripFile(once)).toBe(once);
+      });
+    }
+
+    it("no longer absorbs a trailing key into the previous list item", async () => {
+      // The exact corruption that pulled this branch forward: `draft: true` used
+      // to land nested under `- beta`, which is invalid YAML, so Obsidian dropped
+      // the property on reopen. Asserted on the shape, not just on equality above,
+      // so the reason this class exists cannot be deleted by accident.
+      const file = "---\ntitle: My Note\ntags:\n  - alpha\n  - beta\ndraft: true\n---\n\nBody.\n";
+      expect(await roundtripFile(file)).toBe(file);
+      // And the pre-splitter path still demonstrates the damage, so the fixture
+      // is not merely passing because the input was already canonical markdown.
+      expect(await roundtrip(file)).toContain("  draft: true");
+    });
+  });
 });

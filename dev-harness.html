@@ -25,6 +25,23 @@
         "/vault/Wide.md":
           "# Width stress\n\nA very long unbroken string that cannot wrap:\n\nhttps://example.com/a/very/long/path/that/keeps/going/and/going/without/any/spaces/at/all/to/break/on/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\n| Column one is wide | Column two is also wide | Column three as well | Column four here |\n|---|---|---|---|\n| some content here | more content here | further content | and yet more text |\n\n```\nconst aLongLineOfCode = somethingVeryLong(withArguments, thatKeepGoing, andGoing, andGoingFurtherStill, untilItOverflows);\n```\n",
         "/vault/Notes/Ideas.md": "# Ideas\n\n- Command palette\n- Split view\n",
+        // Front-matter fixtures, one per state the properties strip can be in.
+        // Typed rows: exactly what Obsidian writes.
+        "/vault/Properties.md":
+          "---\ntitle: Properties demo\ntags:\n  - alpha\n  - beta\nstatus: draft\ncount: 3\npublished: 2026-08-17\nsummary:\ndone: false\n---\n\n# Properties demo\n\nEvery row above is typed, and editing one leaves the others' bytes alone.\n",
+        // Raw mode: a comment is something no serializer of ours can reproduce,
+        // so the strip must show the block's own text and say why.
+        "/vault/PropertiesRaw.md":
+          "---\n# Kept by hand, do not reformat\ntitle: Raw demo\nnote: |\n  a block scalar\n  over two lines\nbase: &anchor\n  x: 1\nalias: *anchor\n---\n\n# Raw demo\n\nThe strip should show text, not rows.\n",
+        // TOML and JSON: typed rows too, in their own spelling.
+        "/vault/PropertiesToml.md":
+          '+++\ntitle = "Hugo style"\ntags = ["alpha", "beta"]\ndraft = true\nweight = 3\n+++\n\n# TOML front matter\n\nDelimited with `+++`; edits come back as TOML, not YAML.\n',
+        "/vault/PropertiesJson.md":
+          '{\n  "title": "JSON front matter",\n  "tags": [\n    "alpha"\n  ],\n  "draft": false\n}\n\n# JSON front matter\n\nThe braces are the delimiters.\n',
+        // A properties-only note: the body is empty, which must round-trip.
+        "/vault/PropertiesOnly.md": "---\ntype: index\ntags:\n  - moc\n---\n",
+        // A leading thematic break is NOT front matter — the strip must stay away.
+        "/vault/NotProperties.md": "---\n\nThis note opens with a rule, not properties.\n\n---\n\nAnd has another.\n",
       };
 
       const TREE = [
@@ -45,6 +62,12 @@
             { name: "Toril.md", path: "/vault/Projects/Toril.md", is_dir: false, children: [] },
           ],
         },
+        { name: "NotProperties.md", path: "/vault/NotProperties.md", is_dir: false, children: [] },
+        { name: "Properties.md", path: "/vault/Properties.md", is_dir: false, children: [] },
+        { name: "PropertiesJson.md", path: "/vault/PropertiesJson.md", is_dir: false, children: [] },
+        { name: "PropertiesOnly.md", path: "/vault/PropertiesOnly.md", is_dir: false, children: [] },
+        { name: "PropertiesRaw.md", path: "/vault/PropertiesRaw.md", is_dir: false, children: [] },
+        { name: "PropertiesToml.md", path: "/vault/PropertiesToml.md", is_dir: false, children: [] },
         { name: "Welcome.md", path: "/vault/Welcome.md", is_dir: false, children: [] },
         { name: "Wide.md", path: "/vault/Wide.md", is_dir: false, children: [] },
       ];
@@ -60,6 +83,7 @@
         rail_visible: true,
         rail_width: 260,
         rail_tab: "outline",
+        properties_expanded: true,
         outline_visible: null,
         history_visible: null,
         autosave: false,

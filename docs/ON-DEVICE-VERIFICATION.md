@@ -119,6 +119,44 @@ Design: [`docs/superpowers/specs/2026-08-12-ui-ux-chrome-rework-design.md`](./su
 - [ ] **A10 — Reduced motion.** Turn on Windows' *Show animations* → off. All pane and
       rail motion should become instant, with no layout breakage.
 
+## C. Front-matter properties (`feat/frontmatter-properties`, 2026-08-17)
+
+Step 6 of the design spec, and **none of it has been run in a window** — the browser
+harness was unreachable this session (extension site permissions), so the strip's
+rendered layout is unverified in either engine. The logic underneath it is gated
+(`frontmatter`, `frontmatter-values`, `properties`, and the `frontMatter` class in
+`roundtrip`); what follows is what those gates structurally cannot see.
+
+- [ ] **C1 — A real vault note survives.** Open a note with properties from a live
+      Obsidian vault, edit the *body* only, save, and confirm in Obsidian that the
+      properties block is **byte-identical** (diff the file, don't eyeball it). Repeat
+      with a note whose block Toril shows as raw (a comment or an anchor in it) — that
+      is the case where an unnoticed rewrite would be worst.
+- [ ] **C2 — A property edit marks the tab dirty and reaches disk.** Change one
+      property, confirm the title shows the unsaved marker, save, reopen. This is the
+      `loadEcho` interaction: the echo is armed with the whole file, so a block-only
+      change must NOT be mistaken for a load echo. If it were, the edit would silently
+      never be saved — and `main.ts` wiring has no test harness (§8).
+- [ ] **C3 — Layout, measured not eyeballed** (§12b). At several window widths
+      including the pane threshold ±1: the strip must not overlap the editor, the
+      editor must stay inside `#main`, and the page must not scroll sideways — with
+      `Wide.md` open, and with a note carrying ~30 properties (the strip caps at a
+      third of the column and scrolls internally; confirm it actually does). Use
+      `getBoundingClientRect`, not screenshots: overlap does not show up in
+      `scrollWidth`.
+- [ ] **C4 — Both engines.** The strip is new chrome in the `#main` flex column, which
+      is precisely where `feat/chrome-ux` found two WebKitGTK-only overlap bugs. Check
+      Windows (WebView2) *and* the Linux build, or at minimum Chromium against
+      `dev-harness.html`, which ships fixtures for every strip state
+      (`Properties.md`, `PropertiesRaw.md`, `PropertiesToml.md`, `PropertiesJson.md`,
+      `PropertiesOnly.md`, `NotProperties.md`).
+- [ ] **C5 — Keyboard and focus.** Tab through the rows; confirm focus returns to the
+      control just edited after the re-render, that a collapsed strip is not
+      tab-reachable, and that the collapse state survives a restart.
+- [ ] **C6 — Export still excludes the block.** Export a note with properties to HTML
+      and RTF; the properties must not appear in the output. Export no longer relies on
+      comrak stripping them, so this is a genuinely new path.
+
 ## B. Standing items (pre-existing, not from this branch)
 
 - [ ] **B1 — HTML as a first-class format.** Open a real AI-authored `.html` artifact,

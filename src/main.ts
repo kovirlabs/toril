@@ -8,6 +8,8 @@ import type { Editor } from "@milkdown/kit/core";
 import { createEditor } from "./editor/milkdown";
 import { docToMarkdown, markdownToDoc } from "./editor/serializer";
 import { docToHtml, htmlToDoc } from "./editor/html-serializer";
+import type { FrontMatter, SplitFile } from "./editor/frontmatter";
+import { joinFrontMatter, splitFrontMatter } from "./editor/frontmatter";
 import { LoadEcho } from "./editor/loadecho";
 import { buildStandaloneHtml } from "./export/html";
 import { sanitizeHtml } from "./sanitize";
@@ -56,6 +58,7 @@ import {
   selectSavable,
 } from "./sync";
 import { ConflictBar } from "./ui/conflictbar";
+import { PropertiesStrip } from "./ui/properties";
 import { History } from "./ui/history";
 import { Outline } from "./ui/outline";
 import {
@@ -98,6 +101,9 @@ let searchBar: SearchBar | null = null;
 let conflictBar: ConflictBar | null = null;
 let autosave: AutosaveScheduler | null = null;
 let autosaveEnabled = false;
+let properties: PropertiesStrip | null = null;
+/** Persisted collapse state for the properties strip; `true` is the default. */
+let propertiesExpanded = true;
 let autosaveDebounceMs = 2000;
 let theme: ThemeController | null = null;
 
@@ -141,23 +147,71 @@ function updateTitle(): void {
   sidebar.setActivePath(tab?.path ?? null);
 }
 
+/**
+ * The BOM and front-matter block of the document currently in the editor, held
+ * aside so they never become ProseMirror content (§3 — with no front-matter
+ * plugin, a YAML block parses as rule/paragraph/list and a trailing key is
+ * absorbed into the previous list item, silently invalidating it).
+ *
+ * Only the *live* document needs this. There is one shared editor, and every
+ * `serializeEditor` call is for whatever `loadIntoEditor` last put in it — the
+ * call sites that name a non-active tab are all guarded by an `active()` check —
+ * so this mirrors the editor the same way `editor` itself is a single instance.
+ * Nothing per-tab is stored on purpose: `tab.content` remains the *whole file*,
+ * so re-activating a tab simply re-splits it, and merge, snapshots, recovery,
+ * session and export keep operating on complete bytes.
+ */
+let liveSplit: SplitFile = { bom: "", frontMatter: null, body: "" };
+
+/**
+ * A property edit is an edit to the document, and takes exactly the path an
+ * editor keystroke does — dirty flag, autosave, recovery journal, status bar.
+ * The strip owns no state that survives this: the block it hands back replaces
+ * `liveSplit`'s, and `serializeEditor` rejoins it on the next read.
+ */
+function onPropertiesChange(next: FrontMatter | null): void {
+  liveSplit = { ...liveSplit, frontMatter: next };
+  onEditorChange();
+}
+
 // Format-aware bridges to the two canonical serializers (§3.2). The active tab's
 // `format` decides which one runs; everything else (tabs, save, session) is shared.
 function loadIntoEditor(content: string, format: DocFormat): void {
   loading = true;
-  if (format === "html") htmlToDoc(editor, content);
-  else markdownToDoc(editor, content);
+  if (format === "html") {
+    // Front matter is a markdown-file concept; an `.html` document has none, and
+    // the strip stays hidden for those tabs.
+    liveSplit = { bom: "", frontMatter: null, body: content };
+    htmlToDoc(editor, content);
+  } else {
+    liveSplit = splitFrontMatter(content);
+    markdownToDoc(editor, liveSplit.body);
+  }
+  // The strip mirrors whatever is in the editor, including "nothing to show".
+  properties?.setDocument(liveSplit.frontMatter, format !== "html");
   loading = false;
   // `loading` only covers a *synchronous* notification. Milkdown's listener is
   // debounced 200ms, so the notification for this load lands well after the flag
   // closes — `loadEcho` is what actually keeps a load from marking the tab dirty
   // (see src/editor/loadecho.ts).
+  //
+  // Armed with `serializeEditor`, the WHOLE file — the same function the echo
+  // check calls — so the two sides cannot drift apart. Arming with the body
+  // instead would be the bug it looks like a shortcut for: a property edit
+  // changes the block and not the body, so its notification would compare equal
+  // and be dismissed as a load echo, and the edit would never mark the tab dirty
+  // or reach autosave. This ordering matters too — `liveSplit` is already set
+  // above, so the block is part of what gets armed.
   loadEcho.arm(serializeEditor(format));
 }
 
-/** Serialize the live editor into the given format's canonical string. */
+/**
+ * Serialize the live editor into the given format's canonical string — the whole
+ * file, front matter rejoined byte-exact.
+ */
 function serializeEditor(format: DocFormat): string {
-  return format === "html" ? docToHtml(editor) : docToMarkdown(editor);
+  if (format === "html") return docToHtml(editor);
+  return joinFrontMatter({ ...liveSplit, body: docToMarkdown(editor) });
 }
 
 /** Map a file path's extension to its canonical editor format. */
@@ -666,6 +720,11 @@ async function doExportHtml(): Promise<void> {
   const tab = tabs.active();
   if (!tab) return;
   try {
+    // Deliberately the editor's markdown, not `serializeEditor` — that would
+    // rejoin the front matter, and an export wants the rendered document. This
+    // used to rely on comrak stripping the block (`opens_with_front_matter` in
+    // `mdhtml`); now the block never reaches it, and that guard is the parity
+    // partner of the splitter rather than the mechanism (§7).
     const markdown = docToMarkdown(editor);
     const dirty = await markdownToHtml(markdown); // untrusted comrak output
     const safe = sanitizeHtml(dirty); // §3.3 chokepoint — before it hits a file
@@ -688,6 +747,7 @@ async function doExportRtf(): Promise<void> {
   const tab = tabs.active();
   if (!tab) return;
   try {
+    // Body only, like HTML export above: the block is no longer in the editor.
     const markdown = docToMarkdown(editor);
     const title = tab.name.replace(/\.(md|markdown)$/i, "");
     const path = await exportRtf(markdown, `${title || "untitled"}.rtf`);
@@ -1080,6 +1140,7 @@ function scheduleSessionSave(): void {
       // the migration in `restorePaneState` cannot fire a second time.
       outline_visible: null,
       history_visible: null,
+      properties_expanded: propertiesExpanded,
       autosave: autosaveEnabled,
       autosave_debounce_ms: autosaveDebounceMs,
     };
@@ -1111,6 +1172,12 @@ async function restoreSession(): Promise<void> {
   // persisting: restoring is not a user edit, and writing back immediately would
   // make a clamp permanent for the wider screen too.
   setPanes(restorePaneState(settings, window.innerWidth), false);
+  if (settings.properties_expanded !== null) {
+    propertiesExpanded = settings.properties_expanded;
+    // Applied without persisting, like the pane widths above: restoring is not a
+    // user edit (§12b, "derived, never stored").
+    properties?.setExpanded(propertiesExpanded);
+  }
   if (settings.autosave !== null) autosaveEnabled = settings.autosave;
   if (settings.autosave_debounce_ms !== null) autosaveDebounceMs = settings.autosave_debounce_ms;
   autosave?.setConfig({ enabled: autosaveEnabled, debounceMs: autosaveDebounceMs });
@@ -1321,6 +1388,24 @@ window.addEventListener("DOMContentLoaded", async () => {
   // belongs above the document, not inside the surface that scrolls away.
   const conflictEl = document.querySelector<HTMLElement>("#conflictbar");
   if (conflictEl) conflictBar = new ConflictBar(conflictEl);
+
+  // Above the writing surface, below the banner: front matter reads as the top
+  // of the document, and the strip never touches the doc, the tab, or disk — it
+  // hands back a complete block and this file decides what that means.
+  const propertiesEl = document.querySelector<HTMLElement>("#properties");
+  if (propertiesEl) {
+    properties = new PropertiesStrip(
+      propertiesEl,
+      {
+        onChange: onPropertiesChange,
+        onToggleExpanded: (expanded) => {
+          propertiesExpanded = expanded;
+          scheduleSessionSave();
+        },
+      },
+      propertiesExpanded,
+    );
+  }
 
   autosave = new AutosaveScheduler(
     {

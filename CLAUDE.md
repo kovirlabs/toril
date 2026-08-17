@@ -30,8 +30,9 @@ the feature-by-feature record.
 - **Math (KaTeX)** — the only Milkdown math plugin (`@milkdown/plugin-math`) is npm-**deprecated**, so
   it's omitted per the healthy-dependency rule (§2). Revisit when a maintained option appears. The
   round-trip gate stays CommonMark + GFM + emoji until then.
-- **YAML front matter** — not yet guaranteed lossless; comrak handles it on export only. Add its
-  fixtures to `roundtrip.test.ts` when in-editor handling lands.
+- **Front-matter format conversion** (YAML ⇄ TOML ⇄ JSON) — deliberately *never* automatic; converting
+  on save would be exactly the unrequested rewrite the branch exists to stop. An explicit action, later.
+  Also outstanding: **on-device verification** of the properties strip (design step 6).
 - **PDF export** — deferred (§7); HTML export → browser "Save as PDF" is the manual path.
 - **Source / Typewriter / Focus edit modes** — *dropped as low-value* (user decision, 2026-05-26), not
   deferred-pending. Revisit only on explicit demand.
@@ -79,6 +80,40 @@ marks and `<div class="callout">`, `<details>`/`<summary>`, `<dl>`/`<dt>`/`<dd>`
   is cleanly normalized.
 - **Identity note:** HTML as first-class is a deliberate expansion of the "plain `.md`,
   Obsidian-compatible" pitch (§1) — keep that trade-off in mind.
+
+**Front matter is no longer corrupted — `feat/frontmatter-properties`, steps 1–2 of
+`docs/superpowers/specs/2026-08-17-frontmatter-properties-design.md`.** It used to be: with no
+front-matter plugin, an Obsidian block parsed as thematic break → paragraph → bullet list → thematic
+break, and a key *after* a list value was absorbed as a lazy continuation inside the previous list item
+(`draft: true` nested under `- beta`) — invalid YAML, so the property vanished when the note was
+reopened in Obsidian. A §3 data-safety bug, not the "not yet lossless" caveat this file used to carry,
+and no fixture covered it.
+
+Front matter is **not markdown**, so it is split off at the load/serialize boundary rather than modelled
+as a Milkdown node: `src/editor/frontmatter.ts` (YAML `---`, TOML `+++`, JSON `{`) hands the editor only
+the body, and `serializeEditor` rejoins the block **byte-exact**. It is edited in a collapsible strip
+above the writing surface (`src/ui/properties.ts` + `#properties` in `app.html`), which shows **typed
+rows** for a block that survives parse → re-serialize → compare and **raw text plus the reason** for
+anything else — `src/editor/frontmatter-values.ts`, the only place a parser runs. All three formats get
+typed rows, each written in **its own** spelling: `yaml` with options tuned (`nullStr: ""` so an
+unfilled `key:` survives, `lineWidth: 0` so a long value is not folded), TOML through a hand-written
+emitter (`smol-toml` parses, but its `stringify` pads arrays as `[ "a", "b" ]`, which no real Hugo file
+matches), and JSON as `JSON.stringify(…, null, 2)`. Empty text is format-dependent: YAML's `key:`,
+`""` for TOML (which has no null) and JSON. One exclusion the check itself would have allowed is
+deliberate: a **multi-line value** re-serializes exactly, but a single-line row would eat the newlines.
+Editing yaml's `parseDocument` AST was rejected — it preserves comments and quoting, but mutating one
+value *relocates* a standalone comment, an unrequested rewrite of untouched bytes. `tab.content` stays the whole file, so
+merge, snapshots, recovery, session and export are untouched — the split lives inside `loadIntoEditor`
+/ `serializeEditor` and a module-level `liveSplit` mirroring the single shared editor. Two rules carry
+the safety: `join(split(x)) === x` for every input including unparseable blocks, and typed editing (step
+4) will only be offered for a block that survives parse → re-serialize → compare, which fails *closed*
+for comments, anchors and block scalars without enumerating them. Consequences worth knowing: the block
+keeps its own line endings, so a CRLF note ends up mixed (block CRLF, body LF — pinned as
+`frontMatterNormalized.crlfNote`); a BOM is now held out of the document instead of entering it as
+content; word count no longer includes front matter; and export gets the body directly rather than
+relying on comrak's `opens_with_front_matter` to strip it — that guard is now the splitter's **parity
+partner**, so the TS and Rust rules must change together (probed, not assumed: comrak also requires a
+closing `---` and rejects `...`; both pinned in `mdhtml` *and* `mdrtf`).
 
 Implementation notes for whoever resumes (learned the hard way): Milkdown `$markSchema`/`$nodeSchema`
 *require* `toMarkdown`+`parseMarkdown`; `SerializerState` renders children via `state.next(node.content)`
@@ -147,6 +182,7 @@ Primary target: **Windows `.exe`**. macOS/Linux come free from the stack but are
 | Source-mode editor | **CodeMirror 6** | (Only if Source mode returns — currently dropped, §0/§8) |
 | Frontend build | **Vite + TypeScript** (strict) | Dev server + bundling |
 | MD parsing (Rust) | **comrak** | CommonMark + GFM for HTML/RTF export and any backend parsing |
+| Front-matter parsing (TS) | **`yaml`** (eemeli), **`smol-toml`** | Reading a block into typed properties; both zero-dependency, both vetted per the healthy-dependency rule. JSON needs nothing |
 
 **Pin every dependency** (Cargo.lock committed; exact versions in package.json). Upgrade deliberately.
 
@@ -296,7 +332,7 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 | `export_rtf` | `content, defaultName` | `path?` | renders (comrak via `mdrtf`) **and** writes, all in Rust; inert output, no sanitize (§7) |
 | `export_pdf` | `content, theme` | `path` | *(deferred — §7)* |
 | `save_clipboard_image` | `bytes, docPath` | `relative_path` | writes pasted image to `./assets/` (`imgasset`), returns MD-relative path (§6) |
-| `load_settings` / `save_settings` | — / `Settings` | `Settings` / `()` | JSON in app config dir; includes `theme`, `sidebar_visible`/`sidebar_width`, and `rail_visible`/`rail_width`/`rail_tab`. The legacy `outline_visible`/`history_visible` pair is **read once to migrate** into the rail fields and then never written again — that one-directionality is what stops a stale flag from overriding the migrated state |
+| `load_settings` / `save_settings` | — / `Settings` | `Settings` / `()` | JSON in app config dir; includes `theme`, `sidebar_visible`/`sidebar_width`, `rail_visible`/`rail_width`/`rail_tab`, and `properties_expanded` (the front-matter strip's collapse state; `null` ⇒ expanded). The legacy `outline_visible`/`history_visible` pair is **read once to migrate** into the rail fields and then never written again — that one-directionality is what stops a stale flag from overriding the migrated state |
 | `save_recovery` | `entries` | `()` | **atomic** write of `recovery.json` in the app config dir — crash-recovery journal (§3) |
 | `load_recovery` | — | `RecoveryEntry[]` | empty on missing/corrupt (never bricks startup) |
 | `clear_recovery` | — | `()` | delete `recovery.json` — the clean-shutdown sentinel |
@@ -421,7 +457,7 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 | Emoji shortcodes | `@milkdown/plugin-emoji` |
 | Inline / slash shortcuts | `@milkdown/plugin-slash` + keymap config |
 | Formatting toolbar | `toolbar.ts` → Milkdown commands via `callCommand` (the few command-less items use a plain ProseMirror transaction); **never inserts raw markdown text** (§3.2). Buttons reflect active state via `activeState()`. The pure command layer is exported separately from the DOM so the gate tests it headlessly. *Underline omitted by design* (no markdown form). *Front-matter button deferred* (not lossless yet). |
-| Front matter | comrak handles on export; in-editor handling deferred |
+| Front matter | **Not a Milkdown plugin, by design** — `src/editor/frontmatter.ts` splits the block off at the load/serialize boundary so it never enters the ProseMirror doc (§3). Edited in `src/ui/properties.ts`, a collapsible strip above the writing surface: typed rows for a block that provably re-serializes byte-exact, raw text for anything else |
 | Source / Typewriter / Focus modes | **Dropped as low-value** (§0/§8); Source mode would use CodeMirror 6, both backed by `serializer.ts` |
 | Themes | `theme.ts` writes `html[data-theme]`; colors are CSS variables in `styles.css`; persisted in settings |
 | Clipboard image paste | `$prose` `handlePaste` in `milkdown.ts` → `save_clipboard_image` writes to `assets/` (`imgasset`, content-hashed for dedup) → inserted as a canonical image node (not raw text, §3.2). Requires a saved doc. |
@@ -462,8 +498,20 @@ Phases 0–3 are complete and Phase 4 (polish) is in progress; the shipped detai
 - **Round-trip:** `tests/roundtrip.test.ts` — real Milkdown in jsdom, built through
   `canonical.ts` so the gate tests the canon that ships. Three classes: `fixtures`
   (canonical input is stable), `preserved` (human/Obsidian-authored input is **not**
-  rewritten), `normalized` (what we do rewrite, pinned to exact output). Add math +
-  front-matter fixtures when those land (§3.2).
+  rewritten), `normalized` (what we do rewrite, pinned to exact output), and
+  `frontMatter` (**whole-file** trip — split, round-trip the body, rejoin — the class
+  that pins the §3 front-matter fix, including blocks no serializer could reproduce).
+  Add math fixtures if math ever lands (§3.2). Plus `tests/frontmatter.test.ts`, the
+  splitter's own gate: `join(split(x)) === x` over fixtures *and* 2000 randomized
+  documents, detection per format, and the Rust-parity cases mirrored in
+  `mdhtml`/`mdrtf`.
+- **Front-matter properties:** `tests/frontmatter-values.test.ts` — Obsidian's own
+  writes come back as typed rows (the feature is useless otherwise), and everything
+  we would *reformat* lands in raw mode instead: comments, anchors, flow sequences,
+  quoting styles, mixed-type lists. `tests/properties.test.ts` — the strip reports a
+  complete block, refuses a duplicate-key rename (which would delete a property),
+  keeps a CRLF or padded fence byte-exact, restores focus across the re-render an
+  edit causes, and never reports a change for merely being shown.
 - **Toolbar round-trip:** `tests/toolbar.test.ts` — each command yields the same canonical markdown as
   typing the syntax, and asserts **no raw-markdown-text insertion** (§3.2).
 - **Export:** `cargo test -p mdhtml -p mdrtf` (render configs) + `tests/export.test.ts` (builder + the
