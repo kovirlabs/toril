@@ -11,6 +11,33 @@ GitHub Release notes plus the commits that shipped in it.
 
 ## [Unreleased]
 
+### Fixed
+- **Front matter is no longer corrupted.** A note that opens with a `---` properties
+  block — every Obsidian note with properties — used to be damaged by open→edit→save.
+  With no front-matter support in the editor, the block was read as ordinary markdown
+  (a rule, a paragraph, a bullet list), and a key written *after* a list value was
+  absorbed into that list: `draft: true` ended up nested under `- beta`, which is not
+  valid YAML, so the property silently disappeared when the note was reopened in
+  Obsidian. Front matter is now split off before the editor ever sees it and written
+  back **byte-for-byte**, including blocks Toril cannot parse.
+
+  A block keeps its own line endings, so a Windows-authored note's properties are no
+  longer rewritten. A UTF-8 byte-order mark is preserved instead of becoming part of
+  the document. Word count no longer counts front matter.
+
+### Added
+- **A properties strip above the editor.** Front matter is shown and edited in a
+  collapsible band at the top of the document, in Obsidian's shape: one row per
+  property, with the right control for its type (text, list, number, checkbox, date).
+  YAML (`---`), TOML (`+++`) and JSON are all supported, and each is written back in
+  **its own** syntax — Toril never converts a document's format behind your back.
+
+  **Typed rows are only offered for a block Toril can prove it can put back**: it
+  parses the block, writes it out again, and compares. If the two differ by so much
+  as a byte — a comment, an anchor, an unusual quoting style — the strip shows the
+  block as **text** instead, with the reason, and every byte stays editable. So a
+  hand-tuned block is never quietly reformatted to make it fit a form.
+
 ### Changed
 - **Canonical markdown now matches Obsidian.** Toril writes `-` bullets and `---`
   thematic breaks, and no longer converts tight lists to loose ones — a Milkdown
