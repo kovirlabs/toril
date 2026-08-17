@@ -11,6 +11,18 @@ GitHub Release notes plus the commits that shipped in it.
 
 ## [Unreleased]
 
+## [v1.0.0] — 2026-08-17
+
+**Toril leaves beta.** Same promise as always: your notes are plain `.md` (and
+`.html`) files in ordinary folders, and nothing here changes that. This release is
+mostly about the two ways Toril could still touch a file you had not edited — front
+matter, and merely *opening* a note — both of which are now closed.
+
+> **Known unverified:** the properties strip has not yet been driven in a real
+> window. Its logic is covered by the test suite, but its rendered layout and the
+> save path behind it are on the open checklist in
+> `docs/ON-DEVICE-VERIFICATION.md` (section C).
+
 ### Fixed
 - **Front matter is no longer corrupted.** A note that opens with a `---` properties
   block — every Obsidian note with properties — used to be damaged by open→edit→save.
