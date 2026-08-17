@@ -65,12 +65,20 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "Toril ${{ github.ref_name }}"
           releaseBody: |
-            Alpha build of Toril — a WYSIWYG markdown editor on Tauri + Rust.
+            Toril — a WYSIWYG markdown editor on Tauri + Rust. Your notes stay plain
+            `.md` and `.html` files in ordinary folders.
 
-            Download the installer for your platform from the assets below.
-            This is an early alpha: expect rough edges, and back up your notes.
+            **What changed in this release: see [CHANGELOG.md](https://github.com/kovirlabs/toril/blob/main/CHANGELOG.md)**,
+            which is the source of truth for these notes (CLAUDE.md §9/§10).
+
+            Download the installer for your platform from the assets below. Back up
+            anything important, as with any editor.
 
             Windows: SmartScreen will warn on first run (the build is unsigned) — that is expected.
           releaseDraft: false
-          prerelease: true
+          # Derived from the tag rather than hardcoded: a semver pre-release always
+          # carries a hyphen (`v1.1.0-beta.1`), a final release never does. This was
+          # pinned to `true` through the alpha/beta series, which would have published
+          # v1.0.0 itself as a prerelease labelled "early alpha".
+          prerelease: ${{ contains(github.ref_name, '-') }}
           args: ${{ matrix.args }}
