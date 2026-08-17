@@ -33,9 +33,11 @@
         // so the strip must show the block's own text and say why.
         "/vault/PropertiesRaw.md":
           "---\n# Kept by hand, do not reformat\ntitle: Raw demo\nnote: |\n  a block scalar\n  over two lines\nbase: &anchor\n  x: 1\nalias: *anchor\n---\n\n# Raw demo\n\nThe strip should show text, not rows.\n",
-        // TOML: recognised, badge says so, raw until step 5 of the design.
+        // TOML and JSON: typed rows too, in their own spelling.
         "/vault/PropertiesToml.md":
-          '+++\ntitle = "Hugo style"\ntags = ["alpha", "beta"]\n+++\n\n# TOML front matter\n\nDelimited with `+++`.\n',
+          '+++\ntitle = "Hugo style"\ntags = ["alpha", "beta"]\ndraft = true\nweight = 3\n+++\n\n# TOML front matter\n\nDelimited with `+++`; edits come back as TOML, not YAML.\n',
+        "/vault/PropertiesJson.md":
+          '{\n  "title": "JSON front matter",\n  "tags": [\n    "alpha"\n  ],\n  "draft": false\n}\n\n# JSON front matter\n\nThe braces are the delimiters.\n',
         // A properties-only note: the body is empty, which must round-trip.
         "/vault/PropertiesOnly.md": "---\ntype: index\ntags:\n  - moc\n---\n",
         // A leading thematic break is NOT front matter — the strip must stay away.
@@ -62,6 +64,7 @@
         },
         { name: "NotProperties.md", path: "/vault/NotProperties.md", is_dir: false, children: [] },
         { name: "Properties.md", path: "/vault/Properties.md", is_dir: false, children: [] },
+        { name: "PropertiesJson.md", path: "/vault/PropertiesJson.md", is_dir: false, children: [] },
         { name: "PropertiesOnly.md", path: "/vault/PropertiesOnly.md", is_dir: false, children: [] },
         { name: "PropertiesRaw.md", path: "/vault/PropertiesRaw.md", is_dir: false, children: [] },
         { name: "PropertiesToml.md", path: "/vault/PropertiesToml.md", is_dir: false, children: [] },

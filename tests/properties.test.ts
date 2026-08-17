@@ -85,6 +85,21 @@ describe("PropertiesStrip", () => {
       expect(box?.checked).toBe(true);
     });
 
+    it("renders typed rows for TOML and JSON too, badged with the format", () => {
+      const { host, strip, changes } = mount();
+      strip.setDocument(block('+++\ntitle = "T"\ntags = ["a", "b"]\n+++\n'), true);
+      expect(host.querySelector(".properties-badge")?.textContent).toBe("TOML");
+      type(valueInput(host, 0), "T2");
+      // Edited through TOML's own spelling, not YAML's.
+      expect(changes.at(-1)?.text).toBe('+++\ntitle = "T2"\ntags = ["a", "b"]\n+++\n');
+
+      const json = mount();
+      json.strip.setDocument(block('{\n  "title": "T"\n}\n'), true);
+      expect(json.host.querySelector(".properties-badge")?.textContent).toBe("JSON");
+      type(valueInput(json.host, 0), "T2");
+      expect(json.changes.at(-1)?.text).toBe('{\n  "title": "T2"\n}\n');
+    });
+
     it("is hidden entirely for a format with no front matter (.html tabs)", () => {
       const { host, strip } = mount();
       strip.setDocument(null, false);

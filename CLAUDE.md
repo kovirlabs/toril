@@ -30,10 +30,9 @@ the feature-by-feature record.
 - **Math (KaTeX)** — the only Milkdown math plugin (`@milkdown/plugin-math`) is npm-**deprecated**, so
   it's omitted per the healthy-dependency rule (§2). Revisit when a maintained option appears. The
   round-trip gate stays CommonMark + GFM + emoji until then.
-- **Typed editing for TOML and JSON front matter** — both formats are detected, split off, preserved
-  byte-exact and shown in the strip, but only YAML gets typed rows; the other two show raw mode
-  (design step 5). Also unshipped: **format conversion** between the three, deliberately never
-  automatic, and **on-device verification** of the strip (design step 6).
+- **Front-matter format conversion** (YAML ⇄ TOML ⇄ JSON) — deliberately *never* automatic; converting
+  on save would be exactly the unrequested rewrite the branch exists to stop. An explicit action, later.
+  Also outstanding: **on-device verification** of the properties strip (design step 6).
 - **PDF export** — deferred (§7); HTML export → browser "Save as PDF" is the manual path.
 - **Source / Typewriter / Focus edit modes** — *dropped as low-value* (user decision, 2026-05-26), not
   deferred-pending. Revisit only on explicit demand.
@@ -95,12 +94,15 @@ as a Milkdown node: `src/editor/frontmatter.ts` (YAML `---`, TOML `+++`, JSON `{
 the body, and `serializeEditor` rejoins the block **byte-exact**. It is edited in a collapsible strip
 above the writing surface (`src/ui/properties.ts` + `#properties` in `app.html`), which shows **typed
 rows** for a block that survives parse → re-serialize → compare and **raw text plus the reason** for
-anything else — `src/editor/frontmatter-values.ts`, the only place a parser runs, with `yaml`'s options
-tuned (`nullStr: ""`, `lineWidth: 0`) until Obsidian's own writes pass. Note two deliberate exclusions
-that the check itself would have allowed: a **multi-line value** (a single-line row would eat the
-newlines) and **TOML/JSON typed rows** (step 5). Editing yaml's `parseDocument` AST was rejected —
-it preserves comments and quoting, but mutating one value *relocates* a standalone comment, an
-unrequested rewrite of untouched bytes. `tab.content` stays the whole file, so
+anything else — `src/editor/frontmatter-values.ts`, the only place a parser runs. All three formats get
+typed rows, each written in **its own** spelling: `yaml` with options tuned (`nullStr: ""` so an
+unfilled `key:` survives, `lineWidth: 0` so a long value is not folded), TOML through a hand-written
+emitter (`smol-toml` parses, but its `stringify` pads arrays as `[ "a", "b" ]`, which no real Hugo file
+matches), and JSON as `JSON.stringify(…, null, 2)`. Empty text is format-dependent: YAML's `key:`,
+`""` for TOML (which has no null) and JSON. One exclusion the check itself would have allowed is
+deliberate: a **multi-line value** re-serializes exactly, but a single-line row would eat the newlines.
+Editing yaml's `parseDocument` AST was rejected — it preserves comments and quoting, but mutating one
+value *relocates* a standalone comment, an unrequested rewrite of untouched bytes. `tab.content` stays the whole file, so
 merge, snapshots, recovery, session and export are untouched — the split lives inside `loadIntoEditor`
 / `serializeEditor` and a module-level `liveSplit` mirroring the single shared editor. Two rules carry
 the safety: `join(split(x)) === x` for every input including unparseable blocks, and typed editing (step
@@ -180,6 +182,7 @@ Primary target: **Windows `.exe`**. macOS/Linux come free from the stack but are
 | Source-mode editor | **CodeMirror 6** | (Only if Source mode returns — currently dropped, §0/§8) |
 | Frontend build | **Vite + TypeScript** (strict) | Dev server + bundling |
 | MD parsing (Rust) | **comrak** | CommonMark + GFM for HTML/RTF export and any backend parsing |
+| Front-matter parsing (TS) | **`yaml`** (eemeli), **`smol-toml`** | Reading a block into typed properties; both zero-dependency, both vetted per the healthy-dependency rule. JSON needs nothing |
 
 **Pin every dependency** (Cargo.lock committed; exact versions in package.json). Upgrade deliberately.
 

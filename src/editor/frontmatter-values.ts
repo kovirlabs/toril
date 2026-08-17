@@ -21,7 +21,8 @@
 // class of damage this branch exists to stop. The canonical compare below cannot
 // do that, because it only ever accepts blocks that are *already* in the form it
 // writes.
-import { parse, stringify } from "yaml";
+import { parse as parseToml } from "smol-toml";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { FrontMatter, FrontMatterFormat } from "./frontmatter";
 
 export type PropertyValue =
@@ -67,6 +68,13 @@ const DATETIME = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?$/;
 
 /** Classify one parsed value, or `null` when it has no representable type. */
 function classify(value: unknown): PropertyValue | null {
+  // TOML has real date literals, and `smol-toml` returns a `TomlDate` (a `Date`
+  // subclass) for them. `toISOString` is the TOML-faithful spelling — but only
+  // for a date-only literal: a local datetime comes back with `.000`
+  // milliseconds the source did not have, so it re-serializes differently and
+  // the check drops that block to raw mode. Deliberate: the alternative is
+  // guessing which of several equivalent spellings the author used.
+  if (value instanceof Date) return classify(value.toISOString());
   if (typeof value === "boolean") return { kind: "checkbox", value };
   if (typeof value === "number") {
     return Number.isFinite(value) ? { kind: "number", value } : null;
@@ -96,19 +104,23 @@ function classify(value: unknown): PropertyValue | null {
   return null; // nested map, date object, anything else
 }
 
-/** The plain JS value a `PropertyValue` serializes from. */
-function toPlain(value: PropertyValue): unknown {
-  // See `classify`: "" is the unset property, written by `nullStr` as `key:`.
-  if (value.kind === "text" && value.value === "") return null;
+/**
+ * The plain JS value a `PropertyValue` serializes from.
+ *
+ * Empty text is the one format-dependent case. YAML writes it as the unset
+ * property `key:` (see `YAML_OUT.nullStr`), which is what Obsidian writes.
+ * **TOML has no null at all**, and JSON's `null` is a different value from an
+ * empty string, so both write `""` — a JSON source spelling it `null` therefore
+ * re-serializes differently and lands in raw mode, which is correct: we have no
+ * way to put `null` back.
+ */
+function toPlain(value: PropertyValue, format: FrontMatterFormat): unknown {
+  if (value.kind === "text" && value.value === "" && format === "yaml") return null;
   return value.value;
 }
 
-/** The block payload (no delimiters) for a set of properties. */
-export function serializeInner(properties: Property[], format: FrontMatterFormat): string {
-  if (format !== "yaml") {
-    throw new Error(`serializeInner: ${format} is not supported yet`);
-  }
-  if (properties.length === 0) return "";
+/** Properties as a plain object, rejecting the duplicate keys that lose data. */
+function toRecord(properties: Property[], format: FrontMatterFormat): Record<string, unknown> {
   const plain: Record<string, unknown> = {};
   for (const { key, value } of properties) {
     // A duplicate key would overwrite the earlier property and the block would
@@ -118,17 +130,92 @@ export function serializeInner(properties: Property[], format: FrontMatterFormat
     if (Object.prototype.hasOwnProperty.call(plain, key)) {
       throw new Error(`serializeInner: duplicate property "${key}"`);
     }
-    plain[key] = toPlain(value);
+    plain[key] = toPlain(value, format);
   }
-  return stringify(plain, YAML_OUT);
+  return plain;
+}
+
+/**
+ * A TOML bare key where the syntax allows one, quoted otherwise.
+ * `JSON.stringify` is a sound emitter for TOML basic strings: the escapes TOML
+ * accepts (`\"`, `\\`, `\b\t\n\f\r`, `\uXXXX`) are a superset of what it emits.
+ */
+function tomlKey(key: string): string {
+  return /^[A-Za-z0-9_-]+$/.test(key) ? key : JSON.stringify(key);
+}
+
+function tomlValue(value: PropertyValue): string {
+  switch (value.kind) {
+    case "text":
+      // No `nullStr` equivalent: TOML has no null, so empty text is `""`.
+      return JSON.stringify(value.value);
+    case "number":
+      return String(value.value);
+    case "checkbox":
+      return value.value ? "true" : "false";
+    // Bare TOML date/time literals, unquoted. A source that quoted them parses
+    // as a string, re-serializes bare, and so falls to raw mode.
+    case "date":
+    case "datetime":
+      return value.value;
+    case "list":
+      return value.value.length === 0 ? "[]" : `[${value.value.map((v) => JSON.stringify(v)).join(", ")}]`;
+  }
+}
+
+/**
+ * Hand-written rather than `smol-toml`'s `stringify`, which pads arrays as
+ * `[ "a", "b" ]`. Hugo and every TOML writer we care about produce
+ * `["a", "b"]`, so its output would fail the reversibility check on nearly every
+ * real Hugo file — the same reason `YAML_OUT` exists. `smol-toml` is still the
+ * *parser*; this only decides our canonical spelling, and the check is what makes
+ * a wrong choice here a raw-mode block rather than a corrupted one.
+ */
+function tomlInner(properties: Property[]): string {
+  toRecord(properties, "toml"); // duplicate-key check
+  return properties.map(({ key, value }) => `${tomlKey(key)} = ${tomlValue(value)}\n`).join("");
+}
+
+/** The block payload (no delimiters, except JSON's own braces). */
+export function serializeInner(properties: Property[], format: FrontMatterFormat): string {
+  switch (format) {
+    case "yaml":
+      return properties.length === 0 ? "" : stringifyYaml(toRecord(properties, "yaml"), YAML_OUT);
+    case "toml":
+      return tomlInner(properties);
+    case "json":
+      // Two-space indent, the shape Hugo and every formatter write.
+      return JSON.stringify(toRecord(properties, "json"), null, 2);
+  }
 }
 
 /** A complete block — delimiters included — for a set of properties. */
 export function buildBlock(properties: Property[], format: FrontMatterFormat): string {
-  if (format !== "yaml") {
-    throw new Error(`buildBlock: ${format} is not supported yet`);
+  const inner = serializeInner(properties, format);
+  switch (format) {
+    case "yaml":
+      return `---\n${inner}---\n`;
+    case "toml":
+      return `+++\n${inner}+++\n`;
+    case "json":
+      // JSON's delimiters ARE the payload's braces, so the block is the object
+      // plus the line ending that closed it.
+      return `${inner}\n`;
   }
-  return `---\n${serializeInner(properties, format)}---\n`;
+}
+
+/** Parse a block's payload with the parser for its format. Throws on bad input. */
+function parseBlock(fm: FrontMatter): unknown {
+  switch (fm.format) {
+    case "yaml":
+      return parseYaml(fm.inner);
+    case "toml":
+      return parseToml(fm.inner);
+    case "json":
+      // An empty JSON block is not a thing (`{}` is the empty one), so a blank
+      // payload throws here and lands in raw mode rather than pretending.
+      return JSON.parse(fm.inner);
+  }
 }
 
 /**
@@ -138,20 +225,17 @@ export function buildBlock(properties: Property[], format: FrontMatterFormat): s
  * ORIGINAL text. Only a block that survives all four is editable.
  */
 export function readProperties(fm: FrontMatter): PropertyView {
-  if (fm.format !== "yaml") {
-    return { mode: "raw", reason: `${fm.format.toUpperCase()} properties are shown as text for now` };
-  }
-
   let parsed: unknown;
   try {
-    parsed = parse(fm.inner);
+    parsed = parseBlock(fm);
   } catch {
-    // Duplicate keys land here too — `yaml` rejects them, and so should we.
-    return { mode: "raw", reason: "this block is not valid YAML" };
+    // Duplicate keys land here too — every one of the three parsers rejects
+    // them, and so should we.
+    return { mode: "raw", reason: `this block is not valid ${fm.format.toUpperCase()}` };
   }
 
   // An empty block is zero properties, not an unreadable one — the strip shows
-  // an empty list and (from step 4) an Add property button.
+  // an empty list and an Add property button.
   if (parsed === null || parsed === undefined) {
     return fm.inner.trim() === ""
       ? { mode: "typed", properties: [] }
@@ -173,7 +257,15 @@ export function readProperties(fm: FrontMatter): PropertyView {
   // THE CHECK. Equal means this exact text is what our serializer produces, so
   // writing it back after an edit cannot reformat anything the user did not
   // touch. Unequal means we would rewrite bytes on save — raw mode instead.
-  if (serializeInner(properties, "yaml") !== fm.inner) {
+  let rebuilt: string;
+  try {
+    rebuilt = serializeInner(properties, fm.format);
+  } catch {
+    // A duplicate key the parser tolerated (or any emitter refusal) is a reason
+    // to show text, not to throw at the caller rendering a document.
+    return { mode: "raw", reason: "Toril cannot write this block back safely" };
+  }
+  if (rebuilt !== fm.inner) {
     return { mode: "raw", reason: "Toril would have to reformat this block to edit it" };
   }
 

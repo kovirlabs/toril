@@ -121,28 +121,112 @@ describe("readProperties", () => {
       expect(v.mode === "raw" && v.reason).toBe("Toril would have to reformat this block to edit it");
     });
 
-    it("defers TOML and JSON to step 5 rather than mistyping them", () => {
-      expect(view('+++\ntitle = "T"\n+++\n').mode).toBe("raw");
-      expect(view('{\n  "title": "T"\n}\n').mode).toBe("raw");
+  });
+
+  describe("TOML", () => {
+    it("reads a Hugo block as typed rows", () => {
+      expect(typed('+++\ntitle = "Hugo style"\ntags = ["alpha", "beta"]\ndraft = true\ncount = 3\n+++\n')).toEqual([
+        { key: "title", value: { kind: "text", value: "Hugo style" } },
+        { key: "tags", value: { kind: "list", value: ["alpha", "beta"] } },
+        { key: "draft", value: { kind: "checkbox", value: true } },
+        { key: "count", value: { kind: "number", value: 3 } },
+      ]);
     });
+
+    it("reads a bare date literal as a date", () => {
+      expect(typed("+++\nday = 2026-08-17\n+++\n")).toEqual([
+        { key: "day", value: { kind: "date", value: "2026-08-17" } },
+      ]);
+    });
+
+    it("rebuilds a block byte-exact", () => {
+      const file = '+++\ntitle = "T"\ntags = ["a", "b"]\nempty = ""\nlist = []\n+++\n';
+      expect(buildBlock(typed(file), "toml")).toBe(splitFrontMatter(file).frontMatter!.text);
+    });
+
+    it("keeps an empty value as \"\", because TOML has no null", () => {
+      expect(serializeInner([{ key: "a", value: { kind: "text", value: "" } }], "toml")).toBe('a = ""\n');
+    });
+
+    it("quotes a key the syntax cannot leave bare", () => {
+      expect(serializeInner([{ key: "a b", value: { kind: "text", value: "v" } }], "toml")).toBe('"a b" = "v"\n');
+    });
+
+    const TOML_RAW: ReadonlyArray<readonly [string, string]> = [
+      // A local datetime comes back with `.000` milliseconds the source lacked.
+      ["a local datetime", "+++\nat = 2026-08-17T14:32:05\n+++\n"],
+      ["a nested table", "+++\n[params]\nx = 1\n+++\n"],
+      ["a padded array", '+++\ntags = [ "a", "b" ]\n+++\n'],
+      ["a multi-line array", '+++\ntags = [\n  "a",\n  "b",\n]\n+++\n'],
+      ["a quoted date", '+++\nday = "2026-08-17"\n+++\n'],
+      ["a comment", '+++\n# note\ntitle = "T"\n+++\n'],
+      ["invalid TOML", "+++\nnot = = toml\n+++\n"],
+    ];
+
+    for (const [name, file] of TOML_RAW) {
+      it(`falls to raw mode for ${name}`, () => {
+        expect(view(file).mode).toBe("raw");
+      });
+    }
+  });
+
+  describe("JSON", () => {
+    it("reads a two-space block as typed rows", () => {
+      expect(typed('{\n  "title": "T",\n  "tags": [\n    "a",\n    "b"\n  ],\n  "draft": true\n}\n')).toEqual([
+        { key: "title", value: { kind: "text", value: "T" } },
+        { key: "tags", value: { kind: "list", value: ["a", "b"] } },
+        { key: "draft", value: { kind: "checkbox", value: true } },
+      ]);
+    });
+
+    it("rebuilds a block byte-exact, braces and all", () => {
+      const file = '{\n  "title": "T",\n  "count": 3\n}\n';
+      expect(buildBlock(typed(file), "json")).toBe(splitFrontMatter(file).frontMatter!.text);
+    });
+
+    it("writes an empty value as \"\", never null", () => {
+      // `null` and "" are different values in JSON, so a source spelling it
+      // `null` re-serializes differently and lands in raw mode — we have no way
+      // to put `null` back.
+      expect(serializeInner([{ key: "a", value: { kind: "text", value: "" } }], "json")).toBe('{\n  "a": ""\n}');
+      expect(view('{\n  "a": null\n}\n').mode).toBe("raw");
+    });
+
+    const JSON_RAW: ReadonlyArray<readonly [string, string]> = [
+      ["a minified block", '{"title":"T"}\n'],
+      ["four-space indent", '{\n    "title": "T"\n}\n'],
+      ["a nested object", '{\n  "meta": {\n    "x": 1\n  }\n}\n'],
+      ["invalid JSON", '{\n  "title": ,\n}\n'],
+    ];
+
+    for (const [name, file] of JSON_RAW) {
+      it(`falls to raw mode for ${name}`, () => {
+        expect(view(file).mode).toBe("raw");
+      });
+    }
   });
 
   describe("the check is exact, not approximate", () => {
     // If `readProperties` returns typed rows, then writing those rows back must
     // reproduce the block byte-for-byte. Anything less means an edit to one
-    // property silently rewrites another.
+    // property silently rewrites another. One list per format, since each has
+    // its own emitter and its own canonical spelling.
     const EDITABLE = [
       "---\ntitle: My Note\ntags:\n  - alpha\n  - beta\ndraft: true\n---\n",
       "---\nsummary:\n---\n",
       "---\ncount: 42\nday: 2026-08-17\n---\n",
       "---\ncssclasses: []\n---\n",
       "---\n---\n",
+      '+++\ntitle = "T"\ntags = ["a", "b"]\ndraft = false\n+++\n',
+      "+++\n+++\n",
+      '{\n  "title": "T",\n  "tags": [\n    "a"\n  ]\n}\n',
+      "{}\n",
     ];
 
     for (const file of EDITABLE) {
       it(`rebuilds ${JSON.stringify(file)} byte-exact`, () => {
         const fm = splitFrontMatter(file).frontMatter!;
-        expect(buildBlock(typed(file), "yaml")).toBe(fm.text);
+        expect(buildBlock(typed(file), fm.format)).toBe(fm.text);
       });
     }
   });
@@ -165,9 +249,20 @@ describe("readProperties", () => {
       expect(out.trimEnd()).toBe('a: "b: c"');
     });
 
-    it("refuses formats it cannot write yet, rather than writing YAML into them", () => {
-      expect(() => serializeInner([], "toml")).toThrow();
-      expect(() => buildBlock([], "json")).toThrow();
+    it("refuses a duplicate key in every format, rather than dropping one", () => {
+      const dupes: Property[] = [
+        { key: "a", value: { kind: "text", value: "1" } },
+        { key: "a", value: { kind: "text", value: "2" } },
+      ];
+      expect(() => serializeInner(dupes, "yaml")).toThrow(/duplicate/);
+      expect(() => serializeInner(dupes, "toml")).toThrow(/duplicate/);
+      expect(() => serializeInner(dupes, "json")).toThrow(/duplicate/);
+    });
+
+    it("writes an empty block per format", () => {
+      expect(buildBlock([], "yaml")).toBe("---\n---\n");
+      expect(buildBlock([], "toml")).toBe("+++\n+++\n");
+      expect(buildBlock([], "json")).toBe("{}\n");
     });
   });
 });
