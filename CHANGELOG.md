@@ -11,6 +11,22 @@ GitHub Release notes plus the commits that shipped in it.
 
 ## [Unreleased]
 
+### Fixed
+- **Opening a note no longer marks it as edited.** Every document — an opened file,
+  a restored session tab, even a brand-new empty one — was flagged unsaved the
+  moment it loaded, without a keystroke. Milkdown's change listener is debounced by
+  200ms upstream, so the "we are loading" guard around a programmatic load had
+  already closed by the time the notification arrived.
+
+  This was not cosmetic. It made the close prompt ask about files nobody had
+  touched, filled the crash-recovery journal with unedited buffers, and — **with
+  autosave on — rewrote every note you merely opened**, applying canonical
+  formatting (line endings, list style, front matter) to files you never edited.
+  Loads are now told apart from edits by comparing content rather than racing a
+  timer. Found by driving the app on Windows for the first time; the gate that
+  would have caught it (`tests/loadecho.test.ts`) now exists, and it waits past the
+  debounce, which no previous test did.
+
 ### Changed
 - **Canonical markdown now matches Obsidian.** Toril writes `-` bullets and `---`
   thematic breaks, and no longer converts tight lists to loose ones — a Milkdown
