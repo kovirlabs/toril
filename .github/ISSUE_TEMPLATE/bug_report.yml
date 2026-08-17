@@ -42,7 +42,7 @@ body:
     attributes:
       label: Toril version
       description: Help → About, or the release you installed. If you built from source, give the commit.
-      placeholder: "v1.0.0-beta.1"
+      placeholder: "v1.0.0"
     validations:
       required: true
 

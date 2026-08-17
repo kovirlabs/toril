@@ -46,26 +46,33 @@ It is a fine **editor**. It is not yet a **notes system** — no global search, 
 quick switcher, no links, no tags, no version history, no sync conflict handling,
 no AI. That gap is this roadmap.
 
-> **Status (2026-07-25).** The foundation above — plus file-association / double-click
-> open — shipped through **`v1.0.0-beta.1`** (see `CHANGELOG.md`). **Movement I,
-> branches 1–4 are complete** (autosave + crash-recovery journal; safe-delete-to-trash;
-> local version history; sync coexistence — 3-way merge, conflict banner, parked
-> conflict copies). Branch 5 and Movements II–V are unstarted.
-> **▶ Pick up at Movement I, branch 5 — `feat/release-readiness`.** No design spec
-> exists for it yet; write one before starting. Branch 4's spec lived
+> **Status (2026-08-17).** Shipped through **`v1.0.0`** (see `CHANGELOG.md`).
+> **Movement I, branches 1–4 are complete** (autosave + crash-recovery journal;
+> safe-delete-to-trash; local version history; sync coexistence — 3-way merge, conflict
+> banner, parked conflict copies). Branch 5 is unstarted. From Movement II, **branch 11
+> (outline panel) and branch 10 (front-matter properties)** have landed — 10 out of
+> order, because front matter was being *corrupted* rather than merely unsupported,
+> which made it a §3 fix rather than a convenience.
+> **▶ Pick up at Movement II, branch 6 — `feat/vault-search`.** It is the largest
+> remaining gap, and branch 7 (command palette) depends on it. Vet `tantivy` per §2 at
+> adoption — it would be the project's largest new dependency. Branch 4's spec lived
 > **on its own branch**, not on `main`:
-> `docs/superpowers/specs/2026-07-24-sync-coexistence-design.md`.
+> `docs/superpowers/specs/2026-07-24-sync-coexistence-design.md`; branch 10's is on
+> `main` at `docs/superpowers/specs/2026-08-17-frontmatter-properties-design.md`.
 >
 > *Landed since, outside the movement ladder:* a serializer-normalization precursor
 > (canonical markdown now matches Obsidian — `-` bullets, `---` rules, tight lists
 > preserved), which exists to keep branch 4's 3-way merge from drowning in
-> reformatting noise; CI running the headless gates on Ubuntu and Windows for every
-> pull request; and the GitHub community-standards docs.
+> reformatting noise; the chrome/layout rework (CLAUDE.md §12b); a fix for programmatic
+> loads marking every document dirty; CI running the headless gates on Ubuntu and
+> Windows for every pull request; and the GitHub community-standards docs.
 >
-> *Version note:* the `v1.0.0-beta.1` tag ran **ahead** of the indicative ladder in §2
-> (that ladder is guidance, not gospel). Movement I is not finished, so the project is
-> functionally pre-`v0.2` despite the tag — keep §3's trust-before-reach rule in mind
-> before leaning on the version number.
+> *Version note, and read it before leaning on the number:* `v1.0.0` says the editor and
+> its data-safety floor are ready to depend on — **not** that this roadmap is finished.
+> Movement I branch 5 and most of Movement II remain, so a 1.0 user still has no vault
+> search, quick switcher, links, or tags. The indicative ladder in §2 is guidance, not
+> gospel, and the tag has run ahead of it twice now; §3's trust-before-reach rule still
+> governs what may be *reached* from the UI, regardless of version.
 
 ---
 
@@ -251,10 +258,18 @@ editor something you keep using rather than something you tried.
      for `#tag`; `src/ui/tags.ts`.
    - *Gate:* tag-index test in `linkgraph` + round-trip fixture.
 
-- [ ] **10. `feat/frontmatter-properties`** — edit YAML front matter as a friendly key/value
-    panel; **closes the deferred front-matter round-trip gate.**
-    - *Touches:* `serializer.ts` (front-matter handling), `src/ui/properties.ts`.
-    - *Gate:* front-matter fixtures **added to `roundtrip.test.ts`** (the §0 to-do).
+- [x] **10. `feat/frontmatter-properties`** — *(shipped in `v1.0.0`, pulled forward: front
+    matter was being **corrupted**, not merely unsupported.)* A collapsible properties
+    strip above the editor, typed rows where the block provably re-serializes byte-exact
+    and raw text otherwise; YAML, TOML and JSON. **Closed the deferred front-matter
+    round-trip gate.**
+    - *Built:* `src/editor/frontmatter.ts` (the splitter — front matter never enters the
+      ProseMirror doc, so `serializer.ts` was left alone), `frontmatter-values.ts`,
+      `src/ui/properties.ts`.
+    - *Gate:* the `frontMatter` class in `roundtrip.test.ts` (the §0 to-do) +
+      `frontmatter`, `frontmatter-values` and `properties` suites.
+    - *Open:* on-device verification (`docs/ON-DEVICE-VERIFICATION.md` §C), and format
+      conversion between the three, deliberately never automatic.
 
 - [x] **11. `feat/outline-panel`** — heading outline / TOC; click to scroll. Cheap, pure
     frontend (was §13 backlog).

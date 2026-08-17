@@ -6,16 +6,13 @@ notes are plain files on your own disk. That shapes the threat model below.
 
 ## Supported Versions
 
-Toril is pre-1.0 (currently **`v1.0.0-beta.1`**). Security fixes land on the latest
-release and `main` only; there are no maintained back-release branches yet.
+Toril is at **`v1.0.0`**. Security fixes land on the latest release and `main`
+only; there are no maintained back-release branches.
 
 | Version | Supported |
 | ------- | --------- |
-| Latest release (`v1.0.0-beta.x`) + `main` | :white_check_mark: |
+| Latest release (`v1.0.x`) + `main` | :white_check_mark: |
 | Any older release | :x: |
-
-When Toril reaches a stable `1.0`, this table will move to a real
-supported-versions policy.
 
 ## Reporting a Vulnerability
 
