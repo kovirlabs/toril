@@ -21,7 +21,17 @@ matter, and merely *opening* a note — both of which are now closed.
 > **Known unverified:** the properties strip has not yet been driven in a real
 > window. Its logic is covered by the test suite, but its rendered layout and the
 > save path behind it are on the open checklist in
-> `docs/ON-DEVICE-VERIFICATION.md` (section C).
+> `docs/ON-DEVICE-VERIFICATION.md` (section C). The MSI below has likewise never
+> been built — it was impossible to bundle before this version.
+
+### Packaging
+- **A Windows `.msi` is published alongside the `.exe`.** Windows Installer only
+  accepts numeric versions, so a beta tag literally could not be bundled as MSI;
+  `1.0.0` can. **Take the `.exe` unless you are deploying centrally** — the two
+  install differently on purpose. The `.exe` (NSIS) installs per-user with no
+  administrator prompt; the `.msi` installs per-machine into `Program Files`, so it
+  prompts for administrator and serves every account on the PC, which is what Group
+  Policy and Intune deployments want.
 
 ### Fixed
 - **Front matter is no longer corrupted.** A note that opens with a `---` properties

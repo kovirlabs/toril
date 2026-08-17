@@ -25,7 +25,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "app", "dmg", "deb", "rpm", "appimage"],
+    "targets": ["nsis", "msi", "app", "dmg", "deb", "rpm", "appimage"],
     "windows": {
       "webviewInstallMode": { "type": "downloadBootstrapper" },
       "nsis": { "installMode": "currentUser" }

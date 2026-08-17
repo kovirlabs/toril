@@ -606,11 +606,21 @@ Output: `src-tauri/target/release/` (raw `.exe`) and `…/bundle/` (NSIS install
 > the repo going red. Writing them down converts an assumption into a contract. Verified on-device
 > (bundling is outside every headless gate).
 
-> **MSI is intentionally excluded.** Windows Installer versions are 4-part numeric and only accept a
-> *numeric* pre-release field, so a semver tag like `1.0.0-beta.1` cannot be bundled as MSI — it fails
-> with `optional pre-release identifier in app version must be numeric-only …`. NSIS handles
-> pre-release versions (and file associations + the WebView2 bootstrapper) fine, so it is the sole
-> Windows installer. Revisit MSI only for a final numeric release (`x.y.z`, no `-beta`/`-rc`).
+> **MSI is included as of `v1.0.0`, and NSIS remains the recommended installer.** MSI was excluded
+> through the alpha/beta series for a hard reason: Windows Installer versions are 4-part numeric and
+> accept only a *numeric* pre-release field, so `1.0.0-beta.1` could not be bundled at all (it fails
+> with `optional pre-release identifier in app version must be numeric-only …`). A final numeric
+> version removes that block, which is why this was the release to revisit it.
+>
+> **The two installers do not install the same way, and the README must keep saying so.** NSIS is
+> configured `installMode: "currentUser"` — per-user, into `%LOCALAPPDATA%\Toril`, no UAC prompt. Tauri's
+> WiX bundler has no per-user equivalent: the MSI installs **per-machine** and therefore **does** prompt
+> for administrator. So the per-user, no-admin-prompt guarantee is a statement about the NSIS installer
+> specifically, not about "installing Toril". MSI exists for the case it is actually good at — deploying
+> to several machines with Group Policy / Intune, where per-machine is what you want.
+>
+> **Any tag carrying a pre-release suffix must drop `msi` from `targets` again**, or the Windows leg of
+> the release build fails outright on the version-parse error above.
 
 Code signing is optional for personal use; without it, Windows SmartScreen warns on first run —
 expected, not a bug.

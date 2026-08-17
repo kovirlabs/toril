@@ -71,6 +71,7 @@ Installers are on the
 | Platform | Download |
 |---|---|
 | **Windows** | [`Toril_1.0.0_x64-setup.exe`](https://github.com/kovirlabs/toril/releases/download/v1.0.0/Toril_1.0.0_x64-setup.exe) |
+| **Windows** (MSI, for IT deployment) | [`Toril_1.0.0_x64_en-US.msi`](https://github.com/kovirlabs/toril/releases/download/v1.0.0/Toril_1.0.0_x64_en-US.msi) |
 | **macOS** (Apple Silicon) | [`Toril_1.0.0_aarch64.dmg`](https://github.com/kovirlabs/toril/releases/download/v1.0.0/Toril_1.0.0_aarch64.dmg) |
 | **macOS** (Intel) | [`Toril_1.0.0_x64.dmg`](https://github.com/kovirlabs/toril/releases/download/v1.0.0/Toril_1.0.0_x64.dmg) |
 | **Linux** (AppImage) | [`Toril_1.0.0_amd64.AppImage`](https://github.com/kovirlabs/toril/releases/download/v1.0.0/Toril_1.0.0_amd64.AppImage) |
@@ -91,6 +92,12 @@ prompt. It copies the app into `%LOCALAPPDATA%\Toril`, adds a Start Menu entry,
 offers a Desktop shortcut during setup, and registers in **Apps & features** for
 clean uninstallation. Because the install is per-user, other accounts on the same
 PC will not see Toril.
+
+> **Which Windows download?** Take the `.exe` — that is the one described above.
+> The `.msi` exists for deploying Toril across several machines (Group Policy,
+> Intune, `msiexec /i`), and it behaves differently on purpose: it installs
+> **per-machine** into `Program Files`, so it **does** prompt for administrator and
+> the app is available to every account on the PC.
 
 **4. Get past the unsigned-build warning.** The build is not code-signed, so
 Windows objects on first run. Which warning you get depends on your settings:
