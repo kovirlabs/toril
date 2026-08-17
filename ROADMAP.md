@@ -49,8 +49,9 @@ no AI. That gap is this roadmap.
 > **Status (2026-08-17).** Shipped through **`v1.0.0`** (see `CHANGELOG.md`).
 > **Movement I, branches 1–4 are complete** (autosave + crash-recovery journal;
 > safe-delete-to-trash; local version history; sync coexistence — 3-way merge, conflict
-> banner, parked conflict copies). **Branch 5's update half has landed** on
-> `feat/release-readiness`; its QoL half and Azure signing remain. From Movement II,
+> banner, parked conflict copies). **Branch 5 has landed** on `feat/release-readiness` —
+> self-update, window state and the QoL batch — leaving only Azure Trusted Signing, which
+> is blocked on provisioning an account rather than on code. From Movement II,
 > **branch 11 (outline panel) and branch 10 (front-matter properties)** have landed — 10
 > out of order, because front matter was being *corrupted* rather than merely unsupported,
 > which made it a §3 fix rather than a convenience.
@@ -62,8 +63,9 @@ no AI. That gap is this roadmap.
 > after it, so the next feature could not have reached anyone. §7's *trust before reach*
 > is what settles the order. Read the pointer below as the ordering, not the ladder.
 >
-> **▶ Pick up at branch 5's QoL half, then Movement II, branch 6 —
-> `feat/vault-search`.** Search is the largest remaining functional gap, and branch 7
+> **▶ Pick up at Movement II, branch 6 — `feat/vault-search`.** (Branch 5 is done bar
+> Azure signing, which is blocked on an account, not on code.)
+> Search is the largest remaining functional gap, and branch 7
 > (command palette) depends on it. Vet `tantivy` per §2 at
 > adoption — it would be the project's largest new dependency. Branch 4's spec lived
 > **on its own branch**, not on `main`:
@@ -221,9 +223,14 @@ nice in a synced folder. This movement is also the prerequisite for the AI wedge
      - **Blocked on one manual step:** generate the minisign keypair, paste the public
        half into `plugins.updater.pubkey`, add the private half as a repo secret. Until
        then the updater is present but keyless.
-   - [ ] *QoL half (not started).* Editor zoom (`Ctrl +/-/0`); recent-files MRU;
-     open-links-in-browser; drag-drop `.md` to open; a real **first-run / empty-state**
-     (welcome note + "open a folder").
+   - [x] *QoL half (2026-08-17).* Editor zoom (`Ctrl +/-/0`, a fixed ladder so it cannot
+     drift — `src/zoom.ts`); recent-files MRU in File → Open Recent (`src/recent.ts` +
+     `set_recent_files`, which rebuilds the native menu); open-links-in-browser on
+     Ctrl-click behind a three-scheme allowlist (`src/links.ts` — a §3.3 boundary, since
+     the OS shell is not sandboxed the way the webview is); drag-drop to open, filtered
+     by `paths.selectOpenable`; and a real **first-run welcome note** distinct from the
+     empty state (`src/welcome.ts`), which is itself a round-trip fixture — it claims
+     Toril doesn't rewrite your files, so it has to survive its own first save.
    - [ ] *Azure Trusted Signing.* Wiring done (`tauri.signing.conf.json` overlay, applied
      in CI only when `AZURE_*` secrets exist, so a fork still builds). Needs an account and
      an identity validation that takes business days — then update the placeholder account

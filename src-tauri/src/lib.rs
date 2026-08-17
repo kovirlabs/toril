@@ -64,6 +64,7 @@ pub fn run() {
         // Remember where the window was and how big it was. Presentational
         // only — it writes its own file in the app config dir, never the vault.
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_opener::init())
         .menu(menu::build)
         .on_menu_event(menu::on_event)
         .manage(launch_path)
@@ -97,6 +98,7 @@ pub fn run() {
             commands::secrets::clear_api_key,
             commands::secrets::has_api_key,
             commands::secrets::list_api_keys,
+            menu::set_recent_files,
             take_launch_path,
         ])
         .run(tauri::generate_context!())

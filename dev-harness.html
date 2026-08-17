@@ -125,6 +125,9 @@
             : { available: false },
         "plugin:updater|download_and_install": () => null,
         "plugin:process|restart": () => null,
+        "plugin:opener|open_url": () => null,
+        // Rebuilds the native menu, which the harness does not have.
+        set_recent_files: () => null,
         load_settings: () => SETTINGS,
         save_settings: () => null,
         load_recovery: () => [],

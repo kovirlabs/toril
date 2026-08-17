@@ -5,6 +5,14 @@ import type { FileNode } from "../ipc";
 
 export interface SidebarCallbacks {
   onOpenFile(path: string): void;
+  /**
+   * Open a folder from the empty state.
+   *
+   * Optional so the sidebar stays constructible without it, but when it is
+   * absent the empty state falls back to text — a dead button that looks live
+   * is worse than a sentence.
+   */
+  onOpenFolder?(): void;
 }
 
 export class Sidebar {
@@ -18,10 +26,35 @@ export class Sidebar {
     this.container.replaceChildren();
 
     if (rootName === null) {
+      // An empty state that only *names* the emptiness leaves the user to find
+      // the menu; the fix for "no folder open" belongs next to the message.
+      const wrap = document.createElement("div");
+      wrap.className = "sidebar-empty";
+
       const hint = document.createElement("p");
-      hint.className = "sidebar-empty";
-      hint.textContent = "No folder open";
-      this.container.append(hint);
+      hint.className = "sidebar-empty-text";
+      hint.textContent = "No folder open.";
+      wrap.append(hint);
+
+      if (this.cb.onOpenFolder) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "sidebar-empty-btn";
+        btn.textContent = "Open Folder…";
+        btn.addEventListener("click", () => this.cb.onOpenFolder?.());
+        wrap.append(btn);
+
+        const note = document.createElement("p");
+        note.className = "sidebar-empty-note";
+        // Worth saying once, here: the folder is the user's, not Toril's. It is
+        // the single most load-bearing promise in §1 and the empty state is the
+        // moment someone is deciding whether to point it at a real vault.
+        note.textContent =
+          "Pick any folder of notes — including an Obsidian vault. Files stay plain Markdown where they are.";
+        wrap.append(note);
+      }
+
+      this.container.append(wrap);
       return;
     }
 

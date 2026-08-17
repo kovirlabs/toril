@@ -188,6 +188,28 @@ that a signed artifact downloads, verifies and replaces a running binary.
 - [ ] **D6 — Window state.** Move and resize the window, quit, relaunch: size, position
       and maximized state should return. Then relaunch on a machine with **fewer or
       smaller monitors** and confirm the window is not restored off-screen.
+- [ ] **D8 — Zoom, and the two shortcuts that usually don't work.** `Ctrl+-` and `Ctrl+0`
+      are unambiguous; `Ctrl+Plus` is not — check `Ctrl+Shift+=`, `Ctrl+=` and the numeric
+      keypad's `+` all zoom in, in WebView2 *and* through the native accelerator. Confirm
+      the chrome does **not** scale, and that the level survives a restart.
+- [ ] **D9 — Open Recent.** Open several notes, confirm the File submenu lists them
+      newest-first by file name and that reopening one moves it rather than duplicating
+      it. Then delete a listed file on disk and pick it: it must report the failure and
+      remove itself. The menu is rebuilt wholesale from Rust — watch for flicker or a
+      lost menu on Linux.
+- [ ] **D10 — Link opening, including the refusals.** Ctrl-click an `https://` link: it
+      opens in the default browser, and Toril does not navigate. Then author a note
+      containing `file:///C:/Windows/System32/cmd.exe` and `javascript:alert(1)` and
+      Ctrl-click both — **nothing must launch**, and the status bar should say it was
+      refused. `tests/links.test.ts` gates the rule; only a device proves the rule is
+      the thing actually consulted.
+- [ ] **D11 — Drag and drop.** Drop a `.md`, a folder, and a mixed selection including a
+      `.png`. Notes open, the rest is skipped and counted. Native drag-drop is a
+      per-platform path with no headless coverage at all.
+- [ ] **D12 — First run really is first.** With no `session.json`, launch: the welcome
+      note appears. Save it somewhere and diff — it must be **byte-identical**, which is
+      the claim its own second paragraph makes. Then quit and relaunch: a returning user
+      gets a blank page, not the tour again.
 - [ ] **D7 — The check is quiet when it should be.** With no network, launch: nothing
       appears. Ask via Help → Check for Updates: it says it could not check. That
       asymmetry is the whole design and is easy to regress.

@@ -28,6 +28,24 @@ GitHub Release notes plus the commits that shipped in it.
 - **The window remembers where it was.** Size, position and maximized state come back
   the way you left them.
 
+- **Zoom the writing surface** with `Ctrl` and `+` / `-` / `0`. It scales the text and
+  the measure, not the tab bar — your display scaling already handles the whole UI, and
+  a bigger tab bar is not what anyone wants at 11pm.
+
+- **File → Open Recent** lists the last ten notes you opened. An entry that no longer
+  resolves removes itself rather than failing twice.
+
+- **Ctrl-click a link** to open it in your browser. Only web and email links are handed
+  to the system — a note can come from anywhere, and the rest of what a URL can name is
+  not something an editor should hand to your operating system on a click.
+
+- **Drop notes on the window to open them.** `.md`, `.markdown`, `.html` and `.htm`;
+  anything else in the same drop is skipped and counted.
+
+- **A real welcome note on first run**, and a blank page on every later launch with
+  nothing to restore — the two used to be the same two-line stub. With no folder open,
+  the files pane now offers to open one instead of only saying that none is.
+
 ### Notes
 - Updates are cryptographically signed, and an installed Toril refuses one that does not
   verify. Setting that up is a one-time step for whoever cuts releases — see

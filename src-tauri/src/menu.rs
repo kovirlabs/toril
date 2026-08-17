@@ -36,8 +36,42 @@
 use tauri::menu::{Menu, MenuBuilder, MenuEvent, MenuItemBuilder, SubmenuBuilder};
 use tauri::{AppHandle, Emitter, Runtime};
 
-/// Build the application menu (File / Edit / View / Help).
+/// Build the application menu with an empty recent-files list.
+///
+/// The startup entry point: nothing has been opened yet, and the frontend
+/// replaces the menu via [`set_recent_files`] once it has restored the list.
 pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
+    build_with_recent(app, &[])
+}
+
+/// Replace the application menu so File → Open Recent lists `paths`.
+///
+/// A whole-menu rebuild, because muda submenus are built rather than mutated —
+/// there is no "replace these items" on a live menu. It is cheap (a dozen items)
+/// and only happens when a file is opened or closed.
+///
+/// Items are identified by **index** (`menu_recent_3`), not by path. A path is
+/// arbitrary user data — it can contain any character the filesystem allows —
+/// and menu ids are matched as strings on the frontend, so encoding one into an
+/// id makes the mapping depend on data neither side controls. The frontend holds
+/// the authoritative list and resolves the index against it.
+#[tauri::command]
+pub fn set_recent_files(app: AppHandle, paths: Vec<String>) -> Result<(), String> {
+    let menu = build_with_recent(&app, &paths).map_err(|e| e.to_string())?;
+    app.set_menu(menu).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// The display name for a recent entry: the file name, not the whole path.
+///
+/// A menu is a narrow column and an absolute path is mostly directories the
+/// user already knows. The full path goes nowhere here — the frontend's own
+/// surfaces show it where there is room.
+fn recent_label(path: &str) -> &str {
+    path.rsplit(['/', '\\']).next().unwrap_or(path)
+}
+
+fn build_with_recent<R: Runtime>(app: &AppHandle<R>, recent: &[String]) -> tauri::Result<Menu<R>> {
     // `CmdOrCtrl` maps to Ctrl on Windows/Linux and Cmd on macOS, so one string
     // is correct everywhere.
     let new = MenuItemBuilder::with_id("menu_new", "&New")
@@ -63,9 +97,34 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .build(app)?;
     let export_rtf = MenuItemBuilder::with_id("menu_export_rtf", "Export &RTF…").build(app)?;
 
+    // Open Recent. Built even when empty, carrying a single disabled "No recent
+    // files" row: a submenu that vanishes on a fresh install teaches the user it
+    // is not there, and a disabled row that explains itself is a smaller
+    // surprise than a menu whose shape changes.
+    let mut recent_menu = SubmenuBuilder::new(app, "Open &Recent");
+    if recent.is_empty() {
+        recent_menu = recent_menu.item(
+            &MenuItemBuilder::with_id("menu_recent_none", "No recent files")
+                .enabled(false)
+                .build(app)?,
+        );
+    } else {
+        for (i, path) in recent.iter().enumerate() {
+            recent_menu = recent_menu.item(
+                &MenuItemBuilder::with_id(format!("menu_recent_{i}"), recent_label(path))
+                    .build(app)?,
+            );
+        }
+        recent_menu = recent_menu.separator().item(
+            &MenuItemBuilder::with_id("menu_recent_clear", "&Clear Recent Files").build(app)?,
+        );
+    }
+    let recent_submenu = recent_menu.build()?;
+
     let file = SubmenuBuilder::new(app, "&File")
         .item(&new)
         .item(&open)
+        .item(&recent_submenu)
         .item(&open_folder)
         .separator()
         .item(&save)
@@ -106,6 +165,18 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .build(app)?;
     let toggle_history =
         MenuItemBuilder::with_id("menu_toggle_history", "Version &History").build(app)?;
+    // Zoom scales the writing surface, not the chrome — the OS already scales
+    // the whole UI, and a bigger tab bar is not what a tired writer wants.
+    let zoom_in = MenuItemBuilder::with_id("menu_zoom_in", "Zoom &In")
+        .accelerator("CmdOrCtrl+Plus")
+        .build(app)?;
+    let zoom_out = MenuItemBuilder::with_id("menu_zoom_out", "Zoom O&ut")
+        .accelerator("CmdOrCtrl+-")
+        .build(app)?;
+    let zoom_reset = MenuItemBuilder::with_id("menu_zoom_reset", "&Reset Zoom")
+        .accelerator("CmdOrCtrl+0")
+        .build(app)?;
+
     let toggle_autosave =
         MenuItemBuilder::with_id("menu_toggle_autosave", "&Autosave").build(app)?;
     let toggle_update_check =
@@ -118,6 +189,10 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .item(&toggle_sidebar)
         .item(&toggle_outline)
         .item(&toggle_history)
+        .separator()
+        .item(&zoom_in)
+        .item(&zoom_out)
+        .item(&zoom_reset)
         .separator()
         .item(&toggle_autosave)
         .item(&toggle_update_check)
@@ -143,5 +218,30 @@ pub fn on_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
     let id = event.id().as_ref();
     if id.starts_with("menu_") {
         let _ = app.emit("menu", id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::recent_label;
+
+    #[test]
+    fn shows_the_file_name_not_the_path() {
+        assert_eq!(recent_label(r"C:\Users\me\vault\todo.md"), "todo.md");
+        assert_eq!(recent_label("/home/me/vault/todo.md"), "todo.md");
+    }
+
+    #[test]
+    fn handles_a_bare_name_and_mixed_separators() {
+        assert_eq!(recent_label("todo.md"), "todo.md");
+        assert_eq!(recent_label("C:/vault\\sub/todo.md"), "todo.md");
+    }
+
+    /// A path that ends in a separator has no file name; returning the empty
+    /// string is honest, and better than panicking on data from disk.
+    #[test]
+    fn does_not_panic_on_a_trailing_separator() {
+        assert_eq!(recent_label("/vault/"), "");
+        assert_eq!(recent_label(""), "");
     }
 }

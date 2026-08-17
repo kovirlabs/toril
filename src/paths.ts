@@ -27,3 +27,33 @@ export function isAtOrUnder(child: string, parent: string): boolean {
   if (c === p) return true;
   return c.startsWith(p.endsWith("/") ? p : `${p}/`);
 }
+
+/**
+ * The extensions Toril will open — the same set `tauri.conf.json` registers as
+ * file associations, kept in step with it.
+ *
+ * An **allowlist**, because this gates drag-and-drop: a drop is the one open
+ * path where the user never picked from a filter, so anything on the desktop
+ * can land on the window. `formatForPath` in `main.ts` is not a substitute — it
+ * answers "how do I parse this?" and answers "markdown" for everything it does
+ * not recognise, which is the right default once a file is known to be text and
+ * exactly the wrong one for deciding whether to open a dropped `.exe` at all.
+ */
+const OPENABLE = /\.(md|markdown|html?)$/i;
+
+/** Whether a dropped or forwarded path is one Toril should open. */
+export function isOpenablePath(path: string): boolean {
+  return OPENABLE.test(path);
+}
+
+/**
+ * Narrow a drop to the files Toril can open, preserving order.
+ *
+ * Returns everything openable rather than just the first: dropping a selection
+ * of notes should open the selection. Non-matching entries are dropped
+ * silently here — the caller reports the count, because "3 of 5 opened" is the
+ * useful message and this function has no business composing it.
+ */
+export function selectOpenable(paths: readonly string[]): string[] {
+  return paths.filter(isOpenablePath);
+}

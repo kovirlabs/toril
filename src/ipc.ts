@@ -205,6 +205,50 @@ export async function relaunchApp(): Promise<void> {
   await relaunch();
 }
 
+/**
+ * Rebuild the native menu so File → Open Recent lists `paths`.
+ *
+ * The whole menu is replaced (muda submenus are built, not mutated), so this is
+ * called only when the list actually changes. Items are identified by index —
+ * `menu_recent_3` — and the frontend resolves that against its own list, so an
+ * arbitrary path never has to survive a round trip through a menu id.
+ */
+export function setRecentFiles(paths: string[]): Promise<void> {
+  return invoke<void>("set_recent_files", { paths });
+}
+
+/**
+ * Files dropped onto the window.
+ *
+ * The webview's own HTML5 drop events don't carry real paths (a `File` object
+ * has no filesystem location), so this comes from Tauri's native drag-drop
+ * instead — which is also the only version that can hand the paths to the Rust
+ * side, where all disk access lives (§10). Callers filter with
+ * `paths.selectOpenable` before doing anything with them.
+ */
+export async function onFilesDropped(
+  handler: (paths: string[]) => void,
+): Promise<UnlistenFn> {
+  const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+  return getCurrentWebview().onDragDropEvent((event) => {
+    if (event.payload.type === "drop") handler(event.payload.paths);
+  });
+}
+
+/**
+ * Hand a URL to the OS default browser.
+ *
+ * **Callers must have checked it first.** `src/links.ts` owns that decision and
+ * allows only http/https/mailto; this wrapper deliberately does no validation
+ * of its own, so there is exactly one place the rule lives and no second,
+ * quietly-weaker copy of it. An opened `.md` is untrusted (§3.3), and the shell
+ * acts on far more than web addresses.
+ */
+export async function openExternal(url: string): Promise<void> {
+  const { openUrl } = await import("@tauri-apps/plugin-opener");
+  await openUrl(url);
+}
+
 /** Persisted session + preferences (mirrors Rust `settings::Settings`, §5). */
 export interface Settings {
   version: number;
@@ -243,6 +287,16 @@ export interface Settings {
   update_last_checked: number | null;
   /** A version the user dismissed; startup will not raise it again. */
   update_skipped_version: string | null;
+  /** Writing-surface zoom multiplier. `null` ⇒ 1. Normalized on load. */
+  editor_zoom: number | null;
+  /**
+   * Recently opened files, newest first. Paths only, never contents (§3.2).
+   * Typed as `unknown` deliberately: this is the one settings field with
+   * unbounded shape, and `recent.normalizeRecent` is what turns it into a list.
+   * Declaring it `string[]` here would be a claim about a file on disk that
+   * nothing checks.
+   */
+  recent_files: unknown;
 }
 
 /** Load persisted settings; resolves to defaults if none exist or the file is corrupt. */

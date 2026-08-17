@@ -164,6 +164,47 @@ body {
   padding: var(--sp-2);
 }
 
+/* The empty state carries its own fix, so it is a small stack rather than one
+   italic line. `min-width: 0` because it lives in a pane that collapses to
+   zero (§12b rule 3). */
+.sidebar-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.sidebar-empty-text {
+  margin: 0;
+}
+
+.sidebar-empty-btn {
+  min-height: var(--target);
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--chrome-raised);
+  color: var(--fg);
+  cursor: pointer;
+  font: inherit;
+  font-style: normal;
+}
+
+.sidebar-empty-btn:hover {
+  background: var(--hover-bg);
+}
+
+.sidebar-empty-note {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-style: normal;
+  color: var(--dim);
+  /* A long folder-path or URL in this copy must not set the pane's min-content
+     width (§12b rule 4). */
+  overflow-wrap: anywhere;
+}
+
 .sidebar-root {
   font-weight: 600;
   padding: var(--sp-1) var(--sp-1) var(--sp-2);

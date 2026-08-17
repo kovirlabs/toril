@@ -132,10 +132,12 @@ secret. Until then `plugins.updater.pubkey` is empty, so a check degrades to a r
 error rather than a crash, and `release.yml` refuses to cut a tag with a one-line
 explanation instead of failing deep in a Rust build.
 
-**Next:** finish Phase 4 — remaining is the QoL half of `feat/release-readiness` (editor
-zoom, recent-files MRU, open-links-in-browser, drag-drop open, first-run empty state),
-Azure Trusted Signing once an account exists, and on-device verification. A backlog of
-further QoL features is in §13. The
+The **QoL half of the same branch** has also landed: editor zoom, open-links-in-browser,
+drag-and-drop open, a recent-files list in File → Open Recent, and a real first-run
+welcome note distinct from the empty state. See §5 (Quality-of-life batch).
+
+**Next:** finish Phase 4 — remaining is Azure Trusted Signing once an account exists, and
+on-device verification. A backlog of further QoL features is in §13. The
 **forward plan beyond Phase 4** — turning the editor into a notes *system* (search, links, version
 history, sync coexistence, the AI wedge) branch-by-branch, with per-stage publicity guidance — lives in
 **`ROADMAP.md`**.
@@ -356,6 +358,7 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 | `restore_snapshot` | `path, hash` | `()` | snapshots current on-disk content **first**, then atomically writes the chosen version — restore is undoable (§3) |
 | `merge_external` | `path, base, mine` | `{ outcome, content?, theirs? }` | Reads the file and 3-way merges via `mergemd`. **Never writes.** `outcome` is one of `unchanged` / `theirsOnly` / `merged` / `conflict` / `missing` — `missing` is a deleted file (`io::ErrorKind::NotFound`), distinct from an unreadable one, so a gone file can be recreated by an explicit save rather than blocked forever. `content` is set only for `merged`; `theirs` (the bytes now on disk) is set for every outcome **except `unchanged` and `missing`** — nothing to park in either case — so the caller can set its new merge base and park the losing side without a second read that would race the writer (ROADMAP I.4) |
 | `write_conflict_copy` | `path, content` | `conflict_path` | Parks the losing side as `note (conflict 2026-07-25 14-32-05).md` beside the original — **atomic** via `fsatomic`, and `-2`/`-3`… suffixed rather than overwritten on a timestamp collision (§3) |
+| `set_recent_files` | `paths` | `()` | Rebuild the native menu so File → Open Recent lists `paths`. The **whole** menu is replaced — muda submenus are built, not mutated — so this is called only when the list changes. Items carry an **index** (`menu_recent_3`), never a path: a path is arbitrary user data and menu ids are matched as strings, so the frontend resolves the index against its own list (`src/recent.ts`) |
 | `take_launch_path` | — | `path?` | file the app was launched with (double-click / "Open with"); returns it **once**, then `null` (§file-open) |
 | `set_api_key` | `provider, key` | `()` | Validate and store an API key in the **OS keychain** (`keystore`) — Credential Manager / Keychain / Secret Service. Replaces any existing key for that provider (ROADMAP IV.20) |
 | `clear_api_key` | `provider` | `()` | Remove a stored key. **Idempotent** — clearing an absent key succeeds, so pressing Clear twice is not an error |
@@ -441,6 +444,24 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 > applied in CI only when the `AZURE_*` secrets exist. That split is deliberate: a fork
 > or a local `pnpm tauri build` must not need an Azure subscription to produce a working
 > installer.
+>
+> **Quality-of-life batch (`feat/release-readiness`, second half).** Editor zoom
+> (`src/zoom.ts` — a **fixed ladder**, not `× 1.1`, so five steps in and five out land
+> exactly back on 100% and a persisted value can't drift; a stored `0` snaps to the
+> default rather than being clamped, because it would otherwise render the editor
+> unreadable *and* unfixable). Zoom scales the writing surface only, never the chrome —
+> so `editor.css` heading sizes and the measure are `em`, not `rem`. **Open links in the
+> browser** on Ctrl/Cmd-click, gated by `src/links.ts`: a **three-scheme allowlist**
+> (http/https/mailto) parsed via `URL`, not string-matched, because the OS normalizes
+> case and control characters before acting. This is a §3.3 boundary, not a convenience
+> filter — `sanitize.ts` stops a hostile link executing *in* the webview, this stops it
+> executing *outside* it, which is strictly worse since the shell is not sandboxed.
+> **Drag-and-drop open** via Tauri's native drag-drop (HTML5 drops carry no real paths),
+> filtered by `paths.selectOpenable` — an allowlist, because a drop is the one open path
+> with no file-type filter in front of it. **Recent files** (`src/recent.ts` +
+> `set_recent_files`). **First-run vs. empty state**: `src/welcome.ts` holds both, and
+> `firstRun` comes from `settings.version === 0` (never written) rather than "nothing
+> was restored", which is also true when an existing user closes their last tab.
 >
 > **Events (Rust → frontend):** `workspace:change` (file watcher), `menu` (native menu item id
 > `menu_*` → mapped to the same handlers as toolbar buttons), and `open-file` (a *second* launch's
@@ -582,6 +603,15 @@ Phases 0–3 are complete and Phase 4 (polish) is in progress; the shipped detai
   briefly narrowed.
 - **Action double-fire:** `tests/actions.test.ts` — `menu.rs` carries real accelerators, so
   one Ctrl+S arrives twice (menu *and* webview keydown). One dispatcher collapses the pair.
+- **Zoom / links / recents:** `tests/zoom.test.ts` (the ladder round-trips exactly, and a
+  stored `0` cannot make the editor unusable), `tests/links.test.ts` (the §3.3 allowlist —
+  `jAvAsCrIpT:`, `java\tscript:`, `file://`, `ms-msdt:`; the cases a blocklist gets wrong),
+  `tests/recent.test.ts` (dedupe-and-move, no in-place mutation, junk in `session.json`
+  degrading to empty rather than throwing during bootstrap), and the `paths` suite's
+  drop allowlist. Plus the shipped **welcome note is itself a round-trip fixture** in
+  `tests/roundtrip.test.ts`: it claims in its own text that Toril doesn't rewrite your
+  files, so it has to survive a save. That gate immediately caught two real defects in
+  the copy (unpadded table pipes, and `**Ctrl+\**` escaping its own closing marker).
 - **Update policy:** `tests/update.test.ts` — the startup/manual asymmetry (a background
   check is rate-limited, skippable and silent; a direct question always gets an answer),
   the interval boundary itself rather than either side of it, and that a `lastCheckedAt`
@@ -621,7 +651,7 @@ test harness — it needs a live Milkdown editor and Tauri IPC.** `crates/mergem
 `src/paths.ts`, and the tab bookkeeping in `src/ui/tabs.ts` are gated in isolation; the glue that
 calls them in the right order, at the right time, is verified on-device only.
 
-**Remaining for Phase 4:** the QoL half of `feat/release-readiness`; Azure Trusted Signing
+**Remaining for Phase 4:** Azure Trusted Signing
 (removes the SmartScreen warning — the wiring is in place and inert, `docs/RELEASE-SIGNING.md`);
 and on-device verification of GUI/Rust flows that can't be tested here, now including the
 update flow (§D of `docs/ON-DEVICE-VERIFICATION.md` — nothing headless can prove a signed
@@ -782,16 +812,16 @@ Keep the project's rules: testable logic in `crates/*` or pure TS helpers, all d
 (§5/§10), one canonical serializer (§3.2), no unhealthy deps (§2).
 
 **Easy (pure frontend, fully testable here):**
-- **Editor zoom** — `Ctrl +`/`-`/`0` adjusts an editor font-size CSS variable; persist in `Settings`.
+- ~~**Editor zoom**~~ — *shipped* (`feat/release-readiness`).
 - **Spellcheck** — ensure the ProseMirror editable carries `spellcheck="true"`. Verify on-device.
 - **Tab niceties** — middle-click to close, "Close others / Close all".
 
 **Easy–medium (small Rust / Tauri, needs on-device verify):**
-- **Auto-save** — debounced save of dirty *saved* files; reuse atomic `saveFile`; toggle in `Settings`.
-- **Remember window size/position** — add the maintained `tauri-plugin-window-state` (vet per §2).
-- **Recent files / recent folders** — extend the persisted session with an MRU list; surface in File menu.
-- **Open links in browser** (`Ctrl/Cmd`-click) — route through Tauri's shell-open.
-- **Drag-and-drop a `.md` onto the window to open it** — Tauri drag-drop event → existing `openPath`.
+- ~~**Auto-save**~~ — *shipped* (Movement I.1).
+- ~~**Remember window size/position**~~, ~~**Recent files**~~, ~~**Open links in browser**~~,
+  ~~**Drag-and-drop to open**~~ — all *shipped* (`feat/release-readiness`). **Recent
+  folders** was not done: reopening a folder is a heavier action than reopening a file
+  and the sidebar already remembers the last one.
 
 **Medium (more UI / a new command, but high value):**
 - **Global workspace search ("find in files")** — a Rust command scanning the vault (sibling to
