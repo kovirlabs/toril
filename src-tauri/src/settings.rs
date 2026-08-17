@@ -59,6 +59,19 @@ pub struct Settings {
     pub autosave: Option<bool>,
     /// Autosave/journal debounce in ms. `None` ⇒ 2000 (frontend default).
     pub autosave_debounce_ms: Option<u32>,
+    /// Whether Toril checks for a newer build on launch. `None` ⇒ on.
+    pub update_check: Option<bool>,
+    /// Epoch **milliseconds** of the last completed check; `None` ⇒ never.
+    ///
+    /// `i64`, not `u64`: this comes from the webview's `Date.now()`, and a
+    /// machine whose clock is set before 1970 would otherwise fail to
+    /// deserialize and take the whole settings file down to defaults with it —
+    /// losing the open tabs and the workspace over a wrong clock. The policy in
+    /// `src/update.ts` already treats a nonsensical timestamp as "due".
+    pub update_last_checked: Option<i64>,
+    /// A version the user dismissed. Startup will not raise it again; an
+    /// explicit Help → Check for Updates still will.
+    pub update_skipped_version: Option<String>,
 }
 
 fn settings_path(app: &AppHandle) -> Result<PathBuf, String> {

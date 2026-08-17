@@ -14,6 +14,14 @@ dist-ssr
 /toril-harness-*.png
 /sweep-*.png
 
+# Signing keys — a backstop, not the intended home. The updater's private key
+# belongs outside the repository entirely (docs/RELEASE-SIGNING.md); losing it
+# strands every installed copy, and committing it lets anyone ship an "update"
+# that Toril would trust and install.
+*.key
+*.key.pub
+/.tauri/
+
 # Editor / OS
 .DS_Store
 .idea/

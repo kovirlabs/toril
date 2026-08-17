@@ -157,6 +157,41 @@ rendered layout is unverified in either engine. The logic underneath it is gated
       and RTF; the properties must not appear in the output. Export no longer relies on
       comrak stripping them, so this is a genuinely new path.
 
+## D. Release readiness (`feat/release-readiness`, 2026-08-17)
+
+The update flow is the one feature here whose payoff — a stranded `v1.0.0` install
+finding its way forward — cannot be demonstrated by any gate. `tests/update.test.ts`
+pins *when* Toril checks and *whether* it interrupts you; nothing headless can pin
+that a signed artifact downloads, verifies and replaces a running binary.
+
+- [ ] **D1 — A real update installs.** The only end-to-end check that matters, and it
+      needs two releases. Install `v1.0.0`'s NSIS build, publish a later tag, then launch
+      the old copy: the notice should appear, Install should download, and Restart should
+      come back on the new version **with the session intact**. Repeat for the MSI —
+      per-machine install plus a per-user updater is the combination most likely to fail.
+- [ ] **D2 — The restart guard actually refuses.** Make a tab dirty, take an update,
+      click Restart now. Toril must refuse and say the update applies next launch — this
+      is the one path in the feature that could destroy a buffer (§3), and it is guarded
+      in `main.ts`, which has no harness.
+- [ ] **D3 — Signature verification fails closed.** Tamper with a published artifact (or
+      sign it with a different key) and confirm the install is **refused**, not attempted.
+      A verification path that silently accepts is worse than no updater at all.
+- [ ] **D4 — Toast layout, measured not eyeballed** (§12b). Drive `dev-harness.html?update`
+      at 1400/1100/900/700px and assert with `getBoundingClientRect()` that the notice
+      never overlaps `#statusbar`, stays inside the viewport, and that the long unbroken
+      URL in the harness fixture does not widen it. **Not done on this branch** — the
+      browser harness could not be driven in the authoring session, so this is genuinely
+      unverified rather than assumed-fine.
+- [ ] **D5 — Both engines.** The notice is `position: fixed` over a flex/grid shell;
+      confirm in WebKitGTK as well as WebView2 that it is not clipped by a pane's
+      `overflow: hidden` (it is parented to `body` specifically to avoid that).
+- [ ] **D6 — Window state.** Move and resize the window, quit, relaunch: size, position
+      and maximized state should return. Then relaunch on a machine with **fewer or
+      smaller monitors** and confirm the window is not restored off-screen.
+- [ ] **D7 — The check is quiet when it should be.** With no network, launch: nothing
+      appears. Ask via Help → Check for Updates: it says it could not check. That
+      asymmetry is the whole design and is easy to regress.
+
 ## B. Standing items (pre-existing, not from this branch)
 
 - [ ] **B1 — HTML as a first-class format.** Open a real AI-authored `.html` artifact,
@@ -192,8 +227,10 @@ rendered layout is unverified in either engine. The logic underneath it is gated
 - [ ] **B8 — Installer behavior.** NSIS installs per-user into `%LOCALAPPDATA%\Toril`
       with **no UAC prompt**, and the WebView2 bootstrapper runs on a clean Win10 box.
       README states both as user-facing guarantees (CLAUDE.md §9).
-- [ ] **B9 — SmartScreen.** Unsigned installers warn on first run. Expected, not a bug —
-      until Azure Trusted Signing lands (ROADMAP Movement I, `feat/release-readiness`).
+- [ ] **B9 — SmartScreen.** Unsigned installers warn on first run. Expected, not a bug.
+      The Authenticode wiring now exists and is **inert until an Azure Trusted Signing
+      account does** (`docs/RELEASE-SIGNING.md`) — so this stays open, and the README
+      wording stays as it is, until a signed installer has been run on a clean box.
 - [~] **B11 — Crash recovery.** *(Partly verified 2026-08-17, incidentally.)* Force-killing
       the process with three open buffers and relaunching restored all three, with
       "3 documents recovered" in the status bar — the journal survives a real `SIGKILL`

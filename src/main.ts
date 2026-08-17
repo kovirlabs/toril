@@ -17,6 +17,7 @@ import {
   type Settings,
   type UnlistenFn,
   type WorkspaceChange,
+  checkForUpdate,
   clearRecovery,
   exportHtml,
   exportRtf,
@@ -35,6 +36,7 @@ import {
   pickFileToOpen,
   pickFolder,
   readSnapshot,
+  relaunchApp,
   restoreSnapshot,
   saveClipboardImage,
   saveFile,
@@ -57,7 +59,15 @@ import {
   selectRemovedOnDisk,
   selectSavable,
 } from "./sync";
+import {
+  decideCheck,
+  decideErrorPresentation,
+  decidePresentation,
+  type UpdateState,
+  type UpdateTrigger,
+} from "./update";
 import { ConflictBar } from "./ui/conflictbar";
+import { UpdateNotice } from "./ui/updatenotice";
 import { PropertiesStrip } from "./ui/properties";
 import { History } from "./ui/history";
 import { Outline } from "./ui/outline";
@@ -106,6 +116,18 @@ let properties: PropertiesStrip | null = null;
 let propertiesExpanded = true;
 let autosaveDebounceMs = 2000;
 let theme: ThemeController | null = null;
+let updateNotice: UpdateNotice | null = null;
+/**
+ * Update-check state, persisted across launches. Defaults to checking: an
+ * editor that cannot tell you it is out of date is how `v1.0.0` stranded every
+ * copy of itself. The check sends nothing about you (see `ipc.checkForUpdate`),
+ * and it can be turned off in the View menu.
+ */
+const updateState: UpdateState = {
+  enabled: true,
+  lastCheckedAt: null,
+  skippedVersion: null,
+};
 
 let workspaceRoot: string | null = null;
 let panes: PaneState = defaultPaneState();
@@ -708,6 +730,107 @@ function toggleAutosave(): void {
   if (autosaveEnabled) autosave?.notifyChange();
 }
 
+// ---- Self-update (ROADMAP Movement I.5) ------------------------------------
+//
+// The rules live in `update.ts` and are gated there; this is only the wiring
+// that connects them to the network, the toast and persisted settings. Nothing
+// here decides anything on its own — that separation is what makes the policy
+// testable without a release server.
+
+function toggleUpdateCheck(): void {
+  updateState.enabled = !updateState.enabled;
+  setStatus(`Update checks ${updateState.enabled ? "on" : "off"}`);
+  scheduleSessionSave();
+}
+
+/**
+ * Run an update check, if the policy allows one, and present whatever comes
+ * back.
+ *
+ * Always resolves — a startup check must never be able to reject into an
+ * unhandled rejection during bootstrap, and a failure to reach the network is
+ * not something to trouble a writer with.
+ */
+async function checkUpdates(trigger: UpdateTrigger): Promise<void> {
+  const decision = decideCheck(trigger, updateState, Date.now());
+  if (decision.kind === "skip") return;
+
+  let presentation;
+  try {
+    const found = await checkForUpdate();
+    // Recorded only on a *completed* check, so an offline launch doesn't burn
+    // the day's allowance and leave the user a version behind for another 24h.
+    updateState.lastCheckedAt = Date.now();
+    scheduleSessionSave();
+    presentation = decidePresentation(trigger, found, updateState);
+    if (presentation.kind === "offer" && found) offerUpdate(found);
+  } catch (e) {
+    presentation = decideErrorPresentation(trigger, String(e));
+  }
+
+  if (presentation.kind === "up-to-date") {
+    updateNotice?.info("Toril is up to date.", () => updateNotice?.hide());
+  } else if (presentation.kind === "error") {
+    updateNotice?.info(`Could not check for updates: ${presentation.message}`, () =>
+      updateNotice?.hide(),
+    );
+  }
+}
+
+/** Show the offer, and own the install → restart sequence if the user takes it. */
+function offerUpdate(found: { version: string; notes?: string; install(): Promise<void> }): void {
+  updateNotice?.show({
+    version: found.version,
+    notes: found.notes,
+    onInstall: () => {
+      updateNotice?.busy(`Downloading Toril ${found.version}…`);
+      found
+        .install()
+        .then(() => {
+          updateNotice?.installed(
+            () => void restartForUpdate(),
+            () => updateNotice?.hide(),
+          );
+        })
+        .catch((e: unknown) => {
+          updateNotice?.failed(String(e), () => updateNotice?.hide());
+        });
+    },
+    onSkip: () => {
+      updateState.skippedVersion = found.version;
+      scheduleSessionSave();
+      updateNotice?.hide();
+    },
+    onDismiss: () => updateNotice?.hide(),
+  });
+}
+
+/**
+ * Restart into the new build — but not over unsaved work.
+ *
+ * This is the one place in the update flow that can destroy a buffer, so it is
+ * the one place that checks. A relaunch is a process exit: an unsaved tab would
+ * be gone, and "I clicked the update button" is not consent to lose a
+ * paragraph (§3). The install is already on disk either way, so refusing here
+ * costs the user nothing but a save.
+ */
+async function restartForUpdate(): Promise<void> {
+  const dirty = tabs.list().filter((t) => t.dirty);
+  if (dirty.length > 0) {
+    updateNotice?.info(
+      `Save your work first — ${dirty.length} unsaved document${dirty.length === 1 ? "" : "s"}. The update is installed and will apply next time you start Toril.`,
+      () => updateNotice?.hide(),
+    );
+    return;
+  }
+  // A clean exit: drop the recovery journal so the next launch doesn't offer to
+  // restore buffers that were already saved (see `installCloseGuard`).
+  await clearRecovery().catch(() => {});
+  await relaunchApp().catch((e: unknown) => {
+    updateNotice?.failed(String(e), () => updateNotice?.hide());
+  });
+}
+
 // ---- Export ----------------------------------------------------------------
 
 /**
@@ -1143,6 +1266,9 @@ function scheduleSessionSave(): void {
       properties_expanded: propertiesExpanded,
       autosave: autosaveEnabled,
       autosave_debounce_ms: autosaveDebounceMs,
+      update_check: updateState.enabled,
+      update_last_checked: updateState.lastCheckedAt,
+      update_skipped_version: updateState.skippedVersion,
     };
     void saveSettings(settings).catch(() => {}); // best-effort
   }, 400);
@@ -1181,6 +1307,10 @@ async function restoreSession(): Promise<void> {
   if (settings.autosave !== null) autosaveEnabled = settings.autosave;
   if (settings.autosave_debounce_ms !== null) autosaveDebounceMs = settings.autosave_debounce_ms;
   autosave?.setConfig({ enabled: autosaveEnabled, debounceMs: autosaveDebounceMs });
+
+  if (settings.update_check !== null) updateState.enabled = settings.update_check;
+  updateState.lastCheckedAt = settings.update_last_checked;
+  updateState.skippedVersion = settings.update_skipped_version;
 
   if (settings.last_folder) {
     try {
@@ -1281,6 +1411,8 @@ const ACTIONS: Record<string, () => void> = {
   menu_toggle_outline: () => selectRail("outline"),
   menu_toggle_history: () => selectRail("history"),
   menu_toggle_autosave: () => toggleAutosave(),
+  menu_toggle_update_check: () => toggleUpdateCheck(),
+  menu_check_updates: () => void checkUpdates("manual"),
   menu_export_html: () => void doExportHtml(),
   menu_export_rtf: () => void doExportRtf(),
   menu_find: () => searchBar?.open(),
@@ -1389,6 +1521,10 @@ window.addEventListener("DOMContentLoaded", async () => {
   const conflictEl = document.querySelector<HTMLElement>("#conflictbar");
   if (conflictEl) conflictBar = new ConflictBar(conflictEl);
 
+  // On `body`, not in #main: the update toast is out of flow (see
+  // `ui/updatenotice.ts`), so it must not inherit a pane's overflow clipping.
+  updateNotice = new UpdateNotice(document.body);
+
   // Above the writing surface, below the banner: front matter reads as the top
   // of the document, and the strip never touches the doc, the tab, or disk — it
   // hands back a complete block and this file decides what that means.
@@ -1471,4 +1607,10 @@ window.addEventListener("DOMContentLoaded", async () => {
   // While Toril is already running, a second double-click is forwarded here by
   // the single-instance plugin rather than starting a new process (§5).
   void onOpenFile((path) => void openPath(path));
+
+  // Last, and only after the session is on screen: the check is a network round
+  // trip, and nothing about it should delay a document appearing. `checkUpdates`
+  // never rejects, and at startup it stays silent unless there is genuinely
+  // something to offer.
+  void checkUpdates("startup");
 });

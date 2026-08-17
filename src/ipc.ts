@@ -153,6 +153,58 @@ export async function showAbout(): Promise<void> {
   });
 }
 
+// ---- Self-update (ROADMAP Movement I.5) ------------------------------------
+//
+// The updater and process plugins are the one pair of backend calls that do not
+// go through `invoke()` by hand — they ship their own typed JS API. They are
+// still declared here so `ipc.ts` stays the single inventory of what the
+// frontend can ask the backend to do (§10), and so the rest of the app never
+// imports the plugin directly and cannot reach past this seam.
+
+/** An available update, reduced to what the policy and the banner need. */
+export interface AvailableUpdate {
+  version: string;
+  notes?: string;
+  /**
+   * Download and install, then resolve. Deliberately a callback on the object
+   * rather than a free function: an install can only ever apply to an update
+   * that was actually found and shown, so there is no way to spell "install"
+   * without having first checked.
+   */
+  install(): Promise<void>;
+}
+
+/**
+ * Ask whether a newer build exists. Resolves to `null` when up to date.
+ *
+ * This performs a plain GET for a static manifest and sends nothing about the
+ * user, the vault or the session — there is no telemetry in Toril and this is
+ * not a back door for it. *Whether* to call this is decided by `update.ts`; this
+ * function only does what it is told.
+ */
+export async function checkForUpdate(): Promise<AvailableUpdate | null> {
+  const { check } = await import("@tauri-apps/plugin-updater");
+  const found = await check();
+  if (!found) return null;
+  return {
+    version: found.version,
+    notes: found.body ?? undefined,
+    install: () => found.downloadAndInstall(),
+  };
+}
+
+/**
+ * Restart into the freshly installed build.
+ *
+ * Only ever called after the user accepted an install *and* Toril confirmed
+ * there is nothing unsaved — see `main.ts`. Relaunching over a dirty buffer
+ * would be a §3 data-loss path dressed as a convenience.
+ */
+export async function relaunchApp(): Promise<void> {
+  const { relaunch } = await import("@tauri-apps/plugin-process");
+  await relaunch();
+}
+
 /** Persisted session + preferences (mirrors Rust `settings::Settings`, §5). */
 export interface Settings {
   version: number;
@@ -185,6 +237,12 @@ export interface Settings {
   autosave: boolean | null;
   /** Autosave/journal debounce in ms. `null` ⇒ 2000 (default). */
   autosave_debounce_ms: number | null;
+  /** Whether Toril checks for updates on launch. `null` ⇒ on (default). */
+  update_check: boolean | null;
+  /** Epoch ms of the last completed check. `null` ⇒ never checked. */
+  update_last_checked: number | null;
+  /** A version the user dismissed; startup will not raise it again. */
+  update_skipped_version: string | null;
 }
 
 /** Load persisted settings; resolves to defaults if none exist or the file is corrupt. */

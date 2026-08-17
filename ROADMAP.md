@@ -49,12 +49,22 @@ no AI. That gap is this roadmap.
 > **Status (2026-08-17).** Shipped through **`v1.0.0`** (see `CHANGELOG.md`).
 > **Movement I, branches 1–4 are complete** (autosave + crash-recovery journal;
 > safe-delete-to-trash; local version history; sync coexistence — 3-way merge, conflict
-> banner, parked conflict copies). Branch 5 is unstarted. From Movement II, **branch 11
-> (outline panel) and branch 10 (front-matter properties)** have landed — 10 out of
-> order, because front matter was being *corrupted* rather than merely unsupported,
+> banner, parked conflict copies). **Branch 5's update half has landed** on
+> `feat/release-readiness`; its QoL half and Azure signing remain. From Movement II,
+> **branch 11 (outline panel) and branch 10 (front-matter properties)** have landed — 10
+> out of order, because front matter was being *corrupted* rather than merely unsupported,
 > which made it a §3 fix rather than a convenience.
-> **▶ Pick up at Movement II, branch 6 — `feat/vault-search`.** It is the largest
-> remaining gap, and branch 7 (command palette) depends on it. Vet `tantivy` per §2 at
+>
+> **This document previously pointed at branch 6 with branch 5 unstarted, and that was
+> overtaken by `v1.0.0` shipping.** The ladder in §2 ties release-readiness to
+> `v0.2.0-alpha`; the tag ran past it, which turned "no auto-updater" from a scheduling
+> detail into a live problem — every 1.0.0 install had no way to receive anything built
+> after it, so the next feature could not have reached anyone. §7's *trust before reach*
+> is what settles the order. Read the pointer below as the ordering, not the ladder.
+>
+> **▶ Pick up at branch 5's QoL half, then Movement II, branch 6 —
+> `feat/vault-search`.** Search is the largest remaining functional gap, and branch 7
+> (command palette) depends on it. Vet `tantivy` per §2 at
 > adoption — it would be the project's largest new dependency. Branch 4's spec lived
 > **on its own branch**, not on `main`:
 > `docs/superpowers/specs/2026-07-24-sync-coexistence-design.md`; branch 10's is on
@@ -199,18 +209,29 @@ nice in a synced folder. This movement is also the prerequisite for the AI wedge
      loss) + a `tests/` watcher-reaction suite.
    - *§3:* a conflict must **never** silently overwrite either side.
 
-- [ ] **5. `feat/release-readiness`** — auto-update + signing + first-run, so the floor is
-   *shippable to strangers*.
-   - *Scope:* wire **`tauri-plugin-updater`** (official) and **`tauri-plugin-window-state`**
-     (vet versions per §2); editor zoom (`Ctrl +/-/0`); recent-files MRU; open-links-in-
-     browser; drag-drop `.md` to open; a real **first-run / empty-state** (welcome note +
-     "open a folder"). Adopt **Azure Trusted Signing** for Windows (the old `TODO.md`
-     item: `bundle.windows.signCommand` → `trusted-signing-cli`; `AZURE_*` CI secrets;
-     soften the SmartScreen note in `README.md` + `docs/index.html`).
+- [~] **5. `feat/release-readiness`** — auto-update + signing + first-run, so the floor is
+   *shippable to strangers*. **Split in two; the update half has landed.**
+   - [x] *Update half (2026-08-17).* **`tauri-plugin-updater`** + **`-process`** +
+     **`tauri-plugin-window-state`**, all official and pinned (2.10.1 / 2.3.1 / 2.4.1).
+     Notify-only by policy — Toril offers, the user decides, and a restart is refused
+     over a dirty buffer (§3). Rules in `src/update.ts`, gated by `tests/update.test.ts`;
+     toast in `src/ui/updatenotice.ts`; minisign signing + the fail-fast preflight in
+     `release.yml`; Authenticode wiring inert until an Azure account exists. See
+     `docs/RELEASE-SIGNING.md` and CLAUDE.md §5 (Self-update).
+     - **Blocked on one manual step:** generate the minisign keypair, paste the public
+       half into `plugins.updater.pubkey`, add the private half as a repo secret. Until
+       then the updater is present but keyless.
+   - [ ] *QoL half (not started).* Editor zoom (`Ctrl +/-/0`); recent-files MRU;
+     open-links-in-browser; drag-drop `.md` to open; a real **first-run / empty-state**
+     (welcome note + "open a folder").
+   - [ ] *Azure Trusted Signing.* Wiring done (`tauri.signing.conf.json` overlay, applied
+     in CI only when `AZURE_*` secrets exist, so a fork still builds). Needs an account and
+     an identity validation that takes business days — then update the placeholder account
+     names and soften the SmartScreen note in `README.md` + `docs/index.html`.
    - *Touches:* `tauri.conf.json`, `.github/workflows/release.yml`, `settings.rs`,
      `menu.rs`, `main.ts`.
-   - *Gate:* settings round-trip for the new prefs; manual on-device verify of update +
-     first-run (no webview here).
+   - *Gate:* `tests/update.test.ts` for the policy; §D of `docs/ON-DEVICE-VERIFICATION.md`
+     for everything downstream of the network, which no headless gate can reach.
    - [ ] **⬢ RELEASE `v0.2.0-alpha`** — *"Safe to live in."* First build you can hand to
      someone without an asterisk on their data.
 

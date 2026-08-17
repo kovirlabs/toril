@@ -122,8 +122,20 @@ Implementation notes for whoever resumes (learned the hard way): Milkdown `$mark
 **no-op** runner (an empty-type `withMark` produces an mdast node remark cannot stringify — and Export
 HTML/RTF always serialize via `docToMarkdown`).
 
-**Next:** finish Phase 4 — remaining is shippable-quality work: optional code-signing (removes the
-SmartScreen warning) and on-device verification. A backlog of further QoL features is in §13. The
+**Self-update, window state and code-signing wiring — `feat/release-readiness`
+(ROADMAP Movement I.5).** `v1.0.0` shipped with no update path, so every installed copy
+was stranded on the version it was installed with; that is now closed. Details and the
+two-signatures distinction are in §5 (Self-update) and `docs/RELEASE-SIGNING.md`.
+**One manual step remains before it does anything:** generate the minisign keypair, paste
+the public half into `plugins.updater.pubkey`, and add the private half as a repository
+secret. Until then `plugins.updater.pubkey` is empty, so a check degrades to a reported
+error rather than a crash, and `release.yml` refuses to cut a tag with a one-line
+explanation instead of failing deep in a Rust build.
+
+**Next:** finish Phase 4 — remaining is the QoL half of `feat/release-readiness` (editor
+zoom, recent-files MRU, open-links-in-browser, drag-drop open, first-run empty state),
+Azure Trusted Signing once an account exists, and on-device verification. A backlog of
+further QoL features is in §13. The
 **forward plan beyond Phase 4** — turning the editor into a notes *system* (search, links, version
 history, sync coexistence, the AI wedge) branch-by-branch, with per-stage publicity guidance — lives in
 **`ROADMAP.md`**.
@@ -332,7 +344,7 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 | `export_rtf` | `content, defaultName` | `path?` | renders (comrak via `mdrtf`) **and** writes, all in Rust; inert output, no sanitize (§7) |
 | `export_pdf` | `content, theme` | `path` | *(deferred — §7)* |
 | `save_clipboard_image` | `bytes, docPath` | `relative_path` | writes pasted image to `./assets/` (`imgasset`), returns MD-relative path (§6) |
-| `load_settings` / `save_settings` | — / `Settings` | `Settings` / `()` | JSON in app config dir; includes `theme`, `sidebar_visible`/`sidebar_width`, `rail_visible`/`rail_width`/`rail_tab`, and `properties_expanded` (the front-matter strip's collapse state; `null` ⇒ expanded). The legacy `outline_visible`/`history_visible` pair is **read once to migrate** into the rail fields and then never written again — that one-directionality is what stops a stale flag from overriding the migrated state |
+| `load_settings` / `save_settings` | — / `Settings` | `Settings` / `()` | JSON in app config dir; includes `theme`, `sidebar_visible`/`sidebar_width`, `rail_visible`/`rail_width`/`rail_tab`, `properties_expanded` (the front-matter strip's collapse state; `null` ⇒ expanded), and the update trio `update_check`/`update_last_checked`/`update_skipped_version` (§Self-update). The legacy `outline_visible`/`history_visible` pair is **read once to migrate** into the rail fields and then never written again — that one-directionality is what stops a stale flag from overriding the migrated state |
 | `save_recovery` | `entries` | `()` | **atomic** write of `recovery.json` in the app config dir — crash-recovery journal (§3) |
 | `load_recovery` | — | `RecoveryEntry[]` | empty on missing/corrupt (never bricks startup) |
 | `clear_recovery` | — | `()` | delete `recovery.json` — the clean-shutdown sentinel |
@@ -402,6 +414,33 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 > note's history across a rename copy-then-delete (≥1 intact dir on power loss); the in-app
 > rename that calls it is Movement II.12. Restore snapshots the current state first, so it is
 > undoable. Frontend: `src/ui/history.ts` panel + `src/ui/linediff.ts`.
+>
+> **Self-update (`feat/release-readiness`, ROADMAP Movement I.5).** Three official Tauri
+> plugins — `updater`, `process`, `window-state` — so there are no new `invoke` commands;
+> they ship their own JS API, wrapped in `ipc.ts` (`checkForUpdate`, `relaunchApp`) so
+> nothing else in the app reaches past that seam. **Toril notifies and never installs on
+> its own.** The plugin can download-and-replace silently; we deliberately never call it
+> that way, because this is an editor holding unsaved buffers and §3 outranks saving
+> someone two clicks. The policy — check at most daily at launch, silent when there is
+> nothing to say, loud for every outcome when the user asks via Help → Check for
+> Updates — lives in `src/update.ts`, pure and gated by `tests/update.test.ts`; the
+> network call and the toast are separate so the rules need no release server to test.
+> **The restart is the one path that could destroy a buffer, so it is the one path that
+> refuses**: `restartForUpdate` will not relaunch over a dirty tab, and says the update
+> applies next launch instead (the install is already on disk, so waiting is free).
+> No telemetry — the check is a plain GET for a static manifest.
+>
+> **Two unrelated signatures, both documented in `docs/RELEASE-SIGNING.md`.** Minisign
+> signs the *update artifacts* and is **required**: `createUpdaterArtifacts` is on, the
+> bundler refuses to emit an unsigned update, and `release.yml` fails fast with an
+> explanation rather than deep in a Rust build. Losing that private key strands every
+> installed copy permanently — there is no rotation, because installed builds verify
+> against the public key they shipped with. Authenticode (Azure Trusted Signing) is
+> what stops SmartScreen warning, is **optional**, and needs an account that takes days
+> to provision — so its `signCommand` lives in `tauri.signing.conf.json`, an overlay
+> applied in CI only when the `AZURE_*` secrets exist. That split is deliberate: a fork
+> or a local `pnpm tauri build` must not need an Azure subscription to produce a working
+> installer.
 >
 > **Events (Rust → frontend):** `workspace:change` (file watcher), `menu` (native menu item id
 > `menu_*` → mapped to the same handlers as toolbar buttons), and `open-file` (a *second* launch's
@@ -543,6 +582,12 @@ Phases 0–3 are complete and Phase 4 (polish) is in progress; the shipped detai
   briefly narrowed.
 - **Action double-fire:** `tests/actions.test.ts` — `menu.rs` carries real accelerators, so
   one Ctrl+S arrives twice (menu *and* webview keydown). One dispatcher collapses the pair.
+- **Update policy:** `tests/update.test.ts` — the startup/manual asymmetry (a background
+  check is rate-limited, skippable and silent; a direct question always gets an answer),
+  the interval boundary itself rather than either side of it, and that a `lastCheckedAt`
+  in the **future** fails *open* — a corrected clock must not disable update checks
+  forever with no symptom. What it cannot cover is anything downstream of the network:
+  see §D of `docs/ON-DEVICE-VERIFICATION.md`.
 - Plus `vaultscan`, `imgasset`, `theme`, `statusbar`, `search`, `security`, `tabs` suites.
 
 > **The browser harness.** `dev-harness.html` is `app.html` plus a fake Tauri IPC bridge
@@ -576,8 +621,11 @@ test harness — it needs a live Milkdown editor and Tauri IPC.** `crates/mergem
 `src/paths.ts`, and the tab bookkeeping in `src/ui/tabs.ts` are gated in isolation; the glue that
 calls them in the right order, at the right time, is verified on-device only.
 
-**Remaining for Phase 4:** optional code-signing (removes the SmartScreen warning — see the
-code-signing memory) and on-device verification of GUI/Rust flows that can't be tested here.
+**Remaining for Phase 4:** the QoL half of `feat/release-readiness`; Azure Trusted Signing
+(removes the SmartScreen warning — the wiring is in place and inert, `docs/RELEASE-SIGNING.md`);
+and on-device verification of GUI/Rust flows that can't be tested here, now including the
+update flow (§D of `docs/ON-DEVICE-VERIFICATION.md` — nothing headless can prove a signed
+artifact downloads, verifies, and replaces a running binary).
 Shortcut-reference panel deferred (the menu lists shortcuts).
 
 ---

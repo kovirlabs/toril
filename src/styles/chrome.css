@@ -747,6 +747,73 @@ body {
   background: rgb(255 255 255 / 12%);
 }
 
+/* ---- Update notice -------------------------------------------------------- */
+/* Out of flow on purpose (see `ui/updatenotice.ts`): an update is ambient news,
+   so it must not reflow the writing surface the way the conflict banner
+   deliberately does. Anchored bottom-right, clear of the status bar. */
+.update-notice {
+  position: fixed;
+  right: var(--sp-4);
+  /* Above the status bar rather than over it — the status bar is short and
+     fixed, so a constant clearance is honest here without measuring it. */
+  bottom: calc(var(--sp-6) + var(--sp-2));
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  /* Bounded so long release notes scroll inside the toast instead of growing it
+     across the editor (§12b rule 4). `max-width` is in ch so it tracks the font
+     rather than assuming a viewport. */
+  max-width: min(46ch, calc(100vw - var(--sp-6)));
+  max-height: 40vh;
+  overflow-y: auto;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  background: var(--chrome-raised);
+  color: var(--fg);
+  box-shadow: var(--shadow-panel);
+  font-size: var(--text-md);
+}
+
+.update-notice[hidden] {
+  display: none;
+}
+
+.update-notice-text {
+  margin: 0;
+  min-width: 0;
+  /* One long unbroken token in release notes must not set the toast's
+     min-content width (§12b rule 4). */
+  overflow-wrap: anywhere;
+}
+
+.update-notice-notes {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.update-notice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.update-notice-btn {
+  min-height: var(--target-sm);
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.update-notice-btn:hover {
+  background: var(--hover-bg);
+}
+
 /* ---- Properties strip ----------------------------------------------------- */
 /* A flex row in the #main column, above the writing surface (§12b rule 1). It
    holds its own scroll rather than growing without bound, so a note with thirty

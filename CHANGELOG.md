@@ -11,6 +11,30 @@ GitHub Release notes plus the commits that shipped in it.
 
 ## [Unreleased]
 
+### Added
+- **Toril can update itself.** `v1.0.0` had no update path at all, so every copy was
+  stranded on the version it was installed with — the only way forward was to notice a
+  new release and download the installer by hand. Toril now checks for a newer build
+  once a day at launch, and whenever you ask via **Help → Check for Updates…**.
+
+  **It tells you; it never installs behind your back.** You choose when to download, and
+  a restart is refused while anything is unsaved — the update is already on disk by then
+  and applies the next time you start, so waiting costs nothing. Automatic checks can be
+  turned off in **View → Check for Updates on Launch**.
+
+  The check is a plain request for a static file. Nothing about you, your vault or your
+  session is sent with it, and there is no telemetry in Toril.
+
+- **The window remembers where it was.** Size, position and maximized state come back
+  the way you left them.
+
+### Notes
+- Updates are cryptographically signed, and an installed Toril refuses one that does not
+  verify. Setting that up is a one-time step for whoever cuts releases — see
+  `docs/RELEASE-SIGNING.md`.
+- Windows installers are still unsigned, so SmartScreen still warns on first run. The
+  wiring for Azure Trusted Signing is in place but inert until an account exists.
+
 ## [v1.0.0] — 2026-08-17
 
 **Toril leaves beta.** Same promise as always: your notes are plain `.md` (and

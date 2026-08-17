@@ -108,6 +108,9 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         MenuItemBuilder::with_id("menu_toggle_history", "Version &History").build(app)?;
     let toggle_autosave =
         MenuItemBuilder::with_id("menu_toggle_autosave", "&Autosave").build(app)?;
+    let toggle_update_check =
+        MenuItemBuilder::with_id("menu_toggle_update_check", "Check for &Updates on Launch")
+            .build(app)?;
 
     let view = SubmenuBuilder::new(app, "&View")
         .item(&find)
@@ -117,9 +120,15 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .item(&toggle_history)
         .separator()
         .item(&toggle_autosave)
+        .item(&toggle_update_check)
         .build()?;
 
+    // "Check for Updates…" sits in Help rather than File because it is about the
+    // application, not the document — and it is where every desktop app the
+    // target user has used puts it.
     let help = SubmenuBuilder::new(app, "&Help")
+        .text("menu_check_updates", "Check for &Updates…")
+        .separator()
         .text("menu_about", "&About Toril")
         .build()?;
 

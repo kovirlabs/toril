@@ -107,6 +107,24 @@
         "plugin:dialog|open": () => null,
         "plugin:dialog|ask": () => true,
         "plugin:dialog|message": () => null,
+        // The updater, faked so the notice can actually be driven here (§8).
+        // `?update` in the URL makes the check report an available version, so
+        // the toast's layout and target sizes can be swept without waiting for
+        // a real release; without it the harness answers "up to date", which is
+        // what a normal harness session should see.
+        "plugin:updater|check": () =>
+          new URLSearchParams(location.search).has("update")
+            ? {
+                available: true,
+                version: "9.9.9",
+                currentVersion: "0.0.0-harness",
+                body: "A pretend release, for driving the update notice. " +
+                  "https://example.com/an-unbroken-url-that-must-not-widen-the-toast",
+                rid: 1,
+              }
+            : { available: false },
+        "plugin:updater|download_and_install": () => null,
+        "plugin:process|restart": () => null,
         load_settings: () => SETTINGS,
         save_settings: () => null,
         load_recovery: () => [],

@@ -25,8 +25,45 @@ jobs:
             args: ""
 
     runs-on: ${{ matrix.platform }}
+
+    # Job level, not step level, so a step's `if:` can read it. A step cannot
+    # reliably test an env var it declares itself.
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+
     steps:
       - uses: actions/checkout@v4
+
+      # Fail in five seconds with an explanation rather than twenty minutes into
+      # a Rust build. `createUpdaterArtifacts` is on in tauri.conf.json, and the
+      # bundler refuses to produce an unsigned update — so a missing key is a
+      # configuration error, not a build error, and should read like one.
+      #
+      # This is deliberately a hard stop rather than a "skip the updater and
+      # carry on": silently cutting another release with no update path is
+      # exactly how v1.0.0 stranded every copy of itself.
+      - name: Check the updater signing key is configured
+        shell: bash
+        env:
+          KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY is not set. Update artifacts cannot be signed."
+            echo "::error::Generate a keypair with 'pnpm tauri signer generate', add the private key"
+            echo "::error::as this repository secret, and paste the public key into"
+            echo "::error::src-tauri/tauri.conf.json under plugins.updater.pubkey."
+            echo "::error::See docs/RELEASE-SIGNING.md."
+            exit 1
+          fi
+          if ! grep -q '"pubkey": *"[^"]' src-tauri/tauri.conf.json; then
+            echo "::error::plugins.updater.pubkey is empty in src-tauri/tauri.conf.json."
+            echo "::error::Installed builds verify updates against it, so shipping it empty"
+            echo "::error::produces a release that can never update itself."
+            echo "::error::See docs/RELEASE-SIGNING.md."
+            exit 1
+          fi
 
       - name: Install Linux webview dependencies
         if: matrix.platform == 'ubuntu-22.04'
@@ -58,9 +95,29 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      # Windows Authenticode via Azure Trusted Signing, and *only* when the
+      # account exists. The signCommand lives in an overlay config applied here
+      # rather than in tauri.conf.json, so a fork — or a local `pnpm tauri build`
+      # — still produces a working unsigned installer instead of failing on a
+      # missing tool. Without this, every contributor would need an Azure
+      # subscription to build the app at all.
+      - name: Set up Windows code signing
+        if: matrix.platform == 'windows-latest' && env.AZURE_CLIENT_ID != ''
+        shell: bash
+        run: |
+          cargo install trusted-signing-cli --locked
+          echo "SIGNING_CONFIG=--config src-tauri/tauri.signing.conf.json" >> "$GITHUB_ENV"
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signs the update artifacts (minisign). Not the same thing as
+          # Authenticode above: this proves an update came from us, that one
+          # stops SmartScreen warning about the installer.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # The AZURE_* trio that trusted-signing-cli reads comes from the job's
+          # env above, so it is already in scope here.
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Toril ${{ github.ref_name }}"
@@ -81,4 +138,10 @@ jobs:
           # pinned to `true` through the alpha/beta series, which would have published
           # v1.0.0 itself as a prerelease labelled "early alpha".
           prerelease: ${{ contains(github.ref_name, '-') }}
-          args: ${{ matrix.args }}
+          # Publishes `latest.json` beside the installers — the static manifest
+          # the in-app updater fetches. Without it the plugin has nothing to read
+          # and every check reports "up to date" forever.
+          includeUpdaterJson: true
+          # `SIGNING_CONFIG` is set only on Windows and only when the Azure
+          # secrets exist; it expands to nothing otherwise.
+          args: ${{ matrix.args }} ${{ env.SIGNING_CONFIG }}

@@ -1,0 +1,8 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "windows": {
+      "signCommand": "trusted-signing-cli -e https://eus.codesigning.azure.net -a toril-signing -c toril -d Toril %1"
+    }
+  }
+}
