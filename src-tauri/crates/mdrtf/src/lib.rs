@@ -453,6 +453,26 @@ mod tests {
     }
 
     #[test]
+    fn an_unterminated_opener_keeps_the_whole_document() {
+        // Parity pin for `src/editor/frontmatter.ts` (same test in `mdhtml`): the
+        // splitter requires a closing delimiter, and so does comrak — with no
+        // closer it abandons the front-matter read rather than swallowing to EOF.
+        let out = rtf("---\ntitle: x\n\n# Heading\n\nBody.\n");
+        assert!(out.contains("title: x"), "opening section dropped: {out:?}");
+        assert!(out.contains("Heading"));
+        assert!(out.contains("Body."));
+    }
+
+    #[test]
+    fn a_yaml_document_end_marker_does_not_close_front_matter() {
+        // Parity pin: `---` is the only closer on either side. comrak treats
+        // `...` as ordinary text, so the splitter must not accept it either.
+        let out = rtf("---\ntitle: x\n...\n\n# Heading\n");
+        assert!(out.contains("title: x"), "opening section dropped: {out:?}");
+        assert!(out.contains("Heading"));
+    }
+
+    #[test]
     fn a_bom_does_not_hide_front_matter_from_the_guard() {
         // Windows-authored files often carry a UTF-8 BOM; without skipping it the
         // first line is "\u{feff}---" and real front matter lands in the body.

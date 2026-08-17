@@ -131,6 +131,30 @@ mod tests {
     }
 
     #[test]
+    fn an_unterminated_opener_keeps_the_whole_document() {
+        // Parity pin for `src/editor/frontmatter.ts`, which requires a closing
+        // delimiter and so keeps this text in the body. comrak agrees: with no
+        // closer it abandons the front-matter read rather than swallowing to EOF.
+        // If that ever changed, export would delete the opening section of any
+        // note starting with a `---` rule (§3), and the splitter would not know.
+        let out = to_html("---\ntitle: x\n\n# Heading\n\nBody.\n");
+        assert!(out.contains("title: x"), "opening section dropped: {out:?}");
+        assert!(out.contains("Heading"));
+        assert!(out.contains("Body."));
+    }
+
+    #[test]
+    fn a_yaml_document_end_marker_does_not_close_front_matter() {
+        // Parity pin: the splitter accepts `---` as the only closer, because
+        // comrak's delimiter is `---` and treats `...` as ordinary text. Widening
+        // the TS side to `...` (as YAML itself allows) would desynchronize the
+        // two — the strip would show properties that export renders as prose.
+        let out = to_html("---\ntitle: x\n...\n\n# Heading\n");
+        assert!(out.contains("title: x"), "opening section dropped: {out:?}");
+        assert!(out.contains("Heading"));
+    }
+
+    #[test]
     fn a_bom_does_not_hide_front_matter_from_the_guard() {
         // Windows-authored files often carry a UTF-8 BOM; without skipping it the
         // first line is "\u{feff}---" and real front matter lands in the body.

@@ -85,6 +85,22 @@ pass the check, or the feature is useless in the vaults it targets, so the
 serializer options are tuned until they do (the same discipline as
 `src/editor/canonical.ts` for markdown).
 
+### The split carries three pieces, not two (added in step 1)
+
+`SplitFile` is `{ bom, frontMatter, body }`, and the block itself carries a
+**`gap`** — the whitespace-only lines between the closing delimiter and the first
+body line. Both exist because the editor would otherwise eat them:
+
+- **`gap`**: the editor drops leading blank lines from a document, so the
+  `---\n\n# Heading` shape Obsidian writes would come back with the body glued to
+  the closer — a one-line diff on *every* note in a vault on first save.
+- **`bom`**: a UTF-8 BOM is common in Windows-authored files (§1). Held apart from
+  both sides it survives byte-exact and, as a bonus, stops being document content
+  the way it is today.
+
+Neither belongs to the block or the body, so they are named rather than smuggled
+into one of them, and both are pinned in the gate.
+
 ## Format detection
 
 Must agree with the Rust side. `crates/mdhtml` and `crates/mdrtf` already own
@@ -96,7 +112,7 @@ sides, each commented pointing at the other.
 
 | Format | Opens with | Closes with | Notes |
 |---|---|---|---|
-| YAML | `---` + non-blank next line | `---` (also accept `...`) | Obsidian/Jekyll. Preserve which closer was used |
+| YAML | `---` + non-blank next line | `---` **only** | Obsidian/Jekyll |
 | TOML | `+++` | `+++` | Hugo/Zola |
 | JSON | `{` at byte 0 | matching `}` on its own line | Hugo. Brace scan must respect strings and escapes |
 
@@ -108,6 +124,19 @@ Hard rules, all of which have a fixture:
 - **No closing delimiter ⇒ no front matter.** Never let an unterminated opener
   swallow the document to the next `---`.
 - An empty block (`---\n---\n`) is front matter with zero properties, not absence.
+
+**Amended in step 1 (2026-08-17): `...` is not accepted as a closer.** The table
+originally allowed YAML's document-end marker. comrak was probed directly, and it
+renders `---\ntitle: x\n...\n` as a rule plus a paragraph — `...` is ordinary text
+to the export path. Accepting it here would mean the strip showing typed
+properties for a block that export renders as prose, which is precisely the
+desynchronization the parity rule forbids. The probe also settled the
+unterminated-opener case in our favour: with no closing `---`, comrak abandons the
+front-matter read rather than swallowing to EOF, so "no closer ⇒ no front matter"
+needs no change on the Rust side. Both behaviours were previously unpinned and now
+have tests in `mdhtml` **and** `mdrtf`
+(`an_unterminated_opener_keeps_the_whole_document`,
+`a_yaml_document_end_marker_does_not_close_front_matter`).
 
 ## Files
 
