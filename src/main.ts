@@ -19,10 +19,14 @@ import {
   type WorkspaceChange,
   checkForUpdate,
   clearRecovery,
+  confirmDiscard,
+  createFolder,
+  createNote,
   exportHtml,
   exportRtf,
   installCloseGuard,
   listHistory,
+  moveToTrash,
   loadRecovery,
   loadSettings,
   markdownToHtml,
@@ -39,6 +43,8 @@ import {
   pickFolder,
   readSnapshot,
   relaunchApp,
+  renameEntry,
+  restoreFromTrash,
   restoreSnapshot,
   saveClipboardImage,
   saveFile,
@@ -47,7 +53,9 @@ import {
   saveSettings,
   setRecentFiles,
   showAbout,
+  suggestNoteName,
   takeLaunchPath,
+  type TrashEntry,
   watchFolder,
   writeConflictCopy,
 } from "./ipc";
@@ -176,6 +184,31 @@ function basename(p: string): string {
 function setStatus(msg: string): void {
   const el = document.querySelector("#status");
   if (el) el.textContent = msg;
+}
+
+/**
+ * A status message with one inline action — currently Undo, after a delete.
+ *
+ * It lives in the status bar rather than a toast because it must not steal
+ * focus or cover anything: the user just deleted a file and may be about to
+ * click another. The next `setStatus` clears it, which is the dismissal — and
+ * missing the button costs nothing, since the file is sitting in `.trash/`
+ * either way. This is an affordance for the common case, not the safety net;
+ * the safety net is that the delete was never destructive.
+ */
+function setStatusWithAction(msg: string, label: string, onAction: () => void): void {
+  const el = document.querySelector("#status");
+  if (!el) return;
+  el.textContent = `${msg} `;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "status-action";
+  btn.textContent = label;
+  btn.addEventListener("click", () => {
+    setStatus(""); // one action, one use — a second click would restore twice
+    onAction();
+  });
+  el.append(btn);
 }
 
 function updateTitle(): void {
@@ -357,7 +390,7 @@ async function doOpenFolder(): Promise<void> {
 async function loadWorkspace(path: string): Promise<void> {
   const tree = await openFolder(path);
   workspaceRoot = path;
-  sidebar.setRoot(basename(path), tree);
+  sidebar.setRoot(basename(path), tree, path);
   sidebar.setActivePath(tabs.active()?.path ?? null);
   setStatus(`Opened folder ${basename(path)}`);
 
@@ -569,6 +602,167 @@ async function doSaveAs(): Promise<void> {
 function doNew(): void {
   openDocument(null, "Untitled", "");
   setStatus("New document");
+}
+
+// ---- Workspace file operations (ROADMAP Movement II.12) ---------------------
+//
+// The rules live in Rust (`crates/fileops` validates and refuses to clobber;
+// `trashbin` soft-deletes) and the UX lives in `ui/sidebar.ts`. What is here is
+// the part neither of them can own: keeping the *open tabs* consistent with
+// what just happened on disk.
+//
+// That is the §3 surface of this feature. A rename moves the file out from under
+// every tab pointing into it, and the watcher reports it as a delete followed by
+// a create — the exact shape `removedOnDisk` exists to catch. Left alone, the
+// tab would decide its file had vanished and offer to recreate it, resurrecting
+// the old note beside its new name.
+
+/**
+ * Create a note and open it.
+ *
+ * Opening is the point: creating a file the user then has to find in the tree
+ * is a worse New Note than the Untitled buffer they already have. Rejections
+ * propagate — the sidebar keeps the name field open and shows the message.
+ */
+async function doCreateNote(dir: string, name: string): Promise<void> {
+  if (!workspaceRoot) throw new Error("No folder is open.");
+  const path = await createNote(workspaceRoot, dir, name);
+  scheduleSidebarRefresh();
+  // The file is empty and was just written by us, so there is nothing to read
+  // back: open the buffer directly rather than paying a round trip to learn it
+  // is empty. `base` is "" for the same reason, which is exactly right — that
+  // is what is on disk.
+  openDocument(path, basename(path), "", formatForPath(path));
+  rememberRecent(path);
+  scheduleSessionSave();
+  setStatus(`Created ${basename(path)}`);
+}
+
+async function doCreateFolder(parent: string, name: string): Promise<void> {
+  if (!workspaceRoot) throw new Error("No folder is open.");
+  await createFolder(workspaceRoot, parent, name);
+  scheduleSidebarRefresh();
+  setStatus(`Created ${name}`);
+}
+
+/**
+ * Rename a note or folder, and move every affected tab with it.
+ *
+ * Three things have to happen together, and the order matters:
+ *
+ * 1. **Re-point the tabs**, including every tab *underneath* a renamed folder.
+ * 2. **Bump the removal epoch** for each old path. A `reconcile` may already be
+ *    in flight against the old path; it captured that path before its await and
+ *    would apply its verdict — "missing", most likely — to a tab that has since
+ *    moved. This is the same guard the watcher's remove branch uses.
+ * 3. **Clear `removedOnDisk`**, because the watcher's delete event for the old
+ *    path may have landed while the rename was in flight. Steps 1–3 run in one
+ *    synchronous block after the await, so no event can interleave between them.
+ *
+ * `base` is deliberately *not* reset: a rename does not change a single byte, so
+ * the merge base is still exactly right and re-reading would only invite a race.
+ */
+async function doRenameEntry(path: string, newName: string): Promise<void> {
+  if (!workspaceRoot) throw new Error("No folder is open.");
+  const newPath = await renameEntry(workspaceRoot, path, newName);
+
+  for (const tab of tabs.list()) {
+    const old = tab.path;
+    if (!old) continue;
+    // Exact match is the file case; the prefix branch is the folder case. The
+    // prefix is a raw slice because both strings come from the same scan of the
+    // same tree, so they share a spelling — `isAtOrUnder` is the predicate,
+    // `startsWith` is what makes the arithmetic safe.
+    let moved: string | null = null;
+    if (old === path) moved = newPath;
+    else if (isAtOrUnder(old, path) && old.startsWith(path)) moved = newPath + old.slice(path.length);
+    if (moved === null) continue;
+
+    // A queued reconcile for the old path would read a file that no longer
+    // exists; cancel it as well as invalidating one already running.
+    const queued = reconcileTimers.get(old);
+    if (queued) {
+      clearTimeout(queued);
+      reconcileTimers.delete(old);
+    }
+    removalEpoch.set(old, (removalEpoch.get(old) ?? 0) + 1);
+
+    tabs.setPath(tab.id, moved, basename(moved));
+    tabs.setRemovedOnDisk(tab.id, false);
+    dropRecent(old);
+    rememberRecent(moved);
+  }
+
+  scheduleSidebarRefresh();
+  updateTitle();
+  renderConflictBar();
+  scheduleSessionSave(); // the session's open-file paths just changed
+  setStatus(`Renamed to ${basename(newPath)}`);
+}
+
+/**
+ * Soft-delete a note or folder, and offer to undo it.
+ *
+ * The delete is reversible by construction — `trashbin` moves the file into the
+ * workspace `.trash/` rather than unlinking it — so this asks nothing in the
+ * ordinary case, and offers Undo instead. The one thing trash cannot bring back
+ * is an *unsaved buffer*, so that is the one case that stops and asks.
+ */
+async function doDeleteEntry(path: string, isDir: boolean): Promise<void> {
+  if (!workspaceRoot) return;
+  const affected = tabs
+    .list()
+    .filter((t) => t.path !== null && (isDir ? isAtOrUnder(t.path, path) : t.path === path));
+
+  const unsaved = affected.filter((t) => t.dirty);
+  if (unsaved.length > 0) {
+    const names = unsaved.map((t) => t.name).join(", ");
+    const verb = unsaved.length === 1 ? "has" : "have";
+    const ok = await confirmDiscard(
+      `${names} ${verb} unsaved changes that trash cannot bring back. Delete anyway?`,
+    );
+    if (!ok) return;
+  }
+
+  let entry: TrashEntry;
+  try {
+    entry = await moveToTrash(workspaceRoot, path);
+  } catch (e) {
+    setStatus(`Delete failed: ${String(e)}`);
+    return;
+  }
+
+  // Closed only after the move succeeded — a failed delete must not also cost
+  // the user their open tab.
+  for (const tab of affected) {
+    if (tab.path) {
+      removalEpoch.set(tab.path, (removalEpoch.get(tab.path) ?? 0) + 1);
+      // Offering a deleted note in Open Recent is offering a failure; restoring
+      // it from trash re-opens it and puts it back at the front.
+      dropRecent(tab.path);
+    }
+    tabs.close(tab.id);
+  }
+  if (!isDir) dropRecent(path); // deleted without ever being opened
+  scheduleSidebarRefresh();
+  updateTitle();
+  renderConflictBar();
+  scheduleSessionSave();
+  setStatusWithAction(`Moved ${entry.name} to trash`, "Undo", () => void undoDelete(entry));
+}
+
+async function undoDelete(entry: TrashEntry): Promise<void> {
+  if (!workspaceRoot) return;
+  try {
+    const path = await restoreFromTrash(workspaceRoot, entry.id);
+    scheduleSidebarRefresh();
+    setStatus(`Restored ${basename(path)}`);
+  } catch (e) {
+    // `restore` refuses rather than clobbers when something has reappeared at
+    // the path, so the file is still safe in `.trash/` — say so, because the
+    // difference between "not restored" and "lost" is the whole point.
+    setStatus(`Could not restore ${entry.name} — it is still in .trash (${String(e)})`);
+  }
 }
 
 // ---- Pane layout (sidebar + tabbed rail) -----------------------------------
@@ -1051,7 +1245,7 @@ function scheduleSidebarRefresh(): void {
     if (!workspaceRoot) return;
     openFolder(workspaceRoot)
       .then((tree) => {
-        sidebar.setRoot(basename(workspaceRoot!), tree);
+        sidebar.setRoot(basename(workspaceRoot!), tree, workspaceRoot);
         sidebar.setActivePath(tabs.active()?.path ?? null);
       })
       .catch(() => {});
@@ -1663,6 +1857,15 @@ window.addEventListener("DOMContentLoaded", async () => {
     // Routed through the same action as the menu item, so the empty state's
     // button cannot drift from File → Open Folder.
     onOpenFolder: () => runAction("menu_open_folder"),
+    // These three deliberately do **not** catch: the sidebar keeps its name
+    // field open on a rejection and shows the message beside it, which is where
+    // a bad name belongs. Swallowing the error here would leave the field
+    // looking like it had worked.
+    onCreateNote: (dir, name) => doCreateNote(dir, name),
+    onCreateFolder: (parent, name) => doCreateFolder(parent, name),
+    onRename: (path, newName) => doRenameEntry(path, newName),
+    onDelete: (path, isDir) => void doDeleteEntry(path, isDir),
+    suggestName: (dir) => suggestNoteName(workspaceRoot ?? dir, dir, "Untitled"),
   });
   sidebar.setRoot(null, []);
   tabs = new TabManager(tabbar, { onDeactivate, onActivate, onCloseRequest });

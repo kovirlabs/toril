@@ -12,6 +12,28 @@ GitHub Release notes plus the commits that shipped in it.
 ## [Unreleased]
 
 ### Added
+- **Manage your notes from the files pane.** New note, new folder, rename and delete,
+  from a right-click on any file or folder — or the `＋` button beside the folder name.
+  Until now Toril could open and save notes but not *organize* them: renaming a note
+  meant leaving for the file manager and coming back.
+
+  **Deleting moves the note to a `.trash` folder inside your workspace, and offers you
+  Undo.** Nothing is unlinked, so a delete is recoverable long after the message has
+  gone — and because it is recoverable, Toril does not interrupt you to confirm it. The
+  one thing trash cannot bring back is a buffer you never saved, so that is the one case
+  that stops and asks.
+
+  **A rename takes the note's version history with it**, and moves any open tab —
+  including every tab inside a renamed folder — to the new path. Renaming does not
+  rewrite a single byte of the file.
+
+  Names are checked before anything touches disk, against the rules Windows actually
+  enforces: no `< > : " / \ | ? *`, nothing ending in a space or a dot, and none of the
+  reserved device names (`CON`, `NUL`, `COM1`…) that appear to work and then behave like
+  hardware. Renaming `notes.md` to `Notes.md` — a change of case only — works. Nothing
+  can be created or renamed outside the folder you opened, and no operation will ever
+  overwrite a file that is already there.
+
 - **Toril can update itself.** `v1.0.0` had no update path at all, so every copy was
   stranded on the version it was installed with — the only way forward was to notice a
   new release and download the installer by hand. Toril now checks for a newer build
