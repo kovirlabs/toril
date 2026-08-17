@@ -8,6 +8,7 @@ import type { Editor } from "@milkdown/kit/core";
 import { createEditor } from "./editor/milkdown";
 import { docToMarkdown, markdownToDoc } from "./editor/serializer";
 import { docToHtml, htmlToDoc } from "./editor/html-serializer";
+import { LoadEcho } from "./editor/loadecho";
 import { buildStandaloneHtml } from "./export/html";
 import { sanitizeHtml } from "./sanitize";
 import {
@@ -107,7 +108,9 @@ let unwatch: UnlistenFn | null = null;
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 let sessionTimer: ReturnType<typeof setTimeout> | null = null;
 
-let loading = false; // suppress the dirty flag during programmatic loads
+let loading = false; // suppress the dirty flag during a *synchronous* load
+/** Suppresses the dirty flag for the debounced echo of a programmatic load. */
+const loadEcho = new LoadEcho();
 /** Pending per-path reconciles — sync daemons emit bursts (write, chmod, touch). */
 const reconcileTimers = new Map<string, ReturnType<typeof setTimeout>>();
 /**
@@ -145,6 +148,11 @@ function loadIntoEditor(content: string, format: DocFormat): void {
   if (format === "html") htmlToDoc(editor, content);
   else markdownToDoc(editor, content);
   loading = false;
+  // `loading` only covers a *synchronous* notification. Milkdown's listener is
+  // debounced 200ms, so the notification for this load lands well after the flag
+  // closes — `loadEcho` is what actually keeps a load from marking the tab dirty
+  // (see src/editor/loadecho.ts).
+  loadEcho.arm(serializeEditor(format));
 }
 
 /** Serialize the live editor into the given format's canonical string. */
@@ -159,11 +167,15 @@ function formatForPath(path: string): DocFormat {
 
 function onEditorChange(): void {
   if (loading) return;
+  const active = tabs.active();
+  // A load's own echo, arriving after the debounce. Nothing changed, so nothing
+  // downstream needs doing: `onActivate` already refreshed the chrome, and
+  // marking dirty here would arm autosave to rewrite a note nobody edited.
+  if (active && loadEcho.isEcho(serializeEditor(active.format))) return;
   statusBar?.refresh();
   outline?.refresh();
-  const tab = tabs.active();
-  if (tab && !tab.dirty) {
-    tabs.setDirty(tab.id, true);
+  if (active && !active.dirty) {
+    tabs.setDirty(active.id, true);
     updateTitle();
   }
   autosave?.notifyChange();
