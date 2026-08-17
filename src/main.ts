@@ -8,6 +8,7 @@ import type { Editor } from "@milkdown/kit/core";
 import { createEditor } from "./editor/milkdown";
 import { docToMarkdown, markdownToDoc } from "./editor/serializer";
 import { docToHtml, htmlToDoc } from "./editor/html-serializer";
+import { type SplitFile, joinFrontMatter, splitFrontMatter } from "./editor/frontmatter";
 import { buildStandaloneHtml } from "./export/html";
 import { sanitizeHtml } from "./sanitize";
 import {
@@ -138,18 +139,49 @@ function updateTitle(): void {
   sidebar.setActivePath(tab?.path ?? null);
 }
 
+/**
+ * The BOM and front-matter block of the document currently in the editor, held
+ * aside so they never become ProseMirror content (§3 — with no front-matter
+ * plugin, a YAML block parses as rule/paragraph/list and a trailing key is
+ * absorbed into the previous list item, silently invalidating it).
+ *
+ * Only the *live* document needs this. There is one shared editor, and every
+ * `serializeEditor` call is for whatever `loadIntoEditor` last put in it — the
+ * call sites that name a non-active tab are all guarded by an `active()` check —
+ * so this mirrors the editor the same way `editor` itself is a single instance.
+ * Nothing per-tab is stored on purpose: `tab.content` remains the *whole file*,
+ * so re-activating a tab simply re-splits it, and merge, snapshots, recovery,
+ * session and export keep operating on complete bytes.
+ */
+let liveSplit: SplitFile = { bom: "", frontMatter: null, body: "" };
+
 // Format-aware bridges to the two canonical serializers (§3.2). The active tab's
 // `format` decides which one runs; everything else (tabs, save, session) is shared.
 function loadIntoEditor(content: string, format: DocFormat): void {
   loading = true;
-  if (format === "html") htmlToDoc(editor, content);
-  else markdownToDoc(editor, content);
+  if (format === "html") {
+    // Front matter is a markdown-file concept; an `.html` document has none, and
+    // the strip stays hidden for those tabs.
+    liveSplit = { bom: "", frontMatter: null, body: content };
+    htmlToDoc(editor, content);
+  } else {
+    liveSplit = splitFrontMatter(content);
+    // NOTE for whoever merges `fix/on-device-sweep-followups`: its load echo must
+    // be armed with `liveSplit.body`, not `content` — the editor is now given the
+    // body, so echoing the whole file would never match and every load would
+    // still mark the tab dirty.
+    markdownToDoc(editor, liveSplit.body);
+  }
   loading = false;
 }
 
-/** Serialize the live editor into the given format's canonical string. */
+/**
+ * Serialize the live editor into the given format's canonical string — the whole
+ * file, front matter rejoined byte-exact.
+ */
 function serializeEditor(format: DocFormat): string {
-  return format === "html" ? docToHtml(editor) : docToMarkdown(editor);
+  if (format === "html") return docToHtml(editor);
+  return joinFrontMatter({ ...liveSplit, body: docToMarkdown(editor) });
 }
 
 /** Map a file path's extension to its canonical editor format. */
@@ -654,6 +686,11 @@ async function doExportHtml(): Promise<void> {
   const tab = tabs.active();
   if (!tab) return;
   try {
+    // Deliberately the editor's markdown, not `serializeEditor` — that would
+    // rejoin the front matter, and an export wants the rendered document. This
+    // used to rely on comrak stripping the block (`opens_with_front_matter` in
+    // `mdhtml`); now the block never reaches it, and that guard is the parity
+    // partner of the splitter rather than the mechanism (§7).
     const markdown = docToMarkdown(editor);
     const dirty = await markdownToHtml(markdown); // untrusted comrak output
     const safe = sanitizeHtml(dirty); // §3.3 chokepoint — before it hits a file
@@ -676,6 +713,7 @@ async function doExportRtf(): Promise<void> {
   const tab = tabs.active();
   if (!tab) return;
   try {
+    // Body only, like HTML export above: the block is no longer in the editor.
     const markdown = docToMarkdown(editor);
     const title = tab.name.replace(/\.(md|markdown)$/i, "");
     const path = await exportRtf(markdown, `${title || "untitled"}.rtf`);

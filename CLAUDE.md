@@ -30,8 +30,8 @@ the feature-by-feature record.
 - **Math (KaTeX)** — the only Milkdown math plugin (`@milkdown/plugin-math`) is npm-**deprecated**, so
   it's omitted per the healthy-dependency rule (§2). Revisit when a maintained option appears. The
   round-trip gate stays CommonMark + GFM + emoji until then.
-- **YAML front matter** — not yet guaranteed lossless; comrak handles it on export only. Add its
-  fixtures to `roundtrip.test.ts` when in-editor handling lands.
+- **Front-matter properties UI** — the *data-safety* half is **done** (see "Front matter" below); what
+  remains is the editing surface: the collapsible properties strip, typed rows, and the raw fallback.
 - **PDF export** — deferred (§7); HTML export → browser "Save as PDF" is the manual path.
 - **Source / Typewriter / Focus edit modes** — *dropped as low-value* (user decision, 2026-05-26), not
   deferred-pending. Revisit only on explicit demand.
@@ -79,6 +79,29 @@ marks and `<div class="callout">`, `<details>`/`<summary>`, `<dl>`/`<dt>`/`<dd>`
   is cleanly normalized.
 - **Identity note:** HTML as first-class is a deliberate expansion of the "plain `.md`,
   Obsidian-compatible" pitch (§1) — keep that trade-off in mind.
+
+**Front matter is no longer corrupted — `feat/frontmatter-properties`, steps 1–2 of
+`docs/superpowers/specs/2026-08-17-frontmatter-properties-design.md`.** It used to be: with no
+front-matter plugin, an Obsidian block parsed as thematic break → paragraph → bullet list → thematic
+break, and a key *after* a list value was absorbed as a lazy continuation inside the previous list item
+(`draft: true` nested under `- beta`) — invalid YAML, so the property vanished when the note was
+reopened in Obsidian. A §3 data-safety bug, not the "not yet lossless" caveat this file used to carry,
+and no fixture covered it.
+
+Front matter is **not markdown**, so it is split off at the load/serialize boundary rather than modelled
+as a Milkdown node: `src/editor/frontmatter.ts` (YAML `---`, TOML `+++`, JSON `{`) hands the editor only
+the body, and `serializeEditor` rejoins the block **byte-exact**. `tab.content` stays the whole file, so
+merge, snapshots, recovery, session and export are untouched — the split lives inside `loadIntoEditor`
+/ `serializeEditor` and a module-level `liveSplit` mirroring the single shared editor. Two rules carry
+the safety: `join(split(x)) === x` for every input including unparseable blocks, and typed editing (step
+4) will only be offered for a block that survives parse → re-serialize → compare, which fails *closed*
+for comments, anchors and block scalars without enumerating them. Consequences worth knowing: the block
+keeps its own line endings, so a CRLF note ends up mixed (block CRLF, body LF — pinned as
+`frontMatterNormalized.crlfNote`); a BOM is now held out of the document instead of entering it as
+content; word count no longer includes front matter; and export gets the body directly rather than
+relying on comrak's `opens_with_front_matter` to strip it — that guard is now the splitter's **parity
+partner**, so the TS and Rust rules must change together (probed, not assumed: comrak also requires a
+closing `---` and rejects `...`; both pinned in `mdhtml` *and* `mdrtf`).
 
 Implementation notes for whoever resumes (learned the hard way): Milkdown `$markSchema`/`$nodeSchema`
 *require* `toMarkdown`+`parseMarkdown`; `SerializerState` renders children via `state.next(node.content)`
@@ -421,7 +444,7 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 | Emoji shortcodes | `@milkdown/plugin-emoji` |
 | Inline / slash shortcuts | `@milkdown/plugin-slash` + keymap config |
 | Formatting toolbar | `toolbar.ts` → Milkdown commands via `callCommand` (the few command-less items use a plain ProseMirror transaction); **never inserts raw markdown text** (§3.2). Buttons reflect active state via `activeState()`. The pure command layer is exported separately from the DOM so the gate tests it headlessly. *Underline omitted by design* (no markdown form). *Front-matter button deferred* (not lossless yet). |
-| Front matter | comrak handles on export; in-editor handling deferred |
+| Front matter | **Not a Milkdown plugin, by design** — `src/editor/frontmatter.ts` splits the block off at the load/serialize boundary so it never enters the ProseMirror doc (§3). Editing UI (the strip) still to come |
 | Source / Typewriter / Focus modes | **Dropped as low-value** (§0/§8); Source mode would use CodeMirror 6, both backed by `serializer.ts` |
 | Themes | `theme.ts` writes `html[data-theme]`; colors are CSS variables in `styles.css`; persisted in settings |
 | Clipboard image paste | `$prose` `handlePaste` in `milkdown.ts` → `save_clipboard_image` writes to `assets/` (`imgasset`, content-hashed for dedup) → inserted as a canonical image node (not raw text, §3.2). Requires a saved doc. |
@@ -462,8 +485,13 @@ Phases 0–3 are complete and Phase 4 (polish) is in progress; the shipped detai
 - **Round-trip:** `tests/roundtrip.test.ts` — real Milkdown in jsdom, built through
   `canonical.ts` so the gate tests the canon that ships. Three classes: `fixtures`
   (canonical input is stable), `preserved` (human/Obsidian-authored input is **not**
-  rewritten), `normalized` (what we do rewrite, pinned to exact output). Add math +
-  front-matter fixtures when those land (§3.2).
+  rewritten), `normalized` (what we do rewrite, pinned to exact output), and
+  `frontMatter` (**whole-file** trip — split, round-trip the body, rejoin — the class
+  that pins the §3 front-matter fix, including blocks no serializer could reproduce).
+  Add math fixtures if math ever lands (§3.2). Plus `tests/frontmatter.test.ts`, the
+  splitter's own gate: `join(split(x)) === x` over fixtures *and* 2000 randomized
+  documents, detection per format, and the Rust-parity cases mirrored in
+  `mdhtml`/`mdrtf`.
 - **Toolbar round-trip:** `tests/toolbar.test.ts` — each command yields the same canonical markdown as
   typing the syntax, and asserts **no raw-markdown-text insertion** (§3.2).
 - **Export:** `cargo test -p mdhtml -p mdrtf` (render configs) + `tests/export.test.ts` (builder + the
