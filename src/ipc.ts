@@ -179,6 +179,8 @@ export interface Settings {
   outline_visible: boolean | null;
   /** Legacy; see {@link Settings.outline_visible}. */
   history_visible: boolean | null;
+  /** Whether the properties strip is expanded. `null` ⇒ expanded (default). */
+  properties_expanded: boolean | null;
   /** Whether debounced autosave is enabled. `null` ⇒ off (default). */
   autosave: boolean | null;
   /** Autosave/journal debounce in ms. `null` ⇒ 2000 (default). */

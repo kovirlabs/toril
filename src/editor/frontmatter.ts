@@ -36,6 +36,17 @@ export interface FrontMatter {
    */
   inner: string;
   /**
+   * The opening and closing delimiters exactly as written, terminators included,
+   * such that `opener + inner + closer === text` (pinned in the gate).
+   *
+   * Split out so the strip can rewrite the payload without touching the fence:
+   * a block delimited with CRLF, or with a trailing space after `---`, keeps
+   * those bytes when a property is edited. Rebuilding from a hardcoded `---\n`
+   * would quietly rewrite them.
+   */
+  opener: string;
+  closer: string;
+  /**
    * The whitespace-only lines between the closing delimiter and the first line
    * of the body, byte-exact.
    *
@@ -224,6 +235,10 @@ export function splitFrontMatter(file: string): SplitFile {
         format,
         text: rest.slice(0, span.end),
         inner: rest.slice(span.innerStart, span.innerEnd),
+        // JSON's delimiters are the object's own braces, so its opener is empty
+        // and its closer is whatever followed `}` on that line.
+        opener: rest.slice(0, span.innerStart),
+        closer: rest.slice(span.innerEnd, span.end),
         gap: rest.slice(span.end, gapEnd),
       },
       body: rest.slice(gapEnd),

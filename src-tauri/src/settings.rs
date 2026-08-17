@@ -52,6 +52,9 @@ pub struct Settings {
     pub outline_visible: Option<bool>,
     /// Legacy; see [`Settings::outline_visible`].
     pub history_visible: Option<bool>,
+    /// Whether the properties strip above the editor is expanded. `None` ⇒
+    /// expanded (a document's properties are worth seeing by default).
+    pub properties_expanded: Option<bool>,
     /// Whether debounced autosave of dirty, saved files is on. `None` ⇒ off.
     pub autosave: Option<bool>,
     /// Autosave/journal debounce in ms. `None` ⇒ 2000 (frontend default).

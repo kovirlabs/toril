@@ -59,6 +59,11 @@
         <div id="format-toolbar" class="format-toolbar"></div>
         <div id="searchbar"></div>
         <div id="conflictbar"></div>
+        <!-- Front matter belongs to the top of the document, so it sits above
+             the writing surface rather than in the rail. Hidden for .html tabs
+             and for markdown with no block (§12b: a flex row, never animated
+             around display:none). -->
+        <section id="properties" aria-label="Document properties"></section>
         <main id="editor" class="editor"></main>
       </section>
 

@@ -8,7 +8,8 @@ import type { Editor } from "@milkdown/kit/core";
 import { createEditor } from "./editor/milkdown";
 import { docToMarkdown, markdownToDoc } from "./editor/serializer";
 import { docToHtml, htmlToDoc } from "./editor/html-serializer";
-import { type SplitFile, joinFrontMatter, splitFrontMatter } from "./editor/frontmatter";
+import type { FrontMatter, SplitFile } from "./editor/frontmatter";
+import { joinFrontMatter, splitFrontMatter } from "./editor/frontmatter";
 import { buildStandaloneHtml } from "./export/html";
 import { sanitizeHtml } from "./sanitize";
 import {
@@ -56,6 +57,7 @@ import {
   selectSavable,
 } from "./sync";
 import { ConflictBar } from "./ui/conflictbar";
+import { PropertiesStrip } from "./ui/properties";
 import { History } from "./ui/history";
 import { Outline } from "./ui/outline";
 import {
@@ -98,6 +100,9 @@ let searchBar: SearchBar | null = null;
 let conflictBar: ConflictBar | null = null;
 let autosave: AutosaveScheduler | null = null;
 let autosaveEnabled = false;
+let properties: PropertiesStrip | null = null;
+/** Persisted collapse state for the properties strip; `true` is the default. */
+let propertiesExpanded = true;
 let autosaveDebounceMs = 2000;
 let theme: ThemeController | null = null;
 
@@ -155,6 +160,17 @@ function updateTitle(): void {
  */
 let liveSplit: SplitFile = { bom: "", frontMatter: null, body: "" };
 
+/**
+ * A property edit is an edit to the document, and takes exactly the path an
+ * editor keystroke does — dirty flag, autosave, recovery journal, status bar.
+ * The strip owns no state that survives this: the block it hands back replaces
+ * `liveSplit`'s, and `serializeEditor` rejoins it on the next read.
+ */
+function onPropertiesChange(next: FrontMatter | null): void {
+  liveSplit = { ...liveSplit, frontMatter: next };
+  onEditorChange();
+}
+
 // Format-aware bridges to the two canonical serializers (§3.2). The active tab's
 // `format` decides which one runs; everything else (tabs, save, session) is shared.
 function loadIntoEditor(content: string, format: DocFormat): void {
@@ -172,6 +188,8 @@ function loadIntoEditor(content: string, format: DocFormat): void {
     // still mark the tab dirty.
     markdownToDoc(editor, liveSplit.body);
   }
+  // The strip mirrors whatever is in the editor, including "nothing to show".
+  properties?.setDocument(liveSplit.frontMatter, format !== "html");
   loading = false;
 }
 
@@ -1106,6 +1124,7 @@ function scheduleSessionSave(): void {
       // the migration in `restorePaneState` cannot fire a second time.
       outline_visible: null,
       history_visible: null,
+      properties_expanded: propertiesExpanded,
       autosave: autosaveEnabled,
       autosave_debounce_ms: autosaveDebounceMs,
     };
@@ -1137,6 +1156,12 @@ async function restoreSession(): Promise<void> {
   // persisting: restoring is not a user edit, and writing back immediately would
   // make a clamp permanent for the wider screen too.
   setPanes(restorePaneState(settings, window.innerWidth), false);
+  if (settings.properties_expanded !== null) {
+    propertiesExpanded = settings.properties_expanded;
+    // Applied without persisting, like the pane widths above: restoring is not a
+    // user edit (§12b, "derived, never stored").
+    properties?.setExpanded(propertiesExpanded);
+  }
   if (settings.autosave !== null) autosaveEnabled = settings.autosave;
   if (settings.autosave_debounce_ms !== null) autosaveDebounceMs = settings.autosave_debounce_ms;
   autosave?.setConfig({ enabled: autosaveEnabled, debounceMs: autosaveDebounceMs });
@@ -1347,6 +1372,24 @@ window.addEventListener("DOMContentLoaded", async () => {
   // belongs above the document, not inside the surface that scrolls away.
   const conflictEl = document.querySelector<HTMLElement>("#conflictbar");
   if (conflictEl) conflictBar = new ConflictBar(conflictEl);
+
+  // Above the writing surface, below the banner: front matter reads as the top
+  // of the document, and the strip never touches the doc, the tab, or disk — it
+  // hands back a complete block and this file decides what that means.
+  const propertiesEl = document.querySelector<HTMLElement>("#properties");
+  if (propertiesEl) {
+    properties = new PropertiesStrip(
+      propertiesEl,
+      {
+        onChange: onPropertiesChange,
+        onToggleExpanded: (expanded) => {
+          propertiesExpanded = expanded;
+          scheduleSessionSave();
+        },
+      },
+      propertiesExpanded,
+    );
+  }
 
   autosave = new AutosaveScheduler(
     {

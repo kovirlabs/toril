@@ -747,6 +747,194 @@ body {
   background: rgb(255 255 255 / 12%);
 }
 
+/* ---- Properties strip ----------------------------------------------------- */
+/* A flex row in the #main column, above the writing surface (§12b rule 1). It
+   holds its own scroll rather than growing without bound, so a note with thirty
+   properties cannot push the editor off the bottom of the window. */
+#properties {
+  display: flex;
+  flex-direction: column;
+  /* Never grow past a third of the column; the rest scrolls inside the strip
+     (§12b rule 4 — contain overflow at the scroll container, not the page). */
+  max-height: 33%;
+  min-height: 0;
+  flex: 0 0 auto;
+  padding: var(--sp-2) var(--sp-3);
+  gap: var(--sp-2);
+  background: var(--chrome-sunken);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm);
+}
+
+#properties[hidden] {
+  display: none;
+}
+
+/* No block yet: one muted affordance, no frame, no border — an ordinary note
+   should not carry a permanent band of chrome above its first line. */
+#properties.properties-empty {
+  padding: 0 var(--sp-3);
+  background: transparent;
+  border-bottom: none;
+}
+
+.properties-header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 0 0 auto;
+}
+
+.properties-header[hidden] {
+  display: none;
+}
+
+.properties-toggle {
+  min-height: var(--target-sm);
+  padding: 0 var(--sp-1);
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.properties-toggle:hover {
+  background: var(--hover-bg);
+}
+
+.properties-toggle[aria-expanded="false"]::before {
+  content: "▸ ";
+}
+
+.properties-toggle[aria-expanded="true"]::before {
+  content: "▾ ";
+}
+
+.properties-badge {
+  color: var(--dim);
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+}
+
+.properties-body {
+  /* min-height:0 so the rows can shrink and scroll instead of pushing the
+     editor out of the column (§12b rule 3). */
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.properties-body[hidden] {
+  display: none;
+}
+
+.properties-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.properties-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.properties-key {
+  flex: 0 0 10rem;
+  min-width: 0;
+}
+
+.properties-value,
+.properties-list {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.properties-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+
+.properties-item {
+  flex: 0 1 8rem;
+  min-width: 0;
+}
+
+.properties-key,
+.properties-value,
+.properties-item,
+.properties-raw {
+  min-height: var(--target-sm);
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--chrome-raised);
+  color: var(--fg);
+  font: inherit;
+}
+
+.properties-raw {
+  /* The block's own bytes, so it is monospaced and multi-line. */
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  padding: var(--sp-2);
+  min-height: 5rem;
+  resize: vertical;
+  white-space: pre;
+  overflow: auto;
+}
+
+.properties-reason {
+  margin: 0;
+  color: var(--dim);
+  font-size: var(--text-xs);
+}
+
+.properties-add,
+.properties-add-block,
+.properties-add-item,
+.properties-remove {
+  flex: 0 0 auto;
+  min-height: var(--target-sm);
+  min-width: var(--target-sm);
+  padding: 0 var(--sp-2);
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-xs);
+}
+
+.properties-add:hover,
+.properties-add-block:hover,
+.properties-add-item:hover,
+.properties-remove:hover {
+  background: var(--hover-bg);
+  border-color: var(--border);
+}
+
+.properties-add,
+.properties-add-block {
+  align-self: flex-start;
+}
+
+.properties-checkbox {
+  flex: 0 0 auto;
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--accent);
+}
+
 /* ---- Status bar ---------------------------------------------------------- */
 #statusbar {
   display: flex;

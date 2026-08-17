@@ -143,9 +143,31 @@ describe("splitFrontMatter / joinFrontMatter", () => {
         format: "yaml",
         text: "---\ntitle: T\ntags:\n  - a\n---\n",
         inner: "title: T\ntags:\n  - a\n",
+        opener: "---\n",
+        closer: "---\n",
         gap: "\n",
       });
       expect(split.body).toBe("# Heading\n\nBody.\n");
+    });
+
+    it("keeps opener + inner + closer equal to the block, for every fixture", () => {
+      // The invariant the properties strip rebuilds through: replace the payload,
+      // keep the fence's exact bytes (CRLF, a trailing space after `---`, the
+      // JSON brace that is both delimiter and payload).
+      for (const [name, file] of FIXTURES) {
+        const fm = splitFrontMatter(file).frontMatter;
+        if (!fm) continue;
+        expect(fm.opener + fm.inner + fm.closer, name).toBe(fm.text);
+      }
+    });
+
+    it("splits the delimiters off a CRLF block and a padded one", () => {
+      const crlf = splitFrontMatter("---\r\ntitle: T\r\n---\r\n").frontMatter!;
+      expect([crlf.opener, crlf.closer]).toEqual(["---\r\n", "---\r\n"]);
+      const padded = splitFrontMatter("--- \ntitle: T\n--- \n").frontMatter!;
+      expect([padded.opener, padded.closer]).toEqual(["--- \n", "--- \n"]);
+      const json = splitFrontMatter('{\n  "a": 1\n}\n').frontMatter!;
+      expect([json.opener, json.inner, json.closer]).toEqual(["", '{\n  "a": 1\n}', "\n"]);
     });
 
     it("keeps the BOM out of both the block and the body", () => {
