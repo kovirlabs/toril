@@ -154,6 +154,11 @@ fn build_with_recent<R: Runtime>(app: &AppHandle<R>, recent: &[String]) -> tauri
     let find = MenuItemBuilder::with_id("menu_find", "&Find && Replace…")
         .accelerator("CmdOrCtrl+F")
         .build(app)?;
+    // Distinct from Find & Replace, which searches the note that is open.
+    // This searches every note in the folder (ROADMAP II.6).
+    let search_vault = MenuItemBuilder::with_id("menu_search_vault", "&Search Notes…")
+        .accelerator("CmdOrCtrl+Shift+F")
+        .build(app)?;
     let toggle_sidebar = MenuItemBuilder::with_id("menu_toggle_sidebar", "Files &Pane")
         .accelerator("CmdOrCtrl+\\")
         .build(app)?;
@@ -165,6 +170,8 @@ fn build_with_recent<R: Runtime>(app: &AppHandle<R>, recent: &[String]) -> tauri
         .build(app)?;
     let toggle_history =
         MenuItemBuilder::with_id("menu_toggle_history", "Version &History").build(app)?;
+    let toggle_search =
+        MenuItemBuilder::with_id("menu_toggle_search", "Search &Panel").build(app)?;
     // Zoom scales the writing surface, not the chrome — the OS already scales
     // the whole UI, and a bigger tab bar is not what a tired writer wants.
     let zoom_in = MenuItemBuilder::with_id("menu_zoom_in", "Zoom &In")
@@ -185,10 +192,12 @@ fn build_with_recent<R: Runtime>(app: &AppHandle<R>, recent: &[String]) -> tauri
 
     let view = SubmenuBuilder::new(app, "&View")
         .item(&find)
+        .item(&search_vault)
         .separator()
         .item(&toggle_sidebar)
         .item(&toggle_outline)
         .item(&toggle_history)
+        .item(&toggle_search)
         .separator()
         .item(&zoom_in)
         .item(&zoom_out)

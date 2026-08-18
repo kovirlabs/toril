@@ -12,6 +12,25 @@ GitHub Release notes plus the commits that shipped in it.
 ## [Unreleased]
 
 ### Added
+- **Search every note in the folder.** A new **Search** tab in the right-hand panel,
+  or **Ctrl+Shift+F**, finds text across your whole vault rather than just the note
+  you have open. Results are grouped by note with the matching lines under each one;
+  clicking one opens the note and highlights the match. Notes whose *name* matches
+  come first, then whichever has the most matches.
+
+  Toggles for **match case**, **whole word** and **regular expression** sit beside the
+  box. Ordinary searches are literal, so looking for `C++` or `a.b` finds exactly
+  that — no escaping, and nothing silently reinterpreted as a pattern.
+
+  **Nothing is written to disk.** Toril does not build a search index file: it holds
+  your notes' text in memory while the app is running and rebuilds it next time. There
+  is no index to go stale, corrupt, or disagree with your files, and nothing new
+  appears in your folder. Notes you have deleted stay out of the results, and a file
+  outside the folder you opened is never read.
+
+  The count above the results says what was *found*, not what fits on screen — if a
+  search matches more than is shown, it says so rather than quietly stopping.
+
 - **Manage your notes from the files pane.** New note, new folder, rename and delete,
   from a right-click on any file or folder — or the `＋` button beside the folder name.
   Until now Toril could open and save notes but not *organize* them: renaming a note

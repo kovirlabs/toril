@@ -98,6 +98,9 @@ jobs:
       # crate and needs Windows even more specifically: the names it rejects
       # (reserved devices, trailing dots) and the case-only rename it must allow
       # are *Windows* behaviours, and the Linux leg alone cannot see either.
+      # vaultsearch is the third: it resolves every read against the open folder
+      # with `canonicalize`, which on Windows yields a `\\?\C:\...` path — the
+      # containment check has to still hold when the two spellings differ.
       - name: Test logic crates
         run: >
           cargo test
@@ -111,6 +114,7 @@ jobs:
           -p mergemd
           -p keystore
           -p fileops
+          -p vaultsearch
 
       # `--all` covers workspace *members*, and the vendored glib is excluded
       # from the workspace (§2) — so unlike clippy, this never touches upstream

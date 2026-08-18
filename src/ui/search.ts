@@ -181,6 +181,23 @@ export class SearchBar {
     this.findInput.select();
   }
 
+  /**
+   * Open the bar on `query` — how a vault-search result lands inside the note.
+   *
+   * The panel deliberately hands over the *text* rather than a line number.
+   * There is no line number to jump to in a WYSIWYG surface: the doc is a
+   * ProseMirror tree, and mapping a line of markdown source onto a position in
+   * it would be a second, divergent parse of the same file (§3.2). Re-finding
+   * the text in the doc that is actually open is both simpler and always right.
+   */
+  openWith(query: string): void {
+    this.findInput.value = query;
+    this.setQuery(query);
+    this.container.hidden = false;
+    this.findInput.focus();
+    this.findInput.select();
+  }
+
   close(): void {
     this.container.hidden = true;
     this.setQuery(""); // clear highlights

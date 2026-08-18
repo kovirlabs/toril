@@ -4,6 +4,7 @@ mod settings;
 
 use std::sync::Mutex;
 
+use commands::search::SearchState;
 use commands::workspace::WatcherState;
 use tauri::{Emitter, Manager};
 
@@ -69,6 +70,10 @@ pub fn run() {
         .on_menu_event(menu::on_event)
         .manage(launch_path)
         .manage(WatcherState::default())
+        // The vault's text, held for the session and nowhere else. Starts
+        // rootless, which `vaultsearch` treats as "read nothing" — so the state
+        // before a folder is open cannot be talked into reading a file.
+        .manage(SearchState::default())
         .invoke_handler(tauri::generate_handler![
             commands::files::open_file,
             commands::files::save_file,
@@ -96,6 +101,9 @@ pub fn run() {
             commands::snapshots::restore_snapshot,
             commands::sync::merge_external,
             commands::sync::write_conflict_copy,
+            commands::search::index_vault,
+            commands::search::search_vault,
+            commands::search::index_paths,
             // No `get_api_key` here — by design, not by omission. A stored key
             // must never cross into the webview; see commands/secrets.rs.
             commands::secrets::set_api_key,

@@ -1,4 +1,4 @@
-// The right-hand rail: one container, two alternative panels.
+// The right-hand rail: one container, three alternative panels.
 //
 // Outline and History used to be independent grid columns, so both open cost
 // 460px of chrome — more than a 1280px window can spare against a 720px measure.
@@ -9,6 +9,7 @@
 // `outline.ts` and `history.ts` are untouched by this change; they still render
 // into the same `#outline` / `#history` elements they always did.
 
+import { isRailTab } from "./panes";
 import type { RailTab } from "./panes";
 
 export interface RailCallbacks {
@@ -27,7 +28,7 @@ export class Rail {
     for (const tab of this.tabs) {
       tab.addEventListener("click", () => {
         const name = tab.dataset.tab;
-        if (name === "outline" || name === "history") this.cb.onSelect(name);
+        if (isRailTab(name)) this.cb.onSelect(name);
       });
     }
     // Arrow keys move between tabs, which is what `role="tablist"` promises to
@@ -44,7 +45,7 @@ export class Rail {
     const next = this.tabs[(current + delta + this.tabs.length) % this.tabs.length];
     next?.focus();
     const name = next?.dataset.tab;
-    if (name === "outline" || name === "history") this.cb.onSelect(name);
+    if (isRailTab(name)) this.cb.onSelect(name);
   }
 
   /**

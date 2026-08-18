@@ -4864,6 +4864,7 @@ dependencies = [
  "tauri-plugin-window-state",
  "trashbin",
  "vaultscan",
+ "vaultsearch",
 ]
 
 [[package]]
@@ -5142,6 +5143,15 @@ name = "vaultscan"
 version = "0.1.0"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "vaultsearch"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "serde",
+ "vaultscan",
 ]
 
 [[package]]

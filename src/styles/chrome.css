@@ -1303,3 +1303,181 @@ body {
   color: var(--muted);
   font-size: var(--text-xs);
 }
+
+/* ---- Vault search panel -------------------------------------------------- */
+/* The rail's third tab. Unlike Outline and History it owns an input, so it is
+   the one panel whose head must stay put while its results scroll. */
+.searchpanel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: var(--sp-2);
+}
+
+.searchpanel-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.searchpanel-input {
+  flex: 1 1 auto;
+  /* Without this the input's intrinsic width sets the rail's minimum and the
+     pane refuses to narrow past it (§12b rule 3). */
+  min-width: 0;
+  min-height: var(--target);
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--editor-bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.searchpanel-toggles {
+  display: flex;
+  gap: 2px;
+}
+
+.searchpanel-toggle {
+  min-width: var(--target-sm);
+  min-height: var(--target-sm);
+  padding: 0 var(--sp-1);
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.searchpanel-toggle:hover {
+  background: var(--hover-bg);
+}
+
+/* Pressed state carries a border as well as a fill: hover and selection share a
+   colour family, and fill alone made the two indistinguishable (§12b). */
+.searchpanel-toggle[aria-pressed="true"] {
+  background: var(--active-bg);
+  border-color: var(--border-strong);
+  color: var(--active-fg);
+}
+
+.searchpanel-status {
+  margin: 0;
+  padding: 0 var(--sp-1);
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.searchpanel-results {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.searchpanel-file {
+  display: flex;
+  flex-direction: column;
+}
+
+.searchpanel-filename {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  min-height: var(--target-sm);
+  width: 100%;
+  padding: 0 var(--sp-1);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.searchpanel-filename:hover {
+  background: var(--hover-bg);
+}
+
+.searchpanel-filename-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.searchpanel-count {
+  flex: none;
+  color: var(--dim);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A note found only by its name has no lines under it — the badge says so. */
+.searchpanel-filename[data-name-match="true"] .searchpanel-count {
+  color: var(--accent);
+}
+
+.searchpanel-line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: var(--sp-1);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+.searchpanel-line:hover {
+  background: var(--hover-bg);
+}
+
+.searchpanel-lineno {
+  flex: none;
+  min-width: 2.5ch;
+  text-align: right;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* One result row, one line of text. A matching line can be any length, and
+   letting it set the min-content width would push the rail over its neighbour
+   (§12b rule 4) — so it is clipped here rather than allowed to scroll. */
+.searchpanel-linetext {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.searchpanel-linetext mark {
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+  border-radius: 2px;
+}
+
+.searchpanel-clip {
+  color: var(--dim);
+}
+
+.searchpanel-more {
+  margin: 0;
+  padding: 0 var(--sp-1) 0 calc(2.5ch + var(--sp-3));
+  color: var(--dim);
+  font-size: var(--text-xs);
+  font-style: italic;
+}

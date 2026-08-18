@@ -70,13 +70,12 @@ no AI. That gap is this roadmap.
 > app. **Branch 12b (chrome rework) is ticked too**; it shipped on `main` 2026-08-12 and this
 > document had simply never recorded it.
 >
-> **▶ In progress: Movement II, branch 6 — `feat/vault-search`.** (Branch 5 is done bar
+> **▶ Branch 6 (`feat/vault-search`) has landed. Pick up at branch 7 — `feat/command-palette`,**
+> which was always the one that depends on search. (Branch 5 is done bar
 > Azure signing, which is blocked on an account, not on code.)
-> Search is the largest remaining functional gap, and branch 7
-> (command palette) depends on it. Vet `tantivy` per §2 at
-> adoption — it would be the project's largest new dependency, and worth weighing
-> against a hand-rolled inverted index the way the snapshot store was weighed
-> against `gix` (§8). Branch 4's spec lived
+> The `tantivy` question §8 left open is **resolved: hand-rolled, and in memory** — see
+> branch 6 below for the argument, which turned on §3 rather than on dependency size.
+> Branch 4's spec lived
 > **on its own branch**, not on `main`:
 > `docs/superpowers/specs/2026-07-24-sync-coexistence-design.md`; branch 10's is on
 > `main` at `docs/superpowers/specs/2026-08-17-frontmatter-properties-design.md`.
@@ -266,14 +265,29 @@ editor something you keep using rather than something you tried.
 
 **Branches**
 
-- [ ] **6. `feat/vault-search`** — global find-in-files with a results panel. The largest
-   gap between Toril and a notes system today. Incremental index updated on watcher events.
-   - *New crate:* `crates/vaultsearch` — full-text index on **`tantivy`** (pure-Rust,
-     Quickwit-maintained); sibling to `vaultscan` so scan/index logic stays
-     unit-testable.
-   - *Touches:* `commands/search.rs` (new contract rows: `index_vault`, `search_vault`),
-     `src/ui/searchpanel.ts`.
-   - *Gate:* `cargo test -p vaultsearch` (index → query → rank) + a panel test.
+- [x] **6. `feat/vault-search`** — *(shipped)* global find-in-files as a third rail tab:
+   literal or regex, case and whole-word toggles, results grouped by note with the matching
+   lines, kept current from watcher events.
+   - *New crate:* `crates/vaultsearch` — **hand-rolled and in-memory**, not `tantivy`.
+     Resolved at adoption the way the snapshot store was resolved against `gix` (§8): a
+     personal vault is single-digit megabytes and Toril already reads the whole tree to draw
+     the sidebar, so there is no index structure at all — just the documents and a `regex`.
+     `tantivy` would have added 42 dependencies, C code via `zstd-sys` unless feature-gated
+     off, and a stemmed BM25 index that answers the wrong question, since find-in-files is
+     literal and line-oriented. `regex` / `memchr` / `aho-corasick` were **already in the
+     lockfile**, so the matcher cost nothing new. **The decisive argument was §3, not size:**
+     a persistent index is a second copy of the user's notes that can drift, corrupt and need
+     invalidating. Nothing is written to disk, so there is nothing to go stale.
+   - *Built:* `commands/search.rs` (`index_vault`, `search_vault`, `index_paths`),
+     `src/ui/searchpanel.ts`, a `search` tab in the rail, `Ctrl+Shift+F`.
+   - *§3.3:* three rules live in the crate, so they are gated without Tauri — what counts as
+     a note is `vaultscan`'s answer (the shared walk is what keeps `.trash/` out of the
+     results); every read is confined to the open folder via `canonicalize`, which is never
+     used to *build* a path; and an index with no root reads nothing at all. Without that
+     last rule the feature is a file-disclosure hole wearing a search box as a disguise.
+   - *Gate:* `cargo test -p vaultsearch` + `tests/searchpanel.test.ts`.
+   - *Open:* search-and-replace across files (a write path — snapshots and a preview first),
+     filters by folder or extension, and on-device verification.
 
 - [ ] **7. `feat/command-palette`** — quick switcher (fuzzy-open any note) + command palette
    (`Ctrl/Cmd-P` / `Ctrl-K`) running every editor/menu action. Anyone coming from
@@ -530,7 +544,7 @@ All follow the `crates/*` pattern: webview-free, unit-tested, healthy pure-Rust 
 | `snapshots` | Content-addressed local version history | hand-rolled (`sha2` + `flate2`); see §8 | `feat/local-version-history` |
 | `mergemd` | 3-way markdown merge + conflict files | `similar` | `feat/sync-coexistence` |
 | `fileops` | Create/rename: name rules, containment, no clobber | — | `feat/sidebar-file-ops` |
-| `vaultsearch` | Incremental full-text vault index | `tantivy` | `feat/vault-search` |
+| `vaultsearch` | In-memory full-text vault index | `regex` (hand-rolled; see §8) | `feat/vault-search` |
 | `linkgraph` | `[[link]]`/`#tag` parse + backlink index | hand-rolled / `pulldown-cmark` | `feat/wikilinks-backlinks` |
 | `highlight` | Code → highlighted spans | `syntect` (`fancy-regex`) | `feat/code-highlighting` |
 | `embedindex` | Local embeddings + vector search | Ollama + `instant-distance` | `feat/vault-rag-chat` |
@@ -561,6 +575,15 @@ floor supports. Everything else is execution.
   one tabbed rail** (`feat/chrome-ux`). Two independent rails cost 460px, leaving a
   Surface Pro less than the editor's 720px measure; a tabbed rail bounds chrome at 240px
   and gives later panels (search, AI) a defined place to live.
+- ~~**Search index:** `tantivy` vs. a hand-rolled inverted index?~~ **Resolved (2026-08-18):
+  hand-rolled, and held only in memory** (`crates/vaultsearch`). The size argument mirrors the
+  snapshot store — 42 dependencies and C code via `zstd-sys` unless feature-gated off, for a
+  stemmed BM25 index that answers the wrong question, since find-in-files is literal and
+  line-oriented. But the decisive argument was §3: a persistent index is a second copy of the
+  user's notes, with its own drift, corruption and invalidation. A personal vault is
+  single-digit megabytes and Toril already reads the whole tree to draw the sidebar, so the
+  copy buys nothing worth that. If a vault ever arrives that this cannot hold, the answer is a
+  real inverted index — not a cache of this one.
 - **AI providers at launch:** Anthropic + Ollama only, or also OpenAI? (Lean Anthropic +
   Ollama first — on-brand and covers free/local.)
 - **Beta graduation bar:** which exact branches must be green to drop `-alpha`? (Proposed:

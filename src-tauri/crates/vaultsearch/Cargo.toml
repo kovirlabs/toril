@@ -1,0 +1,10 @@
+[package]
+name = "vaultsearch"
+version = "0.1.0"
+edition = "2024"
+description = "In-memory full-text index over a Toril workspace (ROADMAP II.6). Holds no index on disk, so there is nothing to go stale or corrupt; no Tauri dep, so the matching rules are unit-testable anywhere."
+
+[dependencies]
+vaultscan = { path = "../vaultscan" }
+regex = "1"
+serde = { version = "1", features = ["derive"] }

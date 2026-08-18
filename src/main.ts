@@ -38,6 +38,9 @@ import {
   onWorkspaceChange,
   openFile,
   openExternal,
+  indexPaths,
+  indexVault,
+  searchVault,
   openFolder,
   pickFileToOpen,
   pickFolder,
@@ -103,6 +106,7 @@ import {
 import { Rail } from "./ui/rail";
 import { attachResizer, initResizeHandle, syncHandleValue } from "./ui/resizer";
 import { SearchBar } from "./ui/search";
+import { SearchPanel } from "./ui/searchpanel";
 import { Sidebar } from "./ui/sidebar";
 import { StatusBar } from "./ui/statusbar";
 import { type TabState, type DocFormat, TabManager } from "./ui/tabs";
@@ -118,6 +122,7 @@ let formatToolbar: FormattingToolbar | null = null;
 let statusBar: StatusBar | null = null;
 let outline: Outline | null = null;
 let history: History | null = null;
+let searchPanel: SearchPanel | null = null;
 let searchBar: SearchBar | null = null;
 let conflictBar: ConflictBar | null = null;
 let autosave: AutosaveScheduler | null = null;
@@ -161,6 +166,9 @@ let panes: PaneState = defaultPaneState();
 let rail: Rail | null = null;
 let unwatch: UnlistenFn | null = null;
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+let indexTimer: ReturnType<typeof setTimeout> | null = null;
+/** Watcher paths waiting for the next index update — see `scheduleIndexUpdate`. */
+const pendingIndexPaths = new Set<string>();
 let sessionTimer: ReturnType<typeof setTimeout> | null = null;
 
 let loading = false; // suppress the dirty flag during a *synchronous* load
@@ -398,6 +406,13 @@ async function loadWorkspace(path: string): Promise<void> {
   unwatch = await onWorkspaceChange(handleWorkspaceChange);
   await watchFolder(path);
   scheduleSessionSave();
+
+  // Reading every note takes hundreds of milliseconds on a large vault, and
+  // nothing on screen depends on it — so the folder is usable while it runs.
+  // A failure here costs search, not the workspace: the tree is already drawn.
+  void indexVault(path)
+    .then(() => searchPanel?.refresh())
+    .catch((e: unknown) => console.error("index vault failed", e));
 }
 
 async function persistActive(path: string): Promise<void> {
@@ -808,6 +823,10 @@ function applyPanes(): void {
   if (historyBtn) {
     historyBtn.dataset.active = String(layout.railVisible && panes.railTab === "history");
   }
+  const searchRailBtn = document.querySelector<HTMLElement>("#btn-rail-search");
+  if (searchRailBtn) {
+    searchRailBtn.dataset.active = String(layout.railVisible && panes.railTab === "search");
+  }
 
   rail?.setActive(panes.railTab);
 
@@ -873,6 +892,10 @@ function selectRail(tab: RailTab): void {
   setPanes(selectRailTab(panes, tab));
   // Populate on show; a no-op read while hidden or on another tab.
   if (tab === "history") refreshHistory();
+  // A search panel nobody can type into is a panel nobody uses.
+  if (tab === "search" && panes.railVisible && panes.railTab === "search") {
+    searchPanel?.focus();
+  }
 }
 
 /** Point the panel at the active note's current buffer. Skipped while hidden so
@@ -1253,6 +1276,40 @@ function scheduleSidebarRefresh(): void {
 }
 
 /**
+ * Bring the search index up to date after watcher events.
+ *
+ * Batched on the same 300ms rhythm as the sidebar refresh, and for the same
+ * reason: a single save can produce several events, and re-reading a note three
+ * times tells us nothing the third read did not already say. Paths accumulate
+ * across the window rather than replacing each other — dropping the earlier
+ * batch would leave the index believing a note that has since changed.
+ */
+function scheduleIndexUpdate(paths: string[]): void {
+  for (const path of paths) pendingIndexPaths.add(path);
+  if (indexTimer) clearTimeout(indexTimer);
+  indexTimer = setTimeout(() => {
+    indexTimer = null;
+    const batch = [...pendingIndexPaths];
+    pendingIndexPaths.clear();
+    if (batch.length === 0) return;
+    void indexPaths(batch)
+      // Results on screen may now name a note that has been edited, renamed or
+      // deleted; re-running the query is what stops the panel offering to open
+      // a file that is no longer there.
+      .then(() => searchPanel?.refresh())
+      .catch((e: unknown) => console.error("index update failed", e));
+  }, 300);
+}
+
+/** Open the rail on Search and put the caret in the box (Ctrl+Shift+F). */
+function openVaultSearch(): void {
+  if (!panes.railVisible || panes.railTab !== "search") {
+    setPanes(selectRailTab(panes, "search"));
+  }
+  searchPanel?.focus();
+}
+
+/**
  * The file behind an open tab has vanished. A sync daemon deleting a file the
  * user has open must not vaporize their buffer: keep it, mark it dirty, and the
  * next save recreates the file.
@@ -1524,6 +1581,10 @@ async function resolveConflict(tab: TabState, keepMine: boolean): Promise<void> 
 function handleWorkspaceChange(change: WorkspaceChange): void {
   // The tree may have changed (create/remove/rename) — refresh the sidebar.
   scheduleSidebarRefresh();
+  // Every kind matters to the index, including the ones this function returns
+  // early on below — a deleted note has to leave the results, not linger in
+  // them offering to open a file that is gone.
+  scheduleIndexUpdate(change.paths);
 
   if (change.kind === "remove") {
     // `notify` reports a removed *directory* as a single event carrying only the
@@ -1763,6 +1824,8 @@ const ACTIONS: Record<string, () => void> = {
   menu_toggle_sidebar: () => toggleSidebar(),
   menu_toggle_outline: () => selectRail("outline"),
   menu_toggle_history: () => selectRail("history"),
+  menu_toggle_search: () => selectRail("search"),
+  menu_search_vault: () => openVaultSearch(),
   menu_toggle_autosave: () => toggleAutosave(),
   menu_toggle_update_check: () => toggleUpdateCheck(),
   menu_check_updates: () => void checkUpdates("manual"),
@@ -1821,7 +1884,8 @@ function shortcutAction(e: KeyboardEvent): string | null {
     case "n":
       return "menu_new";
     case "f":
-      return "menu_find";
+      // Shift widens the question from this note to the whole folder.
+      return e.shiftKey ? "menu_search_vault" : "menu_find";
     case "e":
       return "menu_export_html";
     // Zoom, spelled every way a keyboard actually produces it. `Ctrl` and `+`
@@ -1908,6 +1972,15 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
   const searchEl = document.querySelector<HTMLElement>("#searchbar");
   if (searchEl) searchBar = new SearchBar(searchEl, editor);
+  const searchPanelEl = document.querySelector<HTMLElement>("#searchpanel");
+  if (searchPanelEl) {
+    searchPanel = new SearchPanel(searchPanelEl, {
+      search: searchVault,
+      openResult: (path, query) => {
+        void openPath(path).then(() => searchBar?.openWith(query));
+      },
+    });
+  }
   // Its own row in #main, between the search bar and the editor: the banner
   // belongs above the document, not inside the surface that scrolls away.
   const conflictEl = document.querySelector<HTMLElement>("#conflictbar");
@@ -1967,6 +2040,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   document.querySelector("#btn-toggle-sidebar")?.addEventListener("click", () => toggleSidebar());
   document.querySelector("#btn-rail-outline")?.addEventListener("click", () => selectRail("outline"));
   document.querySelector("#btn-rail-history")?.addEventListener("click", () => selectRail("history"));
+  document.querySelector("#btn-rail-search")?.addEventListener("click", () => selectRail("search"));
   installShortcuts();
   installResizers();
   installLinkOpener(editorRoot);

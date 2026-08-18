@@ -3,6 +3,7 @@ pub mod export;
 pub mod files;
 pub mod images;
 pub mod recovery;
+pub mod search;
 pub mod secrets;
 pub mod snapshots;
 pub mod sync;

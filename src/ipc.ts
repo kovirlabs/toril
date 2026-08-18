@@ -542,3 +542,102 @@ export function hasApiKey(provider: ProviderId): Promise<boolean> {
 export function listApiKeys(): Promise<ProviderStatus[]> {
   return invoke<ProviderStatus[]>("list_api_keys");
 }
+
+// ---------------------------------------------------------------------------
+// Vault search (ROADMAP Movement II.6)
+// ---------------------------------------------------------------------------
+
+/** One run of a matching line, matched or not (mirrors Rust `vaultsearch::Segment`). */
+export interface SearchSegment {
+  text: string;
+  matched: boolean;
+}
+
+/**
+ * A matching line.
+ *
+ * The line arrives pre-split into runs rather than as text plus offsets, because
+ * Rust counts bytes and JS counts UTF-16 code units — any offset crossing this
+ * boundary is a chance to highlight half a character.
+ */
+export interface SearchLine {
+  /** 1-based. */
+  line: number;
+  segments: SearchSegment[];
+  /** Text was removed from the front of a very long line. */
+  clippedStart: boolean;
+  /** Text was removed from the end of a very long line. */
+  clippedEnd: boolean;
+}
+
+/** Every match in one note. `matches` is empty when only the name matched. */
+export interface SearchFileHit {
+  path: string;
+  name: string;
+  matches: SearchLine[];
+  /** Matches in the file, counted before the per-file cap. */
+  totalMatches: number;
+  /** The file had more matching lines than were returned. */
+  truncated: boolean;
+  /** The query also matched the file's own name. */
+  nameMatch: boolean;
+}
+
+export interface SearchResults {
+  files: SearchFileHit[];
+  /** Files that matched, counted before the cap. */
+  totalFiles: number;
+  /** Matches across the vault, counted before either cap. */
+  totalMatches: number;
+  /** More files matched than were returned. */
+  truncated: boolean;
+}
+
+/** A file the index deliberately holds no text for. */
+export interface SkippedFile {
+  path: string;
+  reason: "tooLarge" | "notUtf8" | "unreadable";
+}
+
+/** What the in-memory index currently holds. */
+export interface IndexStats {
+  files: number;
+  /** Bytes of note text held in memory — what the in-memory design costs. */
+  bytes: number;
+  skipped: SkippedFile[];
+}
+
+/** The pattern and its modifiers. The result caps are the backend's, not ours. */
+export interface SearchArgs {
+  text: string;
+  caseSensitive?: boolean;
+  wholeWord?: boolean;
+  regex?: boolean;
+}
+
+/**
+ * Read the whole vault into the search index, replacing what was there.
+ *
+ * The one slow call in this group — it reads every note — so it runs after the
+ * first paint rather than in front of it.
+ */
+export function indexVault(path: string): Promise<IndexStats> {
+  return invoke<IndexStats>("index_vault", { path });
+}
+
+/**
+ * Search the indexed folder. Rejects on a malformed regular expression, carrying
+ * the engine's message: a half-typed pattern is the normal case for a search box.
+ */
+export function searchVault(args: SearchArgs): Promise<SearchResults> {
+  return invoke<SearchResults>("search_vault", { args });
+}
+
+/**
+ * Bring `paths` up to date after a `workspace:change`. Each is resolved against
+ * disk rather than trusted from the event — a file is re-read, a directory is
+ * walked, and a path that is gone takes its whole subtree out of the index.
+ */
+export function indexPaths(paths: string[]): Promise<IndexStats> {
+  return invoke<IndexStats>("index_paths", { paths });
+}

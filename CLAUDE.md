@@ -146,6 +146,15 @@ argument are in §5 (Sidebar file operations). Still open from the branch: drag-
 the tree, multi-select, and a trash browser (`list_trash` has a command and a wrapper but
 no UI, so Undo reaches only the most recent delete).
 
+**Vault search — `feat/vault-search` (ROADMAP Movement II.6).** Find text across every note in
+the open folder, from a third tab in the rail. The largest remaining gap between Toril and a
+notes system, and branch 7 (command palette) depends on it for file ranking. New crate
+`crates/vaultsearch` holds an **in-memory** index — there is no index file, by design;
+`commands/search.rs` wraps it; the UX is `src/ui/searchpanel.ts`. Details and the
+`tantivy`-vs-hand-rolled argument are in §5 (Vault search). Still open from the branch:
+search-and-replace across files (a write path — it needs snapshots and a preview first),
+filters by folder or extension, and on-device verification.
+
 **Next:** finish Phase 4 — remaining is Azure Trusted Signing once an account exists, and
 on-device verification. A backlog of further QoL features is in §13. The
 **forward plan beyond Phase 4** — turning the editor into a notes *system* (search, links, version
@@ -161,8 +170,8 @@ pnpm tauri build      # production .exe + installer (Windows; see §9)
 pnpm test             # vitest — round-trip + toolbar + theme + export + tabs + security (jsdom)
 pnpm typecheck        # tsc --noEmit (TS strict)
 pnpm build            # tsc + vite build (frontend only)
-# logic crates — the same ten CI runs (plain `cargo test` also builds the app crate)
-cd src-tauri && cargo test -p fsatomic -p vaultscan -p mdhtml -p mdrtf -p imgasset -p trashbin -p snapshots -p mergemd -p keystore -p fileops
+# logic crates — the same eleven CI runs (plain `cargo test` also builds the app crate)
+cd src-tauri && cargo test -p fsatomic -p vaultscan -p mdhtml -p mdrtf -p imgasset -p trashbin -p snapshots -p mergemd -p keystore -p fileops -p vaultsearch
 cd src-tauri && cargo fmt --all && cargo clippy   # clean before commit (§10)
 ```
 
@@ -297,6 +306,7 @@ toril/
 │   │   ├── theme.ts           # theme preference controller (System/Light/Dark)
 │   │   ├── statusbar.ts       # word/char count + reading time + cursor
 │   │   ├── search.ts          # Find & Replace (decoration plugin + bar)
+│   │   ├── searchpanel.ts     # vault search: the rail's third tab (§5, ROADMAP II.6)
 │   │   ├── conflictbar.ts     # non-blocking per-tab conflict banner (§5)
 │   │   └── secrets.ts         # API key dialog — write-only, cannot display a key (§5)
 │   ├── export/html.ts         # standalone HTML-document builder (§7)
@@ -322,7 +332,8 @@ toril/
     │   ├── snapshots/         # content-addressed local version history (§3, ROADMAP I.3)
     │   ├── mergemd/           # line-based 3-way merge + conflict filenames (§3, ROADMAP I.4)
     │   ├── keystore/          # OS-keychain API key storage (§3, ROADMAP IV.20)
-    │   └── fileops/           # create/rename: name rules, containment, no clobber (ROADMAP II.12)
+    │   ├── fileops/           # create/rename: name rules, containment, no clobber (ROADMAP II.12)
+    │   └── vaultsearch/       # in-memory full-text index over the vault (ROADMAP II.6)
     └── src/
         ├── main.rs            # bin entry → lib::run()
         ├── lib.rs             # Tauri builder + menu + command registration
@@ -333,6 +344,7 @@ toril/
         │   ├── workspace.rs   # open folder, list tree, watch (notify crate)
         │   ├── export.rs      # markdown_to_html + export_html; export_rtf (all-Rust)
         │   ├── images.rs      # save_clipboard_image (imgasset)
+        │   ├── search.rs      # index_vault / search_vault / index_paths — ROADMAP II.6
         │   ├── sync.rs        # merge_external / write_conflict_copy (§5)
         │   └── secrets.rs     # API key commands — no getter, by design (§5)
         └── settings.rs        # persisted prefs (theme, last folder, open files, sidebar_visible)
@@ -381,6 +393,9 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 | `clear_api_key` | `provider` | `()` | Remove a stored key. **Idempotent** — clearing an absent key succeeds, so pressing Clear twice is not an error |
 | `has_api_key` | `provider` | `bool` | Whether a key is stored. The **only** read the webview is permitted |
 | `list_api_keys` | — | `[{provider, configured}]` | Status of every provider in one round trip; never carries a key |
+| `index_vault` | `path` | `IndexStats` | Read every note in `path` into the **in-memory** search index, replacing what was there (`crates/vaultsearch`, ROADMAP II.6). The one slow call in this group — it reads the whole vault — so the frontend runs it after the first paint, not in front of it. Returns `{ files, bytes, skipped }`: `bytes` is what the in-memory design costs, and `skipped` names every file deliberately not indexed (too large, not UTF-8, unreadable) rather than dropping it silently |
+| `search_vault` | `args` | `SearchResults` | Search the indexed folder. `args` carries the pattern and three flags (`caseSensitive`, `wholeWord`, `regex`) and **nothing else — the result caps are the backend's**, so a search box cannot ask for a million rows. A malformed regular expression is an ordinary error carrying the engine's message. Lines come back **pre-split into matched/unmatched runs, never as offsets**: Rust counts bytes and JS counts UTF-16 code units, so an offset crossing this boundary is a chance to highlight half a character |
+| `index_paths` | `paths` | `IndexStats` | Bring `paths` up to date after a `workspace:change`. Each is resolved against **disk**, not trusted from the event: a file is re-read, a directory is walked (the landing half of a folder rename arrives as one event naming the folder and nothing inside it), and a path that is gone takes its **whole subtree** out — a vanished path gives no way to tell whether it was one note or the folder that held a hundred |
 
 > **There is deliberately no `get_api_key`, and there must never be one.**
 > `keystore::SecretStore::get` exists so Rust-side provider calls (Movement IV) can use a key;
@@ -420,6 +435,35 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 > it back, refusing to clobber a file that reappeared at the path. `.trash/` starts with
 > `.`, so `vaultscan` already hides it from the sidebar (§1) and Obsidian hides it too.
 > Backed by `crates/trashbin`, and wired to the sidebar as of Movement II.12.
+>
+> **Vault search (Movement II.6). The index lives in memory and nowhere else** —
+> a §3 position, not a performance one. A persistent index is a second copy of the
+> user's notes: it drifts, it corrupts, it needs invalidating, and it has to live
+> somewhere. Holding the text in RAM and rebuilding it from the vault leaves the
+> files on disk as the only source of truth — the same instinct that put `history/`
+> outside the vault and made snapshots additive. The scale allows it: a personal
+> vault is single-digit megabytes of text, and Toril already reads the whole tree to
+> draw the sidebar. So there is no index structure at all in `crates/vaultsearch` —
+> just the documents and a `regex`. If a vault ever arrives that this cannot hold,
+> the answer is a real inverted index, **not a cache of this one**. `tantivy` was
+> weighed and rejected the way `gix` was for snapshots (§8 of `ROADMAP.md`): 42
+> dependencies, C code via `zstd-sys` unless feature-gated off, and a stemmed BM25
+> index that answers the wrong question — find-in-files is literal and line-oriented,
+> and `regex`/`memchr`/`aho-corasick` were **already in the lockfile**.
+>
+> Three rules carry the safety, all inside the crate so they are gated without Tauri:
+> what counts as a note is **`vaultscan`'s** answer (shared walk, not a second one —
+> which is what keeps `.trash/` out of the results, so a deleted note is never offered
+> back); every disk read is confined to the open folder, checked with `canonicalize`
+> and **never** built from it (the `fileops` `\\?\C:\…` trap); and an index with **no**
+> root reads nothing at all, which is the state the app holds before a folder is open
+> and the one a crafted `invoke` would reach first. Without that last rule the feature
+> is a file-disclosure hole wearing a search box as a disguise (§3.3).
+>
+> A result opens its note and hands the **query** to the in-document find bar
+> (`SearchBar.openWith`), never a line number: there is no line to jump to in a
+> WYSIWYG surface, and mapping a line of markdown source onto a ProseMirror position
+> would be a second, divergent parse of the same file (§3.2).
 >
 > **Sidebar file operations (Movement II.12).** `crates/fileops` holds the rules —
 > name validation, vault containment, refusing to clobber — and `commands/entries.rs`
@@ -672,6 +716,20 @@ Phases 0–3 are complete and Phase 4 (polish) is in progress; the shipped detai
   in the **future** fails *open* — a corrected clock must not disable update checks
   forever with no symptom. What it cannot cover is anything downstream of the network:
   see §D of `docs/ON-DEVICE-VERIFICATION.md`.
+- **Vault search:** `cargo test -p vaultsearch` — the query semantics that are easy to get
+  subtly wrong and impossible to notice: `^TODO:` finding every line rather than only the
+  first (multi-line mode), `C++` and `a.b` being literal rather than a regex that happens to
+  parse or fail, `(?:foo|bar)` binding the alternation as a group (`foo|bar` matches
+  inside `sandbar` — a **wrong answer**, not an error), a zero-width pattern not reporting a
+  hit at every byte in the vault *and* on every filename, CRLF not returning a stray ``,
+  clipping a long line of Japanese not splitting a character, and the caps truncating while
+  still reporting the **true** totals. Plus the three safety rules: a note in `.trash/` is
+  not searchable, a path outside the vault is never read (directly or via `..`), and a
+  rootless index reads nothing at all. And `tests/searchpanel.test.ts` — the debounce, the
+  length floor that counts *characters* so `眼鏡` is not refused, Enter overruling it, a slow
+  answer never overwriting a newer one, a bad pattern rendering in place of results, and that
+  a note's own text can never become markup (§3.3 — this is the one place vault content
+  reaches the DOM outside the editor's sanitize path).
 - Plus `vaultscan`, `imgasset`, `theme`, `statusbar`, `search`, `security`, `tabs` suites.
 
 > **The browser harness.** `dev-harness.html` is `app.html` plus a fake Tauri IPC bridge
@@ -692,7 +750,7 @@ Phases 0–3 are complete and Phase 4 (polish) is in progress; the shipped detai
 
 **CI runs these automatically** on every pull request and on pushes to `main`
 (`.github/workflows/ci.yml`): `pnpm typecheck` + `pnpm test` + `pnpm build`, and `cargo test` over the
-ten logic crates — each on **Ubuntu and Windows**, plus `cargo fmt --all --check` on Ubuntu. The
+eleven logic crates — each on **Ubuntu and Windows**, plus `cargo fmt --all --check` on Ubuntu. The
 Windows leg is not ceremony: `pnpm install --frozen-lockfile` is what applies the Milkdown patch,
 `fsatomic` is the §3.1 gate whose replace-over-existing semantics differ from POSIX there, and
 `fileops` encodes *Windows* naming rules (reserved devices, trailing dots, case-only renames) that
@@ -880,8 +938,9 @@ Keep the project's rules: testable logic in `crates/*` or pure TS helpers, all d
   and the sidebar already remembers the last one.
 
 **Medium (more UI / a new command, but high value):**
-- **Global workspace search ("find in files")** — a Rust command scanning the vault (sibling to
-  `vaultscan`, keeping scan logic unit-testable) + a results panel. Distinct from in-document Find.
+- ~~**Global workspace search ("find in files")**~~ — *shipped* (ROADMAP Movement II.6). Still
+  open from that branch: **search-and-replace across files** (a write path, so it needs snapshots
+  and a preview before it is offered), and **filters** by folder or extension.
 - ~~**Sidebar file operations**~~ — *shipped* (ROADMAP Movement II.12). Still open from that
   branch: **drag-to-move** within the tree, **multi-select**, and a **trash browser**
   (`list_trash` has a command and an `ipc.ts` wrapper but no UI — Undo is currently the only

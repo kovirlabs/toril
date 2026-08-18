@@ -13,7 +13,20 @@
 import type { Settings } from "../ipc";
 
 /** Which panel the single right-hand rail is currently showing. */
-export type RailTab = "outline" | "history";
+export type RailTab = "outline" | "history" | "search";
+
+/** Every rail tab, so restoring a persisted value validates rather than guesses. */
+const RAIL_TABS: readonly RailTab[] = ["outline", "history", "search"];
+
+/** Whether `value` names a rail tab. */
+export function isRailTab(value: unknown): value is RailTab {
+  return RAIL_TABS.includes(value as RailTab);
+}
+
+/** A persisted rail tab, or `outline` if the file says something we do not know. */
+export function toRailTab(value: unknown): RailTab {
+  return isRailTab(value) ? value : "outline";
+}
 
 /**
  * Pane state.
@@ -250,7 +263,7 @@ export function restorePaneState(settings: Settings, viewportWidth: number): Pan
       sidebarWidth,
       railVisible: settings.rail_visible,
       railWidth,
-      railTab: settings.rail_tab === "history" ? "history" : "outline",
+      railTab: toRailTab(settings.rail_tab),
       lastOpened: base.lastOpened,
     };
   }

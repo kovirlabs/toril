@@ -53,6 +53,15 @@
             >
               ⟲
             </button>
+            <button
+              id="btn-rail-search"
+              class="pane-toggle"
+              type="button"
+              title="Search Notes (Ctrl+Shift+F)"
+              aria-label="Toggle vault search"
+            >
+              ⌕
+            </button>
           </div>
         </nav>
 
@@ -69,9 +78,9 @@
 
       <div class="pane-resize" data-edge="right" id="resize-rail"></div>
 
-      <!-- One rail, two panels. Outline and History are alternatives rather than
-           two rails, so chrome stays bounded at a single rail width however many
-           panels exist later (search, AI). -->
+      <!-- One rail, three panels. Outline, History and Search are alternatives
+           rather than separate rails, so chrome stays bounded at a single rail
+           width however many panels exist later (AI). -->
       <aside id="rail" aria-label="Panels">
         <div class="pane-scroll">
           <div class="rail-tabs" role="tablist" aria-label="Rail panels">
@@ -97,10 +106,22 @@
             >
               History
             </button>
+            <button
+              class="rail-tab"
+              id="rail-tab-search"
+              type="button"
+              role="tab"
+              data-tab="search"
+              aria-controls="searchpanel"
+              aria-selected="false"
+            >
+              Search
+            </button>
           </div>
           <div class="rail-body">
             <div class="rail-panel" id="outline" role="tabpanel" aria-labelledby="rail-tab-outline"></div>
             <div class="rail-panel" id="history" role="tabpanel" aria-labelledby="rail-tab-history" hidden></div>
+            <div class="rail-panel" id="searchpanel" role="tabpanel" aria-labelledby="rail-tab-search" hidden></div>
           </div>
         </div>
       </aside>

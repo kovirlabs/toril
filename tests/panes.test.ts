@@ -149,6 +149,16 @@ describe("restorePaneState", () => {
     );
     expect(state.railTab).toBe("outline");
   });
+
+  it("restores the search tab, which a two-tab check would have rejected", () => {
+    // The validation used to be `=== "history" ? "history" : "outline"`, so
+    // every tab added after it would silently reopen on Outline.
+    const state = restorePaneState(
+      emptySettings({ rail_visible: true, rail_tab: "search" }),
+      WIDE,
+    );
+    expect(state.railTab).toBe("search");
+  });
 });
 
 describe("restorePaneState — migration off the two-rail era", () => {

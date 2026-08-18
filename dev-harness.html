@@ -96,6 +96,66 @@
         { hash: "c9d0e1f2", saved_at: Date.now() - 86_400_000 * 3, bytes: 201 },
       ];
 
+      // ---- vault search (ROADMAP II.6) ----------------------------------------
+      //
+      // A small stand-in for `crates/vaultsearch`, faithful to the shape the panel
+      // consumes rather than to the crate: pre-split segments (never offsets), the
+      // name-only hit, and the counts reported before the caps.
+      function indexStats() {
+        const paths = Object.keys(FILES);
+        return {
+          files: paths.length,
+          bytes: paths.reduce((n, p) => n + FILES[p].length, 0),
+          skipped: [],
+        };
+      }
+
+      function compileQuery({ text, caseSensitive, wholeWord, regex }) {
+        const body = regex ? text : text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const pattern = wholeWord ? `\\b(?:${body})\\b` : body;
+        return new RegExp(pattern, caseSensitive ? "gm" : "gim");
+      }
+
+      function searchFiles(args) {
+        if (!args.text) return { files: [], totalFiles: 0, totalMatches: 0, truncated: false };
+        const re = compileQuery(args); // throws on a bad pattern, like the backend
+        const files = [];
+        let totalMatches = 0;
+
+        for (const path of Object.keys(FILES).sort()) {
+          const name = path.slice(path.lastIndexOf("/") + 1);
+          const matches = [];
+          let fileMatches = 0;
+          FILES[path].split("\n").forEach((line, i) => {
+            re.lastIndex = 0;
+            const segments = [];
+            let cursor = 0;
+            for (const m of line.matchAll(re)) {
+              if (m[0] === "") continue;
+              fileMatches++;
+              if (m.index > cursor) segments.push({ text: line.slice(cursor, m.index), matched: false });
+              segments.push({ text: m[0], matched: true });
+              cursor = m.index + m[0].length;
+            }
+            if (segments.length === 0) return;
+            if (cursor < line.length) segments.push({ text: line.slice(cursor), matched: false });
+            matches.push({ line: i + 1, segments, clippedStart: false, clippedEnd: false });
+          });
+          re.lastIndex = 0;
+          const nameMatch = [...name.matchAll(re)].some((m) => m[0] !== "");
+          if (fileMatches === 0 && !nameMatch) continue;
+          totalMatches += fileMatches;
+          files.push({ path, name, matches, totalMatches: fileMatches, truncated: false, nameMatch });
+        }
+
+        files.sort((a, b) =>
+          Number(b.nameMatch) - Number(a.nameMatch) ||
+          b.totalMatches - a.totalMatches ||
+          a.path.localeCompare(b.path),
+        );
+        return { files, totalFiles: files.length, totalMatches, truncated: false };
+      }
+
       // ---- in-memory vault mutations (ROADMAP II.12) --------------------------
       //
       // Enough of `fileops` / `trashbin` to drive the sidebar's file operations
@@ -217,6 +277,9 @@
         save_file: ({ path, content }) => { FILES[path] = content; return null; },
         save_file_as: () => null,
         merge_external: () => ({ outcome: "unchanged" }),
+        index_vault: () => indexStats(),
+        index_paths: () => indexStats(),
+        search_vault: ({ args }) => searchFiles(args),
         list_history: () => HISTORY,
         read_snapshot: ({ path }) => FILES[path] ?? "",
         restore_snapshot: () => null,
