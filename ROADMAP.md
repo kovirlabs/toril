@@ -46,7 +46,7 @@ It is a fine **editor**. It is not yet a **notes system** — no global search, 
 quick switcher, no links, no tags, no version history, no sync conflict handling,
 no AI. That gap is this roadmap.
 
-> **Status (2026-08-17).** Shipped through **`v1.0.0`** (see `CHANGELOG.md`).
+> **Status (2026-08-18).** Shipped through **`v1.0.0`** (see `CHANGELOG.md`).
 > **Movement I, branches 1–4 are complete** (autosave + crash-recovery journal;
 > safe-delete-to-trash; local version history; sync coexistence — 3-way merge, conflict
 > banner, parked conflict copies). **Branch 5 has landed** on `feat/release-readiness` —
@@ -63,12 +63,14 @@ no AI. That gap is this roadmap.
 > after it, so the next feature could not have reached anyone. §7's *trust before reach*
 > is what settles the order. Read the pointer below as the ordering, not the ladder.
 >
-> **Branch 12 (sidebar file operations) has also landed**, taken ahead of 6 for the same
-> kind of reason 10 was: it wired two crates — `trashbin` and `snapshots::rekey` — that
-> had shipped with **no caller at all**, and until it landed a note could be opened and
-> saved but not renamed or deleted without leaving the app.
+> **Branch 12 (sidebar file operations) has also landed** — PR #41, stacked on branch 5's
+> PR #40 — taken ahead of 6 for the same kind of reason 10 was: it wired two crates —
+> `trashbin` and `snapshots::rekey` — that had shipped with **no caller at all**, and until
+> it landed a note could be opened and saved but not renamed or deleted without leaving the
+> app. **Branch 12b (chrome rework) is ticked too**; it shipped on `main` 2026-08-12 and this
+> document had simply never recorded it.
 >
-> **▶ Pick up at Movement II, branch 6 — `feat/vault-search`.** (Branch 5 is done bar
+> **▶ In progress: Movement II, branch 6 — `feat/vault-search`.** (Branch 5 is done bar
 > Azure signing, which is blocked on an account, not on code.)
 > Search is the largest remaining functional gap, and branch 7
 > (command palette) depends on it. Vet `tantivy` per §2 at
@@ -82,9 +84,10 @@ no AI. That gap is this roadmap.
 > *Landed since, outside the movement ladder:* a serializer-normalization precursor
 > (canonical markdown now matches Obsidian — `-` bullets, `---` rules, tight lists
 > preserved), which exists to keep branch 4's 3-way merge from drowning in
-> reformatting noise; the chrome/layout rework (CLAUDE.md §12b); a fix for programmatic
-> loads marking every document dirty; CI running the headless gates on Ubuntu and
-> Windows for every pull request; and the GitHub community-standards docs.
+> reformatting noise; a fix for programmatic loads marking every document dirty; CI running
+> the headless gates on Ubuntu and Windows for every pull request; and the GitHub
+> community-standards docs. (The chrome/layout rework — CLAUDE.md §12b — used to be listed
+> here as outside the ladder. It is not: it is **branch 12b**, and it is ticked below.)
 >
 > *Version note, and read it before leaning on the number:* `v1.0.0` says the editor and
 > its data-safety floor are ready to depend on — **not** that this roadmap is finished.
@@ -246,8 +249,12 @@ nice in a synced folder. This movement is also the prerequisite for the AI wedge
      `menu.rs`, `main.ts`.
    - *Gate:* `tests/update.test.ts` for the policy; §D of `docs/ON-DEVICE-VERIFICATION.md`
      for everything downstream of the network, which no headless gate can reach.
-   - [ ] **⬢ RELEASE `v0.2.0-alpha`** — *"Safe to live in."* First build you can hand to
-     someone without an asterisk on their data.
+   - [~] **⬢ RELEASE `v0.2.0-alpha`** — *"Safe to live in."* **Overtaken by the `v1.0.0`
+     tag**, which shipped the data-safety floor under a number this ladder never planned
+     for. Kept as the record of what the release point *meant* — the first build you can
+     hand to someone without an asterisk on their data — not as a version still to be cut.
+     The floor itself is complete; only Azure Trusted Signing is outstanding, and it is
+     blocked on provisioning, not on code.
 
 ---
 
@@ -343,7 +350,7 @@ between an editor that works and one that is pleasant to spend hours in.
 
 **Branches**
 
-- [ ] **12b. `feat/chrome-ux`** — the UI shell around the editor: a **single tabbed right
+- [x] **12b. `feat/chrome-ux`** — *(shipped 2026-08-12)* the UI shell around the editor: a **single tabbed right
     rail** (outline and history become alternatives, not two rails), pane collapse/expand
     that actually animates, drag-to-resize with persisted widths, pointer-adaptive touch
     targets, a real design-token layer, and **real menu accelerators**. Taken out of
