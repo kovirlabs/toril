@@ -22,8 +22,13 @@
   padding: var(--sp-6) 0 var(--sp-6);
 }
 
+/* Zoom scales this element's font-size, and everything inside is sized in `em`
+   so it follows. The measure is `em` too, deliberately: holding it at a fixed
+   pixel width while the type grows would run a zoomed-in line to eighteen
+   words, when the whole point of a measure is characters-per-line. */
 .editor .milkdown {
-  max-width: 45rem; /* ~720px measure */
+  font-size: calc(var(--text-base) * var(--editor-zoom, 1));
+  max-width: 45em; /* ~720px measure at 100% */
   margin: 0 auto;
   padding: 0 var(--sp-5);
   font-family: var(--font-prose);
@@ -49,13 +54,13 @@
   margin: var(--sp-5) 0 var(--sp-2);
 }
 
-.editor .milkdown h1 { font-size: 1.9rem; letter-spacing: -0.02em; }
-.editor .milkdown h2 { font-size: 1.45rem; letter-spacing: -0.01em; }
-.editor .milkdown h3 { font-size: 1.2rem; }
-.editor .milkdown h4 { font-size: 1.05rem; }
-.editor .milkdown h5 { font-size: 0.95rem; color: var(--muted); }
+.editor .milkdown h1 { font-size: 1.9em; letter-spacing: -0.02em; }
+.editor .milkdown h2 { font-size: 1.45em; letter-spacing: -0.01em; }
+.editor .milkdown h3 { font-size: 1.2em; }
+.editor .milkdown h4 { font-size: 1.05em; }
+.editor .milkdown h5 { font-size: 0.95em; color: var(--muted); }
 .editor .milkdown h6 {
-  font-size: 0.85rem;
+  font-size: 0.85em;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;

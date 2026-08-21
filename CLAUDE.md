@@ -122,8 +122,32 @@ Implementation notes for whoever resumes (learned the hard way): Milkdown `$mark
 **no-op** runner (an empty-type `withMark` produces an mdast node remark cannot stringify — and Export
 HTML/RTF always serialize via `docToMarkdown`).
 
-**Next:** finish Phase 4 — remaining is shippable-quality work: optional code-signing (removes the
-SmartScreen warning) and on-device verification. A backlog of further QoL features is in §13. The
+**Self-update, window state and code-signing wiring — `feat/release-readiness`
+(ROADMAP Movement I.5).** `v1.0.0` shipped with no update path, so every installed copy
+was stranded on the version it was installed with; that is now closed. Details and the
+two-signatures distinction are in §5 (Self-update) and `docs/RELEASE-SIGNING.md`.
+**One manual step remains before it does anything:** generate the minisign keypair, paste
+the public half into `plugins.updater.pubkey`, and add the private half as a repository
+secret. Until then `plugins.updater.pubkey` is empty, so a check degrades to a reported
+error rather than a crash, and `release.yml` refuses to cut a tag with a one-line
+explanation instead of failing deep in a Rust build.
+
+The **QoL half of the same branch** has also landed: editor zoom, open-links-in-browser,
+drag-and-drop open, a recent-files list in File → Open Recent, and a real first-run
+welcome note distinct from the empty state. See §5 (Quality-of-life batch).
+
+**Sidebar file operations — `feat/sidebar-file-ops` (ROADMAP Movement II.12).** New note,
+new folder, rename and delete, from a context menu in the files pane. This closes two
+pieces of already-built, already-tested Rust that had **no caller at all**: `trashbin`
+(shipped in v1.0.0 with no UI) and `snapshots::rekey` (written for exactly this rename).
+New crate `crates/fileops` holds the rules; `commands/entries.rs` wraps it; the UX is
+`src/ui/sidebar.ts` on a new `src/ui/contextmenu.ts`. Details and the rename-ordering
+argument are in §5 (Sidebar file operations). Still open from the branch: drag-to-move in
+the tree, multi-select, and a trash browser (`list_trash` has a command and a wrapper but
+no UI, so Undo reaches only the most recent delete).
+
+**Next:** finish Phase 4 — remaining is Azure Trusted Signing once an account exists, and
+on-device verification. A backlog of further QoL features is in §13. The
 **forward plan beyond Phase 4** — turning the editor into a notes *system* (search, links, version
 history, sync coexistence, the AI wedge) branch-by-branch, with per-stage publicity guidance — lives in
 **`ROADMAP.md`**.
@@ -137,8 +161,8 @@ pnpm tauri build      # production .exe + installer (Windows; see §9)
 pnpm test             # vitest — round-trip + toolbar + theme + export + tabs + security (jsdom)
 pnpm typecheck        # tsc --noEmit (TS strict)
 pnpm build            # tsc + vite build (frontend only)
-# logic crates — the same nine CI runs (plain `cargo test` also builds the app crate)
-cd src-tauri && cargo test -p fsatomic -p vaultscan -p mdhtml -p mdrtf -p imgasset -p trashbin -p snapshots -p mergemd -p keystore
+# logic crates — the same ten CI runs (plain `cargo test` also builds the app crate)
+cd src-tauri && cargo test -p fsatomic -p vaultscan -p mdhtml -p mdrtf -p imgasset -p trashbin -p snapshots -p mergemd -p keystore -p fileops
 cd src-tauri && cargo fmt --all && cargo clippy   # clean before commit (§10)
 ```
 
@@ -263,7 +287,8 @@ toril/
 │   │   ├── html-serializer.ts # the ONE HTML <-> doc converter (§3.2/§3.3)
 │   │   └── html-constructs.ts # richer HTML-only schema: callout/details/dl/mark/sub/sup (§6)
 │   ├── ui/
-│   │   ├── sidebar.ts         # file tree
+│   │   ├── sidebar.ts         # file tree + file operations UX (§5, ROADMAP II.12)
+│   │   ├── contextmenu.ts     # the one in-app context menu (DOM, not native — §8)
 │   │   ├── panes.ts           # PURE pane state: visibility, widths, rail tab (§13)
 │   │   ├── rail.ts            # the single tabbed right rail (outline | history)
 │   │   ├── resizer.ts         # drag-to-resize: pure geometry + thin DOM binding
@@ -296,13 +321,15 @@ toril/
     │   ├── trashbin/          # soft-delete to workspace .trash/ + restore (§3)
     │   ├── snapshots/         # content-addressed local version history (§3, ROADMAP I.3)
     │   ├── mergemd/           # line-based 3-way merge + conflict filenames (§3, ROADMAP I.4)
-    │   └── keystore/          # OS-keychain API key storage (§3, ROADMAP IV.20)
+    │   ├── keystore/          # OS-keychain API key storage (§3, ROADMAP IV.20)
+    │   └── fileops/           # create/rename: name rules, containment, no clobber (ROADMAP II.12)
     └── src/
         ├── main.rs            # bin entry → lib::run()
         ├── lib.rs             # Tauri builder + menu + command registration
         ├── menu.rs            # native app menu → `menu` events (§8)
         ├── commands/
         │   ├── files.rs       # open / save (ATOMIC) / save_as
+        │   ├── entries.rs     # create note/folder, rename (+ history rekey) — ROADMAP II.12
         │   ├── workspace.rs   # open folder, list tree, watch (notify crate)
         │   ├── export.rs      # markdown_to_html + export_html; export_rtf (all-Rust)
         │   ├── images.rs      # save_clipboard_image (imgasset)
@@ -332,10 +359,14 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 | `export_rtf` | `content, defaultName` | `path?` | renders (comrak via `mdrtf`) **and** writes, all in Rust; inert output, no sanitize (§7) |
 | `export_pdf` | `content, theme` | `path` | *(deferred — §7)* |
 | `save_clipboard_image` | `bytes, docPath` | `relative_path` | writes pasted image to `./assets/` (`imgasset`), returns MD-relative path (§6) |
-| `load_settings` / `save_settings` | — / `Settings` | `Settings` / `()` | JSON in app config dir; includes `theme`, `sidebar_visible`/`sidebar_width`, `rail_visible`/`rail_width`/`rail_tab`, and `properties_expanded` (the front-matter strip's collapse state; `null` ⇒ expanded). The legacy `outline_visible`/`history_visible` pair is **read once to migrate** into the rail fields and then never written again — that one-directionality is what stops a stale flag from overriding the migrated state |
+| `load_settings` / `save_settings` | — / `Settings` | `Settings` / `()` | JSON in app config dir; includes `theme`, `sidebar_visible`/`sidebar_width`, `rail_visible`/`rail_width`/`rail_tab`, `properties_expanded` (the front-matter strip's collapse state; `null` ⇒ expanded), and the update trio `update_check`/`update_last_checked`/`update_skipped_version` (§Self-update). The legacy `outline_visible`/`history_visible` pair is **read once to migrate** into the rail fields and then never written again — that one-directionality is what stops a stale flag from overriding the migrated state |
 | `save_recovery` | `entries` | `()` | **atomic** write of `recovery.json` in the app config dir — crash-recovery journal (§3) |
 | `load_recovery` | — | `RecoveryEntry[]` | empty on missing/corrupt (never bricks startup) |
 | `clear_recovery` | — | `()` | delete `recovery.json` — the clean-shutdown sentinel |
+| `create_note` | `vault_root, dir, name` | `path` | Create an **empty** note in `dir` (`crates/fileops`). `name` may omit the extension (`.md` added). `create_new`, so the existence check and the creation are one operation — two racing creates cannot both win |
+| `create_folder` | `vault_root, parent, name` | `path` | `create_dir`, not `create_dir_all`: an existing folder is an error, not a silent success |
+| `suggest_note_name` | `vault_root, dir, stem` | `name` | `Untitled.md`, else `Untitled 2.md`… A **suggestion** for the inline field only; `create_note` still refuses a collision. Takes `vault_root` although it only reads: it answers "does this file exist?" for any path handed to it, and the webview is untrusted (§3.3) |
+| `rename_entry` | `vault_root, path, new_name` | `path` | Rename within the same parent, refusing to clobber a *different* entry (a **case-only** rename is allowed — resolved via `canonicalize`, since on a case-insensitive filesystem the destination "exists" as the source itself). Carries version history through `snapshots::rekey` — for a folder, every note in the subtree — **best-effort and additive**: the rename already happened, and history failing to follow must not report it as a failure |
 | `move_to_trash` | `vault_root, path` | `TrashEntry` | soft-delete into workspace `.trash/` via `trashbin` — **atomic** move (§3) |
 | `list_trash` | `vault_root` | `TrashEntry[]` | newest first; empty when no `.trash/` |
 | `restore_from_trash` | `vault_root, id` | `path` | restore to original path; errors **without clobbering** an existing file |
@@ -344,6 +375,7 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 | `restore_snapshot` | `path, hash` | `()` | snapshots current on-disk content **first**, then atomically writes the chosen version — restore is undoable (§3) |
 | `merge_external` | `path, base, mine` | `{ outcome, content?, theirs? }` | Reads the file and 3-way merges via `mergemd`. **Never writes.** `outcome` is one of `unchanged` / `theirsOnly` / `merged` / `conflict` / `missing` — `missing` is a deleted file (`io::ErrorKind::NotFound`), distinct from an unreadable one, so a gone file can be recreated by an explicit save rather than blocked forever. `content` is set only for `merged`; `theirs` (the bytes now on disk) is set for every outcome **except `unchanged` and `missing`** — nothing to park in either case — so the caller can set its new merge base and park the losing side without a second read that would race the writer (ROADMAP I.4) |
 | `write_conflict_copy` | `path, content` | `conflict_path` | Parks the losing side as `note (conflict 2026-07-25 14-32-05).md` beside the original — **atomic** via `fsatomic`, and `-2`/`-3`… suffixed rather than overwritten on a timestamp collision (§3) |
+| `set_recent_files` | `paths` | `()` | Rebuild the native menu so File → Open Recent lists `paths`. The **whole** menu is replaced — muda submenus are built, not mutated — so this is called only when the list changes. Items carry an **index** (`menu_recent_3`), never a path: a path is arbitrary user data and menu ids are matched as strings, so the frontend resolves the index against its own list (`src/recent.ts`) |
 | `take_launch_path` | — | `path?` | file the app was launched with (double-click / "Open with"); returns it **once**, then `null` (§file-open) |
 | `set_api_key` | `provider, key` | `()` | Validate and store an API key in the **OS keychain** (`keystore`) — Credential Manager / Keychain / Secret Service. Replaces any existing key for that provider (ROADMAP IV.20) |
 | `clear_api_key` | `provider` | `()` | Remove a stored key. **Idempotent** — clearing an absent key succeeds, so pressing Clear twice is not an error |
@@ -387,9 +419,34 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 > `manifest.json`) rather than `rm`; restore reads the manifest and atomically renames
 > it back, refusing to clobber a file that reappeared at the path. `.trash/` starts with
 > `.`, so `vaultscan` already hides it from the sidebar (§1) and Obsidian hides it too.
-> Backed by `crates/trashbin`; commands are not yet called by any UI (the sidebar file-ops
-> branch wires them).
+> Backed by `crates/trashbin`, and wired to the sidebar as of Movement II.12.
 >
+> **Sidebar file operations (Movement II.12).** `crates/fileops` holds the rules —
+> name validation, vault containment, refusing to clobber — and `commands/entries.rs`
+> is a thin wrapper plus the history rekey. The UX is `src/ui/sidebar.ts` (context menu,
+> inline name field) on `src/ui/contextmenu.ts`. **The menu is a DOM menu, not a native
+> one**, and deliberately: a native popup cannot be driven by the headless gates, and
+> native dialogs are the one thing documented to hang the app on the Linux dev box. The
+> single native dialog left is the unsaved-changes confirm on delete (`confirmDiscard`),
+> which is the close guard's prompt and the same judgement call.
+>
+> **Delete offers Undo instead of asking first.** The move is into `.trash/`, so it is
+> reversible by construction; a confirmation would be friction in front of a reversible
+> act. `restore_from_trash` — dead code until this branch — is what the Undo calls. What
+> trash cannot restore is an **unsaved buffer**, so that case does stop and ask.
+>
+> **A rename is the §3 surface of this feature, and the ordering in `doRenameEntry` is
+> the fix.** The watcher reports a rename as delete-then-create, which is exactly the
+> shape `removedOnDisk` exists to catch — left alone, an open tab would decide its file
+> had vanished and offer to recreate it, resurrecting the old note beside its new name.
+> So, in one synchronous block after the rename resolves: re-point every affected tab
+> (including tabs *under* a renamed folder), bump `removalEpoch` for each old path (a
+> `reconcile` may be in flight against it and would apply a `missing` verdict to a tab
+> that has moved), and clear `removedOnDisk` in case the delete event already landed.
+> `base` is deliberately **not** reset — a rename changes no bytes, so the merge base is
+> still exactly right and re-reading would only invite a race.
+>
+
 > **Version history.** Every save records a content-addressed snapshot (`crates/snapshots`):
 > per-note dir under `<app-config>/history/<hash(path)>/` — a `manifest.json` + gzip,
 > sha256-addressed blobs. It lives **outside the vault** (like recovery/session, §1) so it
@@ -402,6 +459,51 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 > note's history across a rename copy-then-delete (≥1 intact dir on power loss); the in-app
 > rename that calls it is Movement II.12. Restore snapshots the current state first, so it is
 > undoable. Frontend: `src/ui/history.ts` panel + `src/ui/linediff.ts`.
+>
+> **Self-update (`feat/release-readiness`, ROADMAP Movement I.5).** Three official Tauri
+> plugins — `updater`, `process`, `window-state` — so there are no new `invoke` commands;
+> they ship their own JS API, wrapped in `ipc.ts` (`checkForUpdate`, `relaunchApp`) so
+> nothing else in the app reaches past that seam. **Toril notifies and never installs on
+> its own.** The plugin can download-and-replace silently; we deliberately never call it
+> that way, because this is an editor holding unsaved buffers and §3 outranks saving
+> someone two clicks. The policy — check at most daily at launch, silent when there is
+> nothing to say, loud for every outcome when the user asks via Help → Check for
+> Updates — lives in `src/update.ts`, pure and gated by `tests/update.test.ts`; the
+> network call and the toast are separate so the rules need no release server to test.
+> **The restart is the one path that could destroy a buffer, so it is the one path that
+> refuses**: `restartForUpdate` will not relaunch over a dirty tab, and says the update
+> applies next launch instead (the install is already on disk, so waiting is free).
+> No telemetry — the check is a plain GET for a static manifest.
+>
+> **Two unrelated signatures, both documented in `docs/RELEASE-SIGNING.md`.** Minisign
+> signs the *update artifacts* and is **required**: `createUpdaterArtifacts` is on, the
+> bundler refuses to emit an unsigned update, and `release.yml` fails fast with an
+> explanation rather than deep in a Rust build. Losing that private key strands every
+> installed copy permanently — there is no rotation, because installed builds verify
+> against the public key they shipped with. Authenticode (Azure Trusted Signing) is
+> what stops SmartScreen warning, is **optional**, and needs an account that takes days
+> to provision — so its `signCommand` lives in `tauri.signing.conf.json`, an overlay
+> applied in CI only when the `AZURE_*` secrets exist. That split is deliberate: a fork
+> or a local `pnpm tauri build` must not need an Azure subscription to produce a working
+> installer.
+>
+> **Quality-of-life batch (`feat/release-readiness`, second half).** Editor zoom
+> (`src/zoom.ts` — a **fixed ladder**, not `× 1.1`, so five steps in and five out land
+> exactly back on 100% and a persisted value can't drift; a stored `0` snaps to the
+> default rather than being clamped, because it would otherwise render the editor
+> unreadable *and* unfixable). Zoom scales the writing surface only, never the chrome —
+> so `editor.css` heading sizes and the measure are `em`, not `rem`. **Open links in the
+> browser** on Ctrl/Cmd-click, gated by `src/links.ts`: a **three-scheme allowlist**
+> (http/https/mailto) parsed via `URL`, not string-matched, because the OS normalizes
+> case and control characters before acting. This is a §3.3 boundary, not a convenience
+> filter — `sanitize.ts` stops a hostile link executing *in* the webview, this stops it
+> executing *outside* it, which is strictly worse since the shell is not sandboxed.
+> **Drag-and-drop open** via Tauri's native drag-drop (HTML5 drops carry no real paths),
+> filtered by `paths.selectOpenable` — an allowlist, because a drop is the one open path
+> with no file-type filter in front of it. **Recent files** (`src/recent.ts` +
+> `set_recent_files`). **First-run vs. empty state**: `src/welcome.ts` holds both, and
+> `firstRun` comes from `settings.version === 0` (never written) rather than "nothing
+> was restored", which is also true when an existing user closes their last tab.
 >
 > **Events (Rust → frontend):** `workspace:change` (file watcher), `menu` (native menu item id
 > `menu_*` → mapped to the same handlers as toolbar buttons), and `open-file` (a *second* launch's
@@ -522,6 +624,18 @@ Phases 0–3 are complete and Phase 4 (polish) is in progress; the shipped detai
   never drops a line. The wire protocol's fifth outcome, `missing`, is produced one layer up in
   `src-tauri/src/commands/sync.rs` (an `io::ErrorKind::NotFound` on the read, before `mergemd` is
   even called) — that file has **no tests of its own**, so `missing` is exercised on-device only.
+- **File operations:** `cargo test -p fileops` — the name rules (the Windows-forbidden character
+  set, control characters, trailing dot/space, reserved device names *with* an extension, and the
+  near-misses that must still be **accepted**: `console.md`, `com10.md`), containment against a
+  traversal dressed up as a subdirectory, every create/rename refusing to clobber while a
+  **case-only** rename still succeeds, and that a returned path keeps the *caller's* spelling —
+  the regression that pins it: containment is checked with `canonicalize`, which on Windows
+  returns `\\?\C:\…`, and building the result from that hands back a path matching neither the
+  sidebar tree, nor an open tab, nor the note's history key. Plus `tests/sidebar.test.ts` (the menu
+  offers only what is wired, a rejected name keeps the field open with the message, blur cancels
+  rather than commits, and a background refresh cannot delete what is being typed) and
+  `tests/contextmenu.test.ts` (one menu at a time; dismissal actually removes its document
+  listeners; the menu closes *before* its handler runs, since handlers take focus).
 - **External-change policy:** `tests/sync.test.ts` — `decideAction`'s outcome→action mapping is total
   and fails closed, HTML never auto-merges, and `selectSavable` excludes a diverged tab from every
   bulk write path (§5).
@@ -543,6 +657,21 @@ Phases 0–3 are complete and Phase 4 (polish) is in progress; the shipped detai
   briefly narrowed.
 - **Action double-fire:** `tests/actions.test.ts` — `menu.rs` carries real accelerators, so
   one Ctrl+S arrives twice (menu *and* webview keydown). One dispatcher collapses the pair.
+- **Zoom / links / recents:** `tests/zoom.test.ts` (the ladder round-trips exactly, and a
+  stored `0` cannot make the editor unusable), `tests/links.test.ts` (the §3.3 allowlist —
+  `jAvAsCrIpT:`, `java\tscript:`, `file://`, `ms-msdt:`; the cases a blocklist gets wrong),
+  `tests/recent.test.ts` (dedupe-and-move, no in-place mutation, junk in `session.json`
+  degrading to empty rather than throwing during bootstrap), and the `paths` suite's
+  drop allowlist. Plus the shipped **welcome note is itself a round-trip fixture** in
+  `tests/roundtrip.test.ts`: it claims in its own text that Toril doesn't rewrite your
+  files, so it has to survive a save. That gate immediately caught two real defects in
+  the copy (unpadded table pipes, and `**Ctrl+\**` escaping its own closing marker).
+- **Update policy:** `tests/update.test.ts` — the startup/manual asymmetry (a background
+  check is rate-limited, skippable and silent; a direct question always gets an answer),
+  the interval boundary itself rather than either side of it, and that a `lastCheckedAt`
+  in the **future** fails *open* — a corrected clock must not disable update checks
+  forever with no symptom. What it cannot cover is anything downstream of the network:
+  see §D of `docs/ON-DEVICE-VERIFICATION.md`.
 - Plus `vaultscan`, `imgasset`, `theme`, `statusbar`, `search`, `security`, `tabs` suites.
 
 > **The browser harness.** `dev-harness.html` is `app.html` plus a fake Tauri IPC bridge
@@ -563,9 +692,11 @@ Phases 0–3 are complete and Phase 4 (polish) is in progress; the shipped detai
 
 **CI runs these automatically** on every pull request and on pushes to `main`
 (`.github/workflows/ci.yml`): `pnpm typecheck` + `pnpm test` + `pnpm build`, and `cargo test` over the
-nine logic crates — each on **Ubuntu and Windows**, plus `cargo fmt --all --check` on Ubuntu. The
-Windows leg is not ceremony: `pnpm install --frozen-lockfile` is what applies the Milkdown patch, and
-`fsatomic` is the §3.1 gate whose replace-over-existing semantics differ from POSIX there.
+ten logic crates — each on **Ubuntu and Windows**, plus `cargo fmt --all --check` on Ubuntu. The
+Windows leg is not ceremony: `pnpm install --frozen-lockfile` is what applies the Milkdown patch,
+`fsatomic` is the §3.1 gate whose replace-over-existing semantics differ from POSIX there, and
+`fileops` encodes *Windows* naming rules (reserved devices, trailing dots, case-only renames) that
+the Linux leg alone cannot see.
 
 **What CI cannot cover — still yours to run:** interactive GUI flows (`pnpm tauri dev` — dialogs,
 menus, the reload prompt), macOS, the Tauri app crate, and `cargo clippy` (§10; excluded from CI
@@ -576,8 +707,11 @@ test harness — it needs a live Milkdown editor and Tauri IPC.** `crates/mergem
 `src/paths.ts`, and the tab bookkeeping in `src/ui/tabs.ts` are gated in isolation; the glue that
 calls them in the right order, at the right time, is verified on-device only.
 
-**Remaining for Phase 4:** optional code-signing (removes the SmartScreen warning — see the
-code-signing memory) and on-device verification of GUI/Rust flows that can't be tested here.
+**Remaining for Phase 4:** Azure Trusted Signing
+(removes the SmartScreen warning — the wiring is in place and inert, `docs/RELEASE-SIGNING.md`);
+and on-device verification of GUI/Rust flows that can't be tested here, now including the
+update flow (§D of `docs/ON-DEVICE-VERIFICATION.md` — nothing headless can prove a signed
+artifact downloads, verifies, and replaces a running binary).
 Shortcut-reference panel deferred (the menu lists shortcuts).
 
 ---
@@ -734,20 +868,22 @@ Keep the project's rules: testable logic in `crates/*` or pure TS helpers, all d
 (§5/§10), one canonical serializer (§3.2), no unhealthy deps (§2).
 
 **Easy (pure frontend, fully testable here):**
-- **Editor zoom** — `Ctrl +`/`-`/`0` adjusts an editor font-size CSS variable; persist in `Settings`.
+- ~~**Editor zoom**~~ — *shipped* (`feat/release-readiness`).
 - **Spellcheck** — ensure the ProseMirror editable carries `spellcheck="true"`. Verify on-device.
 - **Tab niceties** — middle-click to close, "Close others / Close all".
 
 **Easy–medium (small Rust / Tauri, needs on-device verify):**
-- **Auto-save** — debounced save of dirty *saved* files; reuse atomic `saveFile`; toggle in `Settings`.
-- **Remember window size/position** — add the maintained `tauri-plugin-window-state` (vet per §2).
-- **Recent files / recent folders** — extend the persisted session with an MRU list; surface in File menu.
-- **Open links in browser** (`Ctrl/Cmd`-click) — route through Tauri's shell-open.
-- **Drag-and-drop a `.md` onto the window to open it** — Tauri drag-drop event → existing `openPath`.
+- ~~**Auto-save**~~ — *shipped* (Movement I.1).
+- ~~**Remember window size/position**~~, ~~**Recent files**~~, ~~**Open links in browser**~~,
+  ~~**Drag-and-drop to open**~~ — all *shipped* (`feat/release-readiness`). **Recent
+  folders** was not done: reopening a folder is a heavier action than reopening a file
+  and the sidebar already remembers the last one.
 
 **Medium (more UI / a new command, but high value):**
 - **Global workspace search ("find in files")** — a Rust command scanning the vault (sibling to
   `vaultscan`, keeping scan logic unit-testable) + a results panel. Distinct from in-document Find.
-- **Sidebar file operations** — new / rename / delete / new-folder via context menu, backed by new
-  **atomic** Rust commands; mind the watcher interplay.
-- **Document outline / TOC panel** — list headings from the doc, click to scroll.
+- ~~**Sidebar file operations**~~ — *shipped* (ROADMAP Movement II.12). Still open from that
+  branch: **drag-to-move** within the tree, **multi-select**, and a **trash browser**
+  (`list_trash` has a command and an `ipc.ts` wrapper but no UI — Undo is currently the only
+  way back, and it only reaches the most recent delete).
+- ~~**Document outline / TOC panel**~~ — *shipped* (Movement II.11).

@@ -17,38 +17,52 @@ import {
   type Settings,
   type UnlistenFn,
   type WorkspaceChange,
+  checkForUpdate,
   clearRecovery,
+  confirmDiscard,
+  createFolder,
+  createNote,
   exportHtml,
   exportRtf,
   installCloseGuard,
   listHistory,
+  moveToTrash,
   loadRecovery,
   loadSettings,
   markdownToHtml,
   type MergeReport,
   mergeExternal,
   onMenuAction,
+  onFilesDropped,
   onOpenFile,
   onWorkspaceChange,
   openFile,
+  openExternal,
   openFolder,
   pickFileToOpen,
   pickFolder,
   readSnapshot,
+  relaunchApp,
+  renameEntry,
+  restoreFromTrash,
   restoreSnapshot,
   saveClipboardImage,
   saveFile,
   saveFileAs,
   saveRecovery,
   saveSettings,
+  setRecentFiles,
   showAbout,
+  suggestNoteName,
   takeLaunchPath,
+  type TrashEntry,
   watchFolder,
   writeConflictCopy,
 } from "./ipc";
 import { ActionDispatcher } from "./actions";
 import { AutosaveScheduler, type RecoveryEntry, selectDirtySaved, snapshotDirty } from "./autosave";
-import { isAtOrUnder } from "./paths";
+import { isExternallyOpenable, linkHrefFrom } from "./links";
+import { isAtOrUnder, selectOpenable } from "./paths";
 import {
   blocksWrite,
   decideAction,
@@ -57,7 +71,17 @@ import {
   selectRemovedOnDisk,
   selectSavable,
 } from "./sync";
+import {
+  decideCheck,
+  decideErrorPresentation,
+  decidePresentation,
+  type UpdateState,
+  type UpdateTrigger,
+} from "./update";
+import { ZOOM_DEFAULT, formatZoom, normalizeZoom, zoomIn, zoomOut } from "./zoom";
+import { RECENT_LIMIT, forgetRecent, normalizeRecent, pushRecent } from "./recent";
 import { ConflictBar } from "./ui/conflictbar";
+import { UpdateNotice } from "./ui/updatenotice";
 import { PropertiesStrip } from "./ui/properties";
 import { History } from "./ui/history";
 import { Outline } from "./ui/outline";
@@ -85,10 +109,7 @@ import { type TabState, type DocFormat, TabManager } from "./ui/tabs";
 import { ThemeController, isTheme } from "./ui/theme";
 import { FormattingToolbar } from "./ui/toolbar";
 
-const WELCOME = `# Welcome to Toril
-
-Open a folder to browse your notes, or start typing here.
-`;
+import { EMPTY, FIRST_RUN } from "./welcome";
 
 let editor: Editor;
 let tabs: TabManager;
@@ -106,6 +127,34 @@ let properties: PropertiesStrip | null = null;
 let propertiesExpanded = true;
 let autosaveDebounceMs = 2000;
 let theme: ThemeController | null = null;
+let updateNotice: UpdateNotice | null = null;
+/**
+ * Update-check state, persisted across launches. Defaults to checking: an
+ * editor that cannot tell you it is out of date is how `v1.0.0` stranded every
+ * copy of itself. The check sends nothing about you (see `ipc.checkForUpdate`),
+ * and it can be turned off in the View menu.
+ */
+const updateState: UpdateState = {
+  enabled: true,
+  lastCheckedAt: null,
+  skippedVersion: null,
+};
+/** Writing-surface zoom multiplier; chrome is deliberately unaffected (`zoom.ts`). */
+let editorZoom = ZOOM_DEFAULT;
+/** Recently opened files, newest first. Paths only, never contents (§3.2). */
+let recentFiles: string[] = [];
+/**
+ * Whether this is the very first launch, which decides between the welcome
+ * document and a blank one.
+ *
+ * Derived from the settings file having never been written (`version` is 0 for
+ * `Settings::default()`, and `save_settings` always stamps the current version)
+ * — not from "nothing was restored", which is also true whenever an existing
+ * user closes their last tab. Defaults to `false` so a settings load that
+ * *fails* shows a returning user a blank page rather than the tour: the tour is
+ * the more annoying of the two mistakes.
+ */
+let firstRun = false;
 
 let workspaceRoot: string | null = null;
 let panes: PaneState = defaultPaneState();
@@ -135,6 +184,31 @@ function basename(p: string): string {
 function setStatus(msg: string): void {
   const el = document.querySelector("#status");
   if (el) el.textContent = msg;
+}
+
+/**
+ * A status message with one inline action — currently Undo, after a delete.
+ *
+ * It lives in the status bar rather than a toast because it must not steal
+ * focus or cover anything: the user just deleted a file and may be about to
+ * click another. The next `setStatus` clears it, which is the dismissal — and
+ * missing the button costs nothing, since the file is sitting in `.trash/`
+ * either way. This is an affordance for the common case, not the safety net;
+ * the safety net is that the delete was never destructive.
+ */
+function setStatusWithAction(msg: string, label: string, onAction: () => void): void {
+  const el = document.querySelector("#status");
+  if (!el) return;
+  el.textContent = `${msg} `;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "status-action";
+  btn.textContent = label;
+  btn.addEventListener("click", () => {
+    setStatus(""); // one action, one use — a second click would restore twice
+    onAction();
+  });
+  el.append(btn);
 }
 
 function updateTitle(): void {
@@ -280,10 +354,17 @@ async function openPath(path: string): Promise<void> {
   if (existing) {
     tabs.setActive(existing.id);
     updateTitle();
+    // Focusing an already-open tab still counts as reaching for the file, so it
+    // moves to the front of the recent list.
+    rememberRecent(existing.path ?? path);
     return;
   }
   const file = await openFile(path);
   openDocument(file.path, basename(file.path), file.content, formatForPath(file.path));
+  // Recorded from the path the backend resolved, and only once the read
+  // succeeded — a file that failed to open must not enter a list whose whole
+  // purpose is offering it again.
+  rememberRecent(file.path);
   setStatus(`Opened ${basename(file.path)}`);
 }
 
@@ -309,7 +390,7 @@ async function doOpenFolder(): Promise<void> {
 async function loadWorkspace(path: string): Promise<void> {
   const tree = await openFolder(path);
   workspaceRoot = path;
-  sidebar.setRoot(basename(path), tree);
+  sidebar.setRoot(basename(path), tree, path);
   sidebar.setActivePath(tabs.active()?.path ?? null);
   setStatus(`Opened folder ${basename(path)}`);
 
@@ -523,6 +604,167 @@ function doNew(): void {
   setStatus("New document");
 }
 
+// ---- Workspace file operations (ROADMAP Movement II.12) ---------------------
+//
+// The rules live in Rust (`crates/fileops` validates and refuses to clobber;
+// `trashbin` soft-deletes) and the UX lives in `ui/sidebar.ts`. What is here is
+// the part neither of them can own: keeping the *open tabs* consistent with
+// what just happened on disk.
+//
+// That is the §3 surface of this feature. A rename moves the file out from under
+// every tab pointing into it, and the watcher reports it as a delete followed by
+// a create — the exact shape `removedOnDisk` exists to catch. Left alone, the
+// tab would decide its file had vanished and offer to recreate it, resurrecting
+// the old note beside its new name.
+
+/**
+ * Create a note and open it.
+ *
+ * Opening is the point: creating a file the user then has to find in the tree
+ * is a worse New Note than the Untitled buffer they already have. Rejections
+ * propagate — the sidebar keeps the name field open and shows the message.
+ */
+async function doCreateNote(dir: string, name: string): Promise<void> {
+  if (!workspaceRoot) throw new Error("No folder is open.");
+  const path = await createNote(workspaceRoot, dir, name);
+  scheduleSidebarRefresh();
+  // The file is empty and was just written by us, so there is nothing to read
+  // back: open the buffer directly rather than paying a round trip to learn it
+  // is empty. `base` is "" for the same reason, which is exactly right — that
+  // is what is on disk.
+  openDocument(path, basename(path), "", formatForPath(path));
+  rememberRecent(path);
+  scheduleSessionSave();
+  setStatus(`Created ${basename(path)}`);
+}
+
+async function doCreateFolder(parent: string, name: string): Promise<void> {
+  if (!workspaceRoot) throw new Error("No folder is open.");
+  await createFolder(workspaceRoot, parent, name);
+  scheduleSidebarRefresh();
+  setStatus(`Created ${name}`);
+}
+
+/**
+ * Rename a note or folder, and move every affected tab with it.
+ *
+ * Three things have to happen together, and the order matters:
+ *
+ * 1. **Re-point the tabs**, including every tab *underneath* a renamed folder.
+ * 2. **Bump the removal epoch** for each old path. A `reconcile` may already be
+ *    in flight against the old path; it captured that path before its await and
+ *    would apply its verdict — "missing", most likely — to a tab that has since
+ *    moved. This is the same guard the watcher's remove branch uses.
+ * 3. **Clear `removedOnDisk`**, because the watcher's delete event for the old
+ *    path may have landed while the rename was in flight. Steps 1–3 run in one
+ *    synchronous block after the await, so no event can interleave between them.
+ *
+ * `base` is deliberately *not* reset: a rename does not change a single byte, so
+ * the merge base is still exactly right and re-reading would only invite a race.
+ */
+async function doRenameEntry(path: string, newName: string): Promise<void> {
+  if (!workspaceRoot) throw new Error("No folder is open.");
+  const newPath = await renameEntry(workspaceRoot, path, newName);
+
+  for (const tab of tabs.list()) {
+    const old = tab.path;
+    if (!old) continue;
+    // Exact match is the file case; the prefix branch is the folder case. The
+    // prefix is a raw slice because both strings come from the same scan of the
+    // same tree, so they share a spelling — `isAtOrUnder` is the predicate,
+    // `startsWith` is what makes the arithmetic safe.
+    let moved: string | null = null;
+    if (old === path) moved = newPath;
+    else if (isAtOrUnder(old, path) && old.startsWith(path)) moved = newPath + old.slice(path.length);
+    if (moved === null) continue;
+
+    // A queued reconcile for the old path would read a file that no longer
+    // exists; cancel it as well as invalidating one already running.
+    const queued = reconcileTimers.get(old);
+    if (queued) {
+      clearTimeout(queued);
+      reconcileTimers.delete(old);
+    }
+    removalEpoch.set(old, (removalEpoch.get(old) ?? 0) + 1);
+
+    tabs.setPath(tab.id, moved, basename(moved));
+    tabs.setRemovedOnDisk(tab.id, false);
+    dropRecent(old);
+    rememberRecent(moved);
+  }
+
+  scheduleSidebarRefresh();
+  updateTitle();
+  renderConflictBar();
+  scheduleSessionSave(); // the session's open-file paths just changed
+  setStatus(`Renamed to ${basename(newPath)}`);
+}
+
+/**
+ * Soft-delete a note or folder, and offer to undo it.
+ *
+ * The delete is reversible by construction — `trashbin` moves the file into the
+ * workspace `.trash/` rather than unlinking it — so this asks nothing in the
+ * ordinary case, and offers Undo instead. The one thing trash cannot bring back
+ * is an *unsaved buffer*, so that is the one case that stops and asks.
+ */
+async function doDeleteEntry(path: string, isDir: boolean): Promise<void> {
+  if (!workspaceRoot) return;
+  const affected = tabs
+    .list()
+    .filter((t) => t.path !== null && (isDir ? isAtOrUnder(t.path, path) : t.path === path));
+
+  const unsaved = affected.filter((t) => t.dirty);
+  if (unsaved.length > 0) {
+    const names = unsaved.map((t) => t.name).join(", ");
+    const verb = unsaved.length === 1 ? "has" : "have";
+    const ok = await confirmDiscard(
+      `${names} ${verb} unsaved changes that trash cannot bring back. Delete anyway?`,
+    );
+    if (!ok) return;
+  }
+
+  let entry: TrashEntry;
+  try {
+    entry = await moveToTrash(workspaceRoot, path);
+  } catch (e) {
+    setStatus(`Delete failed: ${String(e)}`);
+    return;
+  }
+
+  // Closed only after the move succeeded — a failed delete must not also cost
+  // the user their open tab.
+  for (const tab of affected) {
+    if (tab.path) {
+      removalEpoch.set(tab.path, (removalEpoch.get(tab.path) ?? 0) + 1);
+      // Offering a deleted note in Open Recent is offering a failure; restoring
+      // it from trash re-opens it and puts it back at the front.
+      dropRecent(tab.path);
+    }
+    tabs.close(tab.id);
+  }
+  if (!isDir) dropRecent(path); // deleted without ever being opened
+  scheduleSidebarRefresh();
+  updateTitle();
+  renderConflictBar();
+  scheduleSessionSave();
+  setStatusWithAction(`Moved ${entry.name} to trash`, "Undo", () => void undoDelete(entry));
+}
+
+async function undoDelete(entry: TrashEntry): Promise<void> {
+  if (!workspaceRoot) return;
+  try {
+    const path = await restoreFromTrash(workspaceRoot, entry.id);
+    scheduleSidebarRefresh();
+    setStatus(`Restored ${basename(path)}`);
+  } catch (e) {
+    // `restore` refuses rather than clobbers when something has reappeared at
+    // the path, so the file is still safe in `.trash/` — say so, because the
+    // difference between "not restored" and "lost" is the whole point.
+    setStatus(`Could not restore ${entry.name} — it is still in .trash (${String(e)})`);
+  }
+}
+
 // ---- Pane layout (sidebar + tabbed rail) -----------------------------------
 //
 // All pane decisions live in `panes.ts` as value transforms; this half only
@@ -708,6 +950,221 @@ function toggleAutosave(): void {
   if (autosaveEnabled) autosave?.notifyChange();
 }
 
+// ---- Recent files ----------------------------------------------------------
+
+/**
+ * Push the native menu the list it should show.
+ *
+ * Best-effort: a menu that failed to rebuild is a cosmetic problem, and letting
+ * it reject would turn opening a file into a visible error over nothing.
+ */
+function syncRecentMenu(): void {
+  void setRecentFiles(recentFiles).catch(() => {});
+}
+
+/** Record a successfully opened file. Called only after the read succeeded. */
+function rememberRecent(path: string): void {
+  const next = pushRecent(recentFiles, path, RECENT_LIMIT);
+  // Reopening the file already at the front changes nothing — skip the menu
+  // rebuild and the settings write rather than doing both on every tab switch.
+  if (next.length === recentFiles.length && next[0] === recentFiles[0]) {
+    const same = next.every((p, i) => p === recentFiles[i]);
+    if (same) return;
+  }
+  recentFiles = next;
+  syncRecentMenu();
+  scheduleSessionSave();
+}
+
+/** Drop an entry whose file turned out to be gone, so it can't fail twice. */
+function dropRecent(path: string): void {
+  const next = forgetRecent(recentFiles, path);
+  if (next.length === recentFiles.length) return;
+  recentFiles = next;
+  syncRecentMenu();
+  scheduleSessionSave();
+}
+
+function clearRecentFiles(): void {
+  if (recentFiles.length === 0) return;
+  recentFiles = [];
+  syncRecentMenu();
+  scheduleSessionSave();
+  setStatus("Recent files cleared");
+}
+
+/**
+ * Open the nth recent file.
+ *
+ * The index comes from the menu id; the list it indexes is this one. A stale
+ * index — a menu rebuilt between render and click — resolves to nothing rather
+ * than to the wrong file, which is why the bounds check is here and not an
+ * assertion.
+ */
+async function openRecent(index: number): Promise<void> {
+  const path = recentFiles[index];
+  if (path === undefined) return;
+  try {
+    await openPath(path);
+  } catch {
+    // Gone or unreadable. Forget it rather than leaving an entry whose only
+    // possible outcome is this same failure.
+    dropRecent(path);
+    setStatus(`${basename(path)} could not be opened — removed from recent files`);
+  }
+}
+
+// ---- Opening links ---------------------------------------------------------
+
+/**
+ * Ctrl/Cmd-click a link to open it in the default browser.
+ *
+ * Modifier-required, matching every other editor: in a WYSIWYG surface a plain
+ * click has to remain "put the caret here", or a link becomes a place you
+ * cannot edit.
+ *
+ * Whether a href may leave the app is decided by `links.ts`, which allows only
+ * http/https/mailto — an opened `.md` is untrusted (§3.3) and the OS shell acts
+ * on much more than web addresses. A refused link is reported rather than
+ * silently ignored, so "nothing happened" is never the whole story.
+ */
+function installLinkOpener(root: HTMLElement): void {
+  root.addEventListener("click", (e) => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    const href = linkHrefFrom(e.target);
+    if (!href) return;
+    e.preventDefault();
+    if (!isExternallyOpenable(href)) {
+      setStatus(`Refused to open a non-web link: ${href.slice(0, 60)}`);
+      return;
+    }
+    void openExternal(href).catch((err: unknown) => setStatus(`Could not open link: ${String(err)}`));
+  });
+}
+
+// ---- Editor zoom -----------------------------------------------------------
+
+/**
+ * Apply the current zoom to the writing surface.
+ *
+ * One CSS variable on the root, consumed by `.editor .milkdown` — everything
+ * inside it is sized in `em`, so headings, code and the measure all follow from
+ * this single number. Nothing about the document changes: zoom is presentation
+ * only, so §3.2 is untouched.
+ */
+function applyZoom(): void {
+  document.documentElement.style.setProperty("--editor-zoom", String(editorZoom));
+}
+
+function setZoom(next: number): void {
+  if (next === editorZoom) return;
+  editorZoom = next;
+  applyZoom();
+  setStatus(`Zoom ${formatZoom(editorZoom)}`);
+  scheduleSessionSave();
+}
+
+// ---- Self-update (ROADMAP Movement I.5) ------------------------------------
+//
+// The rules live in `update.ts` and are gated there; this is only the wiring
+// that connects them to the network, the toast and persisted settings. Nothing
+// here decides anything on its own — that separation is what makes the policy
+// testable without a release server.
+
+function toggleUpdateCheck(): void {
+  updateState.enabled = !updateState.enabled;
+  setStatus(`Update checks ${updateState.enabled ? "on" : "off"}`);
+  scheduleSessionSave();
+}
+
+/**
+ * Run an update check, if the policy allows one, and present whatever comes
+ * back.
+ *
+ * Always resolves — a startup check must never be able to reject into an
+ * unhandled rejection during bootstrap, and a failure to reach the network is
+ * not something to trouble a writer with.
+ */
+async function checkUpdates(trigger: UpdateTrigger): Promise<void> {
+  const decision = decideCheck(trigger, updateState, Date.now());
+  if (decision.kind === "skip") return;
+
+  let presentation;
+  try {
+    const found = await checkForUpdate();
+    // Recorded only on a *completed* check, so an offline launch doesn't burn
+    // the day's allowance and leave the user a version behind for another 24h.
+    updateState.lastCheckedAt = Date.now();
+    scheduleSessionSave();
+    presentation = decidePresentation(trigger, found, updateState);
+    if (presentation.kind === "offer" && found) offerUpdate(found);
+  } catch (e) {
+    presentation = decideErrorPresentation(trigger, String(e));
+  }
+
+  if (presentation.kind === "up-to-date") {
+    updateNotice?.info("Toril is up to date.", () => updateNotice?.hide());
+  } else if (presentation.kind === "error") {
+    updateNotice?.info(`Could not check for updates: ${presentation.message}`, () =>
+      updateNotice?.hide(),
+    );
+  }
+}
+
+/** Show the offer, and own the install → restart sequence if the user takes it. */
+function offerUpdate(found: { version: string; notes?: string; install(): Promise<void> }): void {
+  updateNotice?.show({
+    version: found.version,
+    notes: found.notes,
+    onInstall: () => {
+      updateNotice?.busy(`Downloading Toril ${found.version}…`);
+      found
+        .install()
+        .then(() => {
+          updateNotice?.installed(
+            () => void restartForUpdate(),
+            () => updateNotice?.hide(),
+          );
+        })
+        .catch((e: unknown) => {
+          updateNotice?.failed(String(e), () => updateNotice?.hide());
+        });
+    },
+    onSkip: () => {
+      updateState.skippedVersion = found.version;
+      scheduleSessionSave();
+      updateNotice?.hide();
+    },
+    onDismiss: () => updateNotice?.hide(),
+  });
+}
+
+/**
+ * Restart into the new build — but not over unsaved work.
+ *
+ * This is the one place in the update flow that can destroy a buffer, so it is
+ * the one place that checks. A relaunch is a process exit: an unsaved tab would
+ * be gone, and "I clicked the update button" is not consent to lose a
+ * paragraph (§3). The install is already on disk either way, so refusing here
+ * costs the user nothing but a save.
+ */
+async function restartForUpdate(): Promise<void> {
+  const dirty = tabs.list().filter((t) => t.dirty);
+  if (dirty.length > 0) {
+    updateNotice?.info(
+      `Save your work first — ${dirty.length} unsaved document${dirty.length === 1 ? "" : "s"}. The update is installed and will apply next time you start Toril.`,
+      () => updateNotice?.hide(),
+    );
+    return;
+  }
+  // A clean exit: drop the recovery journal so the next launch doesn't offer to
+  // restore buffers that were already saved (see `installCloseGuard`).
+  await clearRecovery().catch(() => {});
+  await relaunchApp().catch((e: unknown) => {
+    updateNotice?.failed(String(e), () => updateNotice?.hide());
+  });
+}
+
 // ---- Export ----------------------------------------------------------------
 
 /**
@@ -788,7 +1245,7 @@ function scheduleSidebarRefresh(): void {
     if (!workspaceRoot) return;
     openFolder(workspaceRoot)
       .then((tree) => {
-        sidebar.setRoot(basename(workspaceRoot!), tree);
+        sidebar.setRoot(basename(workspaceRoot!), tree, workspaceRoot);
         sidebar.setActivePath(tabs.active()?.path ?? null);
       })
       .catch(() => {});
@@ -1143,6 +1600,11 @@ function scheduleSessionSave(): void {
       properties_expanded: propertiesExpanded,
       autosave: autosaveEnabled,
       autosave_debounce_ms: autosaveDebounceMs,
+      update_check: updateState.enabled,
+      update_last_checked: updateState.lastCheckedAt,
+      update_skipped_version: updateState.skippedVersion,
+      editor_zoom: editorZoom,
+      recent_files: recentFiles,
     };
     void saveSettings(settings).catch(() => {}); // best-effort
   }, 400);
@@ -1161,6 +1623,11 @@ async function restoreSession(): Promise<void> {
   } catch {
     return;
   }
+
+  // `version` is 0 only for a settings file that has never been written, since
+  // every save stamps the current version — so this is "Toril has never run
+  // here", not "nothing to restore".
+  firstRun = settings.version === 0;
 
   // Theme first, so the restored UI paints in the right palette.
   if (theme && isTheme(settings.theme)) {
@@ -1181,6 +1648,22 @@ async function restoreSession(): Promise<void> {
   if (settings.autosave !== null) autosaveEnabled = settings.autosave;
   if (settings.autosave_debounce_ms !== null) autosaveDebounceMs = settings.autosave_debounce_ms;
   autosave?.setConfig({ enabled: autosaveEnabled, debounceMs: autosaveDebounceMs });
+
+  if (settings.update_check !== null) updateState.enabled = settings.update_check;
+  updateState.lastCheckedAt = settings.update_last_checked;
+  updateState.skippedVersion = settings.update_skipped_version;
+
+  // Normalized rather than trusted: session.json is a file a user can edit, and
+  // a stored zoom of 0 would render the editor unreadable with no way to zoom
+  // back out (`zoom.ts`).
+  editorZoom = normalizeZoom(settings.editor_zoom);
+  applyZoom();
+
+  // Untrusted shape, not just untrusted values: a hand-edited or crash-truncated
+  // session.json must not throw here, where an exception costs the user the
+  // whole restored session.
+  recentFiles = normalizeRecent(settings.recent_files);
+  syncRecentMenu();
 
   if (settings.last_folder) {
     try {
@@ -1281,6 +1764,12 @@ const ACTIONS: Record<string, () => void> = {
   menu_toggle_outline: () => selectRail("outline"),
   menu_toggle_history: () => selectRail("history"),
   menu_toggle_autosave: () => toggleAutosave(),
+  menu_toggle_update_check: () => toggleUpdateCheck(),
+  menu_check_updates: () => void checkUpdates("manual"),
+  menu_zoom_in: () => setZoom(zoomIn(editorZoom)),
+  menu_zoom_out: () => setZoom(zoomOut(editorZoom)),
+  menu_zoom_reset: () => setZoom(ZOOM_DEFAULT),
+  menu_recent_clear: () => clearRecentFiles(),
   menu_export_html: () => void doExportHtml(),
   menu_export_rtf: () => void doExportRtf(),
   menu_find: () => searchBar?.open(),
@@ -1297,6 +1786,15 @@ const dispatcher = new ActionDispatcher();
  * `actions.ts` for why both doors are kept rather than one being disabled.
  */
 function runAction(id: string): void {
+  // Recent-file items are generated, so they cannot live in the static ACTIONS
+  // table — their ids carry an index into `recentFiles`. Matched before the
+  // table lookup, and still routed through the dispatcher so a menu item with
+  // an accelerator could be added later without reintroducing the double-fire.
+  const recent = /^menu_recent_(\d+)$/.exec(id);
+  if (recent) {
+    dispatcher.dispatch(id, () => void openRecent(Number(recent[1])));
+    return;
+  }
   const action = ACTIONS[id];
   if (action) dispatcher.dispatch(id, action);
 }
@@ -1326,6 +1824,18 @@ function shortcutAction(e: KeyboardEvent): string | null {
       return "menu_find";
     case "e":
       return "menu_export_html";
+    // Zoom, spelled every way a keyboard actually produces it. `Ctrl` and `+`
+    // means `Ctrl+Shift+=` on a US layout, `Ctrl+=` when the user skips shift,
+    // and `Ctrl+Add` on the numeric keypad — all three are the same intent, and
+    // binding only one of them is why zoom shortcuts so often "don't work".
+    case "+":
+    case "=":
+      return "menu_zoom_in";
+    case "-":
+    case "_":
+      return "menu_zoom_out";
+    case "0":
+      return "menu_zoom_reset";
     default:
       return null;
   }
@@ -1342,7 +1852,21 @@ window.addEventListener("DOMContentLoaded", async () => {
   const formatBar = document.querySelector<HTMLElement>("#format-toolbar");
   if (!editorRoot || !tabbar || !sidebarEl || !formatBar) return;
 
-  sidebar = new Sidebar(sidebarEl, { onOpenFile: (p) => void openPath(p) });
+  sidebar = new Sidebar(sidebarEl, {
+    onOpenFile: (p) => void openPath(p),
+    // Routed through the same action as the menu item, so the empty state's
+    // button cannot drift from File → Open Folder.
+    onOpenFolder: () => runAction("menu_open_folder"),
+    // These three deliberately do **not** catch: the sidebar keeps its name
+    // field open on a rejection and shows the message beside it, which is where
+    // a bad name belongs. Swallowing the error here would leave the field
+    // looking like it had worked.
+    onCreateNote: (dir, name) => doCreateNote(dir, name),
+    onCreateFolder: (parent, name) => doCreateFolder(parent, name),
+    onRename: (path, newName) => doRenameEntry(path, newName),
+    onDelete: (path, isDir) => void doDeleteEntry(path, isDir),
+    suggestName: (dir) => suggestNoteName(workspaceRoot ?? dir, dir, "Untitled"),
+  });
   sidebar.setRoot(null, []);
   tabs = new TabManager(tabbar, { onDeactivate, onActivate, onCloseRequest });
 
@@ -1388,6 +1912,10 @@ window.addEventListener("DOMContentLoaded", async () => {
   // belongs above the document, not inside the surface that scrolls away.
   const conflictEl = document.querySelector<HTMLElement>("#conflictbar");
   if (conflictEl) conflictBar = new ConflictBar(conflictEl);
+
+  // On `body`, not in #main: the update toast is out of flow (see
+  // `ui/updatenotice.ts`), so it must not inherit a pane's overflow clipping.
+  updateNotice = new UpdateNotice(document.body);
 
   // Above the writing surface, below the banner: front matter reads as the top
   // of the document, and the strip never touches the doc, the tab, or disk — it
@@ -1441,6 +1969,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   document.querySelector("#btn-rail-history")?.addEventListener("click", () => selectRail("history"));
   installShortcuts();
   installResizers();
+  installLinkOpener(editorRoot);
   void onMenuAction(runAction); // native menu → the same named actions as the keyboard
   // Guard against losing unsaved work on close, and clear the recovery journal
   // on every clean close so a leftover journal always means "we crashed" (§3).
@@ -1465,10 +1994,39 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
 
   if (!tabs.active()) {
-    openDocument(null, "Untitled", WELCOME);
+    openDocument(
+      null,
+      firstRun ? "Welcome" : "Untitled",
+      firstRun ? FIRST_RUN : EMPTY,
+    );
   }
 
   // While Toril is already running, a second double-click is forwarded here by
   // the single-instance plugin rather than starting a new process (§5).
   void onOpenFile((path) => void openPath(path));
+
+  // Dropping notes on the window opens them. A drop is the one open path with
+  // no file-type filter in front of it, so `selectOpenable` is an allowlist —
+  // and a drop of five files where two are notes reports as much rather than
+  // appearing to have half-worked.
+  void onFilesDropped((paths) => {
+    const openable = selectOpenable(paths);
+    if (openable.length === 0) {
+      setStatus(
+        paths.length > 0 ? "Nothing there Toril can open (.md, .markdown, .html)" : "",
+      );
+      return;
+    }
+    void (async () => {
+      for (const path of openable) await openPath(path);
+      const skipped = paths.length - openable.length;
+      if (skipped > 0) setStatus(`Opened ${openable.length}; skipped ${skipped}`);
+    })();
+  });
+
+  // Last, and only after the session is on screen: the check is a network round
+  // trip, and nothing about it should delay a document appearing. `checkUpdates`
+  // never rejects, and at startup it stays silent unless there is genuinely
+  // something to offer.
+  void checkUpdates("startup");
 });

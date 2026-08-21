@@ -1,7 +1,7 @@
 # On-Device Verification
 
 CI covers the headless gates: `pnpm typecheck` / `test` / `build` and `cargo test` over
-the nine logic crates, on Ubuntu and Windows (CLAUDE.md §8). A green PR means those
+the ten logic crates, on Ubuntu and Windows (CLAUDE.md §8). A green PR means those
 passed — **not** that the app was driven.
 
 This file is the standing list of what a green PR cannot tell you: interactive flows
@@ -157,6 +157,104 @@ rendered layout is unverified in either engine. The logic underneath it is gated
       and RTF; the properties must not appear in the output. Export no longer relies on
       comrak stripping them, so this is a genuinely new path.
 
+## D. Release readiness (`feat/release-readiness`, 2026-08-17)
+
+The update flow is the one feature here whose payoff — a stranded `v1.0.0` install
+finding its way forward — cannot be demonstrated by any gate. `tests/update.test.ts`
+pins *when* Toril checks and *whether* it interrupts you; nothing headless can pin
+that a signed artifact downloads, verifies and replaces a running binary.
+
+- [ ] **D1 — A real update installs.** The only end-to-end check that matters, and it
+      needs two releases. Install `v1.0.0`'s NSIS build, publish a later tag, then launch
+      the old copy: the notice should appear, Install should download, and Restart should
+      come back on the new version **with the session intact**. Repeat for the MSI —
+      per-machine install plus a per-user updater is the combination most likely to fail.
+- [ ] **D2 — The restart guard actually refuses.** Make a tab dirty, take an update,
+      click Restart now. Toril must refuse and say the update applies next launch — this
+      is the one path in the feature that could destroy a buffer (§3), and it is guarded
+      in `main.ts`, which has no harness.
+- [ ] **D3 — Signature verification fails closed.** Tamper with a published artifact (or
+      sign it with a different key) and confirm the install is **refused**, not attempted.
+      A verification path that silently accepts is worse than no updater at all.
+- [ ] **D4 — Toast layout, measured not eyeballed** (§12b). Drive `dev-harness.html?update`
+      at 1400/1100/900/700px and assert with `getBoundingClientRect()` that the notice
+      never overlaps `#statusbar`, stays inside the viewport, and that the long unbroken
+      URL in the harness fixture does not widen it. **Not done on this branch** — the
+      browser harness could not be driven in the authoring session, so this is genuinely
+      unverified rather than assumed-fine.
+- [ ] **D5 — Both engines.** The notice is `position: fixed` over a flex/grid shell;
+      confirm in WebKitGTK as well as WebView2 that it is not clipped by a pane's
+      `overflow: hidden` (it is parented to `body` specifically to avoid that).
+- [ ] **D6 — Window state.** Move and resize the window, quit, relaunch: size, position
+      and maximized state should return. Then relaunch on a machine with **fewer or
+      smaller monitors** and confirm the window is not restored off-screen.
+- [ ] **D8 — Zoom, and the two shortcuts that usually don't work.** `Ctrl+-` and `Ctrl+0`
+      are unambiguous; `Ctrl+Plus` is not — check `Ctrl+Shift+=`, `Ctrl+=` and the numeric
+      keypad's `+` all zoom in, in WebView2 *and* through the native accelerator. Confirm
+      the chrome does **not** scale, and that the level survives a restart.
+- [ ] **D9 — Open Recent.** Open several notes, confirm the File submenu lists them
+      newest-first by file name and that reopening one moves it rather than duplicating
+      it. Then delete a listed file on disk and pick it: it must report the failure and
+      remove itself. The menu is rebuilt wholesale from Rust — watch for flicker or a
+      lost menu on Linux.
+- [ ] **D10 — Link opening, including the refusals.** Ctrl-click an `https://` link: it
+      opens in the default browser, and Toril does not navigate. Then author a note
+      containing `file:///C:/Windows/System32/cmd.exe` and `javascript:alert(1)` and
+      Ctrl-click both — **nothing must launch**, and the status bar should say it was
+      refused. `tests/links.test.ts` gates the rule; only a device proves the rule is
+      the thing actually consulted.
+- [ ] **D11 — Drag and drop.** Drop a `.md`, a folder, and a mixed selection including a
+      `.png`. Notes open, the rest is skipped and counted. Native drag-drop is a
+      per-platform path with no headless coverage at all.
+- [ ] **D12 — First run really is first.** With no `session.json`, launch: the welcome
+      note appears. Save it somewhere and diff — it must be **byte-identical**, which is
+      the claim its own second paragraph makes. Then quit and relaunch: a returning user
+      gets a blank page, not the tour again.
+- [ ] **D7 — The check is quiet when it should be.** With no network, launch: nothing
+      appears. Ask via Help → Check for Updates: it says it could not check. That
+      asymmetry is the whole design and is easy to regress.
+
+## E. Sidebar file operations (`feat/sidebar-file-ops`, 2026-08-17)
+
+The rules are gated hard (`cargo test -p fileops`, `tests/sidebar.test.ts`,
+`tests/contextmenu.test.ts`), but three things sit outside every headless gate: the
+*Windows* filesystem the name rules describe, the watcher's reaction to an operation
+Toril itself performed, and whether the version history actually followed the file.
+
+- [ ] **E1 — Rename does not resurrect the old note.** The §3 case, and the reason
+      `doRenameEntry` orders its work the way it does. Open a note, rename it from the
+      sidebar, then wait for the watcher: the tab must follow to the new name, must
+      **not** show "removed on disk", and autosave must not recreate the old path. Then
+      repeat with the note *dirty*, and with a note open inside a folder you rename.
+- [ ] **E2 — Version history followed the rename.** Save a note two or three times,
+      rename it, then open the history panel: the earlier versions must still be listed.
+      `snapshots::rekey` had **no caller before this branch**, so this is its first
+      real exercise. Repeat for a note inside a renamed folder (the subtree path).
+- [ ] **E3 — Delete and Undo.** Delete a note with a tab open: the tab closes, the file
+      appears under `.trash/`, and the status bar offers Undo. Click it — the note comes
+      back at its original path. Then delete a note, create a *different* file at that
+      path, and Undo: it must refuse rather than clobber, and say the note is still in
+      `.trash`. Finally delete a **dirty** tab's file and confirm the native prompt
+      appears (the one native dialog this feature uses — see B7 for the Linux hazard).
+- [ ] **E4 — Windows name rules against the real filesystem.** The crate's tests assert
+      what we *reject*; only Windows proves the rejections are the right ones. Try
+      `CON.md`, `note.` , `note ` (trailing space), `a:b.md` and a 300-character name —
+      each refused with a readable message beside the field. Then rename `notes.md` to
+      `Notes.md`: this **must succeed** on NTFS, where the destination "already exists"
+      as the source itself, and the sidebar must show the new casing.
+- [ ] **E5 — Paths keep their spelling.** After creating a note from the sidebar, confirm
+      the tab, the sidebar highlight and the window title all agree, and that saving it
+      produces history under the same key. A `\\?\`-prefixed path would work for I/O and
+      silently split the note into two identities; the crate pins this, the app proves it.
+- [ ] **E6 — The context menu in both engines.** It is `position: fixed` at `--z-dialog`.
+      Confirm in WebKitGTK as well as WebView2 that it is not clipped by a pane's
+      `overflow: hidden`, that right-clicking near the right edge or the bottom keeps it
+      on screen, and that Shift+F10 / the menu key opens it anchored to the row rather
+      than the window corner.
+- [ ] **E7 — The refresh race.** Start typing a new note's name, then touch an unrelated
+      file in the vault from outside (or let a sync client do it). The field must keep
+      what you typed; the new tree must appear as soon as you confirm or cancel.
+
 ## B. Standing items (pre-existing, not from this branch)
 
 - [ ] **B1 — HTML as a first-class format.** Open a real AI-authored `.html` artifact,
@@ -192,8 +290,10 @@ rendered layout is unverified in either engine. The logic underneath it is gated
 - [ ] **B8 — Installer behavior.** NSIS installs per-user into `%LOCALAPPDATA%\Toril`
       with **no UAC prompt**, and the WebView2 bootstrapper runs on a clean Win10 box.
       README states both as user-facing guarantees (CLAUDE.md §9).
-- [ ] **B9 — SmartScreen.** Unsigned installers warn on first run. Expected, not a bug —
-      until Azure Trusted Signing lands (ROADMAP Movement I, `feat/release-readiness`).
+- [ ] **B9 — SmartScreen.** Unsigned installers warn on first run. Expected, not a bug.
+      The Authenticode wiring now exists and is **inert until an Azure Trusted Signing
+      account does** (`docs/RELEASE-SIGNING.md`) — so this stays open, and the README
+      wording stays as it is, until a signed installer has been run on a clean box.
 - [~] **B11 — Crash recovery.** *(Partly verified 2026-08-17, incidentally.)* Force-killing
       the process with three open buffers and relaunching restored all three, with
       "3 documents recovered" in the status bar — the journal survives a real `SIGKILL`

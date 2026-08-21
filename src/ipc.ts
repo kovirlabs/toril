@@ -68,6 +68,82 @@ export function openFolder(path: string): Promise<FileNode[]> {
   return invoke<FileNode[]>("open_folder", { path });
 }
 
+/**
+ * Create an empty note called `name` inside `dir` (§5, ROADMAP II.12).
+ *
+ * `name` may omit the extension — Rust adds `.md`. Rejects, rather than
+ * overwrites, an existing file, and rejects a `dir` outside `vaultRoot`; both
+ * rules live in `crates/fileops` so there is one place they are enforced and
+ * one place they are tested. Resolves to the new note's path.
+ */
+export function createNote(vaultRoot: string, dir: string, name: string): Promise<string> {
+  return invoke<string>("create_note", { vaultRoot, dir, name });
+}
+
+/** Create a folder called `name` inside `parent`. Resolves to its path. */
+export function createFolder(vaultRoot: string, parent: string, name: string): Promise<string> {
+  return invoke<string>("create_folder", { vaultRoot, parent, name });
+}
+
+/**
+ * A note name not currently taken in `dir` — `Untitled.md`, `Untitled 2.md`, …
+ *
+ * Only a suggestion for the inline field's initial value; {@link createNote}
+ * still refuses a collision.
+ */
+export function suggestNoteName(
+  vaultRoot: string,
+  dir: string,
+  stem: string,
+): Promise<string> {
+  return invoke<string>("suggest_note_name", { vaultRoot, dir, stem });
+}
+
+/**
+ * Rename the file or folder at `path` to `newName`, in the same parent.
+ *
+ * Resolves to the new path. Version history follows the note (or every note
+ * under a renamed folder) via `snapshots::rekey`, best-effort — see
+ * `commands/entries.rs`. Refuses to overwrite a different existing entry.
+ */
+export function renameEntry(
+  vaultRoot: string,
+  path: string,
+  newName: string,
+): Promise<string> {
+  return invoke<string>("rename_entry", { vaultRoot, path, newName });
+}
+
+/** A soft-deleted item in the workspace trash (mirrors Rust `trashbin::TrashEntry`). */
+export interface TrashEntry {
+  id: string;
+  original_path: string;
+  name: string;
+  deleted_at: number;
+}
+
+/**
+ * Soft-delete `path` into `<vaultRoot>/.trash/` (§3). Resolves to the entry,
+ * whose `id` is what {@link restoreFromTrash} takes — which is what makes the
+ * delete undoable rather than merely recoverable-if-you-know-where-to-look.
+ */
+export function moveToTrash(vaultRoot: string, path: string): Promise<TrashEntry> {
+  return invoke<TrashEntry>("move_to_trash", { vaultRoot, path });
+}
+
+/** The workspace trash, newest first. */
+export function listTrash(vaultRoot: string): Promise<TrashEntry[]> {
+  return invoke<TrashEntry[]>("list_trash", { vaultRoot });
+}
+
+/**
+ * Restore trash entry `id` to its original path. Resolves to that path; rejects
+ * (without clobbering) if a file has since reappeared there.
+ */
+export function restoreFromTrash(vaultRoot: string, id: string): Promise<string> {
+  return invoke<string>("restore_from_trash", { vaultRoot, id });
+}
+
 /** Start watching `path` for external changes; events arrive via {@link onWorkspaceChange}. */
 export function watchFolder(path: string): Promise<void> {
   return invoke<void>("watch_folder", { path });
@@ -138,6 +214,19 @@ export async function installCloseGuard(
   });
 }
 
+/**
+ * Ask the user to confirm an action that would discard unsaved work.
+ *
+ * Native, like the close guard's prompt and for the same reason: this is the
+ * question that must not be missable, and an in-page banner can be scrolled
+ * past or ignored. It is deliberately the *only* native dialog the file
+ * operations use — every other decision they need is answered inline in the
+ * sidebar, where it can be driven by the headless gates.
+ */
+export function confirmDiscard(question: string): Promise<boolean> {
+  return ask(question, { title: "Toril", kind: "warning" });
+}
+
 /** Show the native "About Toril" dialog (Help menu). */
 export async function showAbout(): Promise<void> {
   let version = "";
@@ -151,6 +240,102 @@ export async function showAbout(): Promise<void> {
     title: "About Toril",
     kind: "info",
   });
+}
+
+// ---- Self-update (ROADMAP Movement I.5) ------------------------------------
+//
+// The updater and process plugins are the one pair of backend calls that do not
+// go through `invoke()` by hand — they ship their own typed JS API. They are
+// still declared here so `ipc.ts` stays the single inventory of what the
+// frontend can ask the backend to do (§10), and so the rest of the app never
+// imports the plugin directly and cannot reach past this seam.
+
+/** An available update, reduced to what the policy and the banner need. */
+export interface AvailableUpdate {
+  version: string;
+  notes?: string;
+  /**
+   * Download and install, then resolve. Deliberately a callback on the object
+   * rather than a free function: an install can only ever apply to an update
+   * that was actually found and shown, so there is no way to spell "install"
+   * without having first checked.
+   */
+  install(): Promise<void>;
+}
+
+/**
+ * Ask whether a newer build exists. Resolves to `null` when up to date.
+ *
+ * This performs a plain GET for a static manifest and sends nothing about the
+ * user, the vault or the session — there is no telemetry in Toril and this is
+ * not a back door for it. *Whether* to call this is decided by `update.ts`; this
+ * function only does what it is told.
+ */
+export async function checkForUpdate(): Promise<AvailableUpdate | null> {
+  const { check } = await import("@tauri-apps/plugin-updater");
+  const found = await check();
+  if (!found) return null;
+  return {
+    version: found.version,
+    notes: found.body ?? undefined,
+    install: () => found.downloadAndInstall(),
+  };
+}
+
+/**
+ * Restart into the freshly installed build.
+ *
+ * Only ever called after the user accepted an install *and* Toril confirmed
+ * there is nothing unsaved — see `main.ts`. Relaunching over a dirty buffer
+ * would be a §3 data-loss path dressed as a convenience.
+ */
+export async function relaunchApp(): Promise<void> {
+  const { relaunch } = await import("@tauri-apps/plugin-process");
+  await relaunch();
+}
+
+/**
+ * Rebuild the native menu so File → Open Recent lists `paths`.
+ *
+ * The whole menu is replaced (muda submenus are built, not mutated), so this is
+ * called only when the list actually changes. Items are identified by index —
+ * `menu_recent_3` — and the frontend resolves that against its own list, so an
+ * arbitrary path never has to survive a round trip through a menu id.
+ */
+export function setRecentFiles(paths: string[]): Promise<void> {
+  return invoke<void>("set_recent_files", { paths });
+}
+
+/**
+ * Files dropped onto the window.
+ *
+ * The webview's own HTML5 drop events don't carry real paths (a `File` object
+ * has no filesystem location), so this comes from Tauri's native drag-drop
+ * instead — which is also the only version that can hand the paths to the Rust
+ * side, where all disk access lives (§10). Callers filter with
+ * `paths.selectOpenable` before doing anything with them.
+ */
+export async function onFilesDropped(
+  handler: (paths: string[]) => void,
+): Promise<UnlistenFn> {
+  const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+  return getCurrentWebview().onDragDropEvent((event) => {
+    if (event.payload.type === "drop") handler(event.payload.paths);
+  });
+}
+
+/**
+ * Hand a URL to the OS default browser.
+ *
+ * **Callers must have checked it first.** `src/links.ts` owns that decision and
+ * allows only http/https/mailto; this wrapper deliberately does no validation
+ * of its own, so there is exactly one place the rule lives and no second,
+ * quietly-weaker copy of it. An opened `.md` is untrusted (§3.3), and the shell
+ * acts on far more than web addresses.
+ */
+export async function openExternal(url: string): Promise<void> {
+  const { openUrl } = await import("@tauri-apps/plugin-opener");
+  await openUrl(url);
 }
 
 /** Persisted session + preferences (mirrors Rust `settings::Settings`, §5). */
@@ -185,6 +370,22 @@ export interface Settings {
   autosave: boolean | null;
   /** Autosave/journal debounce in ms. `null` ⇒ 2000 (default). */
   autosave_debounce_ms: number | null;
+  /** Whether Toril checks for updates on launch. `null` ⇒ on (default). */
+  update_check: boolean | null;
+  /** Epoch ms of the last completed check. `null` ⇒ never checked. */
+  update_last_checked: number | null;
+  /** A version the user dismissed; startup will not raise it again. */
+  update_skipped_version: string | null;
+  /** Writing-surface zoom multiplier. `null` ⇒ 1. Normalized on load. */
+  editor_zoom: number | null;
+  /**
+   * Recently opened files, newest first. Paths only, never contents (§3.2).
+   * Typed as `unknown` deliberately: this is the one settings field with
+   * unbounded shape, and `recent.normalizeRecent` is what turns it into a list.
+   * Declaring it `string[]` here would be a claim about a file on disk that
+   * nothing checks.
+   */
+  recent_files: unknown;
 }
 
 /** Load persisted settings; resolves to defaults if none exist or the file is corrupt. */

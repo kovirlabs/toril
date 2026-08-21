@@ -1,0 +1,7 @@
+[package]
+name = "fileops"
+version = "0.1.0"
+edition = "2024"
+description = "Create / rename primitives for a Toril workspace (CLAUDE.md §3, ROADMAP II.12). Name validation, vault containment and clobber-refusing moves; no Tauri dep so the rules are unit-testable anywhere."
+
+[dependencies]

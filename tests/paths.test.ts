@@ -3,7 +3,7 @@
 // the directory path, so every open tab underneath it has to be matched by
 // containment rather than equality.
 import { describe, expect, it } from "vitest";
-import { isAtOrUnder } from "../src/paths";
+import { isAtOrUnder, isOpenablePath, selectOpenable } from "../src/paths";
 
 describe("isAtOrUnder", () => {
   it("matches the path itself", () => {
@@ -43,5 +43,48 @@ describe("isAtOrUnder", () => {
   it("never matches on an empty parent", () => {
     // A malformed event must not be read as 'every open tab was deleted'.
     expect(isAtOrUnder("/vault/x.md", "")).toBe(false);
+  });
+});
+
+// Drag-and-drop is the one open path where the user never picked from a file
+// filter, so anything on the desktop can land on the window. That makes this an
+// allowlist rather than a convenience filter (ROADMAP Movement I.5).
+describe("isOpenablePath", () => {
+  it("accepts the formats Toril edits", () => {
+    for (const p of ["a.md", "a.markdown", "a.html", "a.htm"]) {
+      expect(isOpenablePath(`/vault/${p}`)).toBe(true);
+    }
+  });
+
+  it("accepts them however they are cased", () => {
+    expect(isOpenablePath("/vault/NOTE.MD")).toBe(true);
+    expect(isOpenablePath("/vault/Page.HtMl")).toBe(true);
+  });
+
+  // `formatForPath` answers "markdown" for anything it does not recognise,
+  // which is right once a file is known to be text and wrong for deciding
+  // whether to open a dropped binary at all.
+  it("refuses everything else, rather than defaulting to markdown", () => {
+    for (const p of ["a.exe", "a.png", "a.txt", "a.pdf", "a.md.exe", "noextension"]) {
+      expect(isOpenablePath(`/vault/${p}`)).toBe(false);
+    }
+  });
+
+  it("is not fooled by the extension appearing mid-path", () => {
+    expect(isOpenablePath("/vault/notes.md/thing.exe")).toBe(false);
+  });
+});
+
+describe("selectOpenable", () => {
+  it("keeps the openable files in the order they were dropped", () => {
+    expect(selectOpenable(["/a.md", "/b.png", "/c.html", "/d.exe"])).toEqual([
+      "/a.md",
+      "/c.html",
+    ]);
+  });
+
+  it("returns nothing when a drop has nothing Toril can open", () => {
+    expect(selectOpenable(["/a.png", "/b.zip"])).toEqual([]);
+    expect(selectOpenable([])).toEqual([]);
   });
 });

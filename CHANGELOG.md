@@ -11,6 +11,70 @@ GitHub Release notes plus the commits that shipped in it.
 
 ## [Unreleased]
 
+### Added
+- **Manage your notes from the files pane.** New note, new folder, rename and delete,
+  from a right-click on any file or folder — or the `＋` button beside the folder name.
+  Until now Toril could open and save notes but not *organize* them: renaming a note
+  meant leaving for the file manager and coming back.
+
+  **Deleting moves the note to a `.trash` folder inside your workspace, and offers you
+  Undo.** Nothing is unlinked, so a delete is recoverable long after the message has
+  gone — and because it is recoverable, Toril does not interrupt you to confirm it. The
+  one thing trash cannot bring back is a buffer you never saved, so that is the one case
+  that stops and asks.
+
+  **A rename takes the note's version history with it**, and moves any open tab —
+  including every tab inside a renamed folder — to the new path. Renaming does not
+  rewrite a single byte of the file.
+
+  Names are checked before anything touches disk, against the rules Windows actually
+  enforces: no `< > : " / \ | ? *`, nothing ending in a space or a dot, and none of the
+  reserved device names (`CON`, `NUL`, `COM1`…) that appear to work and then behave like
+  hardware. Renaming `notes.md` to `Notes.md` — a change of case only — works. Nothing
+  can be created or renamed outside the folder you opened, and no operation will ever
+  overwrite a file that is already there.
+
+- **Toril can update itself.** `v1.0.0` had no update path at all, so every copy was
+  stranded on the version it was installed with — the only way forward was to notice a
+  new release and download the installer by hand. Toril now checks for a newer build
+  once a day at launch, and whenever you ask via **Help → Check for Updates…**.
+
+  **It tells you; it never installs behind your back.** You choose when to download, and
+  a restart is refused while anything is unsaved — the update is already on disk by then
+  and applies the next time you start, so waiting costs nothing. Automatic checks can be
+  turned off in **View → Check for Updates on Launch**.
+
+  The check is a plain request for a static file. Nothing about you, your vault or your
+  session is sent with it, and there is no telemetry in Toril.
+
+- **The window remembers where it was.** Size, position and maximized state come back
+  the way you left them.
+
+- **Zoom the writing surface** with `Ctrl` and `+` / `-` / `0`. It scales the text and
+  the measure, not the tab bar — your display scaling already handles the whole UI, and
+  a bigger tab bar is not what anyone wants at 11pm.
+
+- **File → Open Recent** lists the last ten notes you opened. An entry that no longer
+  resolves removes itself rather than failing twice.
+
+- **Ctrl-click a link** to open it in your browser. Only web and email links are handed
+  to the system — a note can come from anywhere, and the rest of what a URL can name is
+  not something an editor should hand to your operating system on a click.
+
+- **Drop notes on the window to open them.** `.md`, `.markdown`, `.html` and `.htm`;
+  anything else in the same drop is skipped and counted.
+
+- **A real welcome note on first run**, and a blank page on every later launch with
+  nothing to restore — the two used to be the same two-line stub. With no folder open,
+  the files pane now offers to open one instead of only saying that none is.
+
+### Notes
+- Updates are cryptographically signed, and an installed Toril refuses one that does not
+  verify. Setting that up is a one-time step for whoever cuts releases — see
+  `docs/RELEASE-SIGNING.md`.
+- Windows installers are still unsigned, so SmartScreen still warns on first run. The
+  wiring for Azure Trusted Signing is in place but inert until an account exists.
+
 ## [v1.0.0] — 2026-08-17
 
 **Toril leaves beta.** Same promise as always: your notes are plain `.md` (and

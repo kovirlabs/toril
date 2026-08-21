@@ -59,6 +59,28 @@ pub struct Settings {
     pub autosave: Option<bool>,
     /// Autosave/journal debounce in ms. `None` ⇒ 2000 (frontend default).
     pub autosave_debounce_ms: Option<u32>,
+    /// Whether Toril checks for a newer build on launch. `None` ⇒ on.
+    pub update_check: Option<bool>,
+    /// Epoch **milliseconds** of the last completed check; `None` ⇒ never.
+    ///
+    /// `i64`, not `u64`: this comes from the webview's `Date.now()`, and a
+    /// machine whose clock is set before 1970 would otherwise fail to
+    /// deserialize and take the whole settings file down to defaults with it —
+    /// losing the open tabs and the workspace over a wrong clock. The policy in
+    /// `src/update.ts` already treats a nonsensical timestamp as "due".
+    pub update_last_checked: Option<i64>,
+    /// A version the user dismissed. Startup will not raise it again; an
+    /// explicit Help → Check for Updates still will.
+    pub update_skipped_version: Option<String>,
+    /// Writing-surface zoom multiplier (chrome is unaffected). `None` ⇒ 1.
+    /// Deliberately not validated here — `src/zoom.ts` snaps whatever comes
+    /// back onto its ladder, so the rule lives in one place rather than two
+    /// that could disagree.
+    pub editor_zoom: Option<f64>,
+    /// Recently opened files, newest first. Paths only, never contents — the
+    /// same rule the rest of this file follows (§3.2). Order and length are the
+    /// frontend's business (`src/recent.ts`); this only stores what it is given.
+    pub recent_files: Vec<String>,
 }
 
 fn settings_path(app: &AppHandle) -> Result<PathBuf, String> {

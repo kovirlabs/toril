@@ -1,3 +1,4 @@
+pub mod entries;
 pub mod export;
 pub mod files;
 pub mod images;

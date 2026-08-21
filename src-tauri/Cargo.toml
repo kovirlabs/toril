@@ -12,6 +12,7 @@ members = [
     "crates/snapshots",
     "crates/mergemd",
     "crates/keystore",
+    "crates/fileops",
 ]
 # Vendored, security-patched glib (see [patch.crates-io] below). Excluded so it
 # is never a workspace member — we don't fmt/clippy/test upstream third-party code.
@@ -45,6 +46,14 @@ tauri-plugin-dialog = "2"
 # spawning a duplicate process (file-association open, CLAUDE.md §5). Official
 # Tauri plugin (§2 healthy-dep rule).
 tauri-plugin-single-instance = "2"
+# Remember the window's size, position and maximized state across launches.
+# Official Tauri plugin (§2). Purely presentational — it persists to its own
+# file in the app config dir and touches nothing in the vault.
+tauri-plugin-window-state = "2"
+# Hand a link to the OS browser. Official Tauri plugin (§2). **Which** links are
+# handed over is decided in `src/links.ts`, not here — an opened `.md` is
+# untrusted (§3.3), so only http/https/mailto ever reach this.
+tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 notify = "8"
@@ -57,6 +66,22 @@ trashbin = { path = "crates/trashbin" }
 snapshots = { path = "crates/snapshots" }
 mergemd = { path = "crates/mergemd" }
 keystore = { path = "crates/keystore" }
+fileops = { path = "crates/fileops" }
+
+# Self-update, desktop only (ROADMAP Movement I.5). `v1.0.0` shipped with no
+# update path, so every installed copy is stranded on the version it was
+# installed with — this is what gives it a way forward. Official Tauri plugins
+# (§2). Scoped to desktop because the mobile targets (Movement V.28) install
+# through their app stores and have no business linking an updater.
+#
+# **Notify-only, by policy** (`src/update.ts`): the plugin can download and
+# install silently, and we deliberately never call it that way. Swapping the
+# binary under an editor holding unsaved buffers is not a §3 trade we make.
+# `tauri-plugin-process` is here for the one restart the user explicitly asks
+# for after an install they explicitly accepted.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 # Security patch for glib (Linux/gtk3 transitive dep via Tauri).
 # GHSA-wrw7-89jp-8q8g: VariantStrIter::impl_get passed a NULL out-pointer as

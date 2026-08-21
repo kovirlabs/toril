@@ -26,6 +26,7 @@ import { emoji } from "@milkdown/plugin-emoji";
 import { useCanonical } from "../src/editor/canonical";
 import { docToMarkdown } from "../src/editor/serializer";
 import { joinFrontMatter, splitFrontMatter } from "../src/editor/frontmatter";
+import { FIRST_RUN } from "../src/welcome";
 
 /** Parse `md` into a real editor doc, then serialize it back to markdown. */
 async function roundtrip(md: string): Promise<string> {
@@ -172,6 +173,16 @@ const frontMatterNormalized: Record<string, [input: string, output: string]> = {
 };
 
 describe("round-trip fidelity (Phase 1 gate)", () => {
+  // The welcome note is shipped copy that *claims* Toril does not rewrite your
+  // files. If it does not itself survive a save, the first thing a new user
+  // does contradicts the second paragraph they just read.
+  it("does not rewrite the first-run welcome note", async () => {
+    const once = await roundtrip(FIRST_RUN);
+    expect(once).toBe(FIRST_RUN);
+    const twice = await roundtrip(once);
+    expect(twice).toBe(once);
+  });
+
   for (const [name, md] of Object.entries(fixtures)) {
     it(`is canonical & stable: ${name}`, async () => {
       const once = await roundtrip(md);

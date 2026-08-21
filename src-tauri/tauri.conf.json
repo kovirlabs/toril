@@ -23,8 +23,18 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/kovirlabs/toril/releases/latest/download/latest.json"
+      ],
+      "windows": { "installMode": "passive" },
+      "pubkey": ""
+    }
+  },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": ["nsis", "msi", "app", "dmg", "deb", "rpm", "appimage"],
     "windows": {
       "webviewInstallMode": { "type": "downloadBootstrapper" },

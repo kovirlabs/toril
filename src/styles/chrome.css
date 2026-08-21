@@ -164,13 +164,169 @@ body {
   padding: var(--sp-2);
 }
 
+/* The empty state carries its own fix, so it is a small stack rather than one
+   italic line. `min-width: 0` because it lives in a pane that collapses to
+   zero (§12b rule 3). */
+.sidebar-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.sidebar-empty-text {
+  margin: 0;
+}
+
+.sidebar-empty-btn {
+  min-height: var(--target);
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--chrome-raised);
+  color: var(--fg);
+  cursor: pointer;
+  font: inherit;
+  font-style: normal;
+}
+
+.sidebar-empty-btn:hover {
+  background: var(--hover-bg);
+}
+
+.sidebar-empty-note {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-style: normal;
+  color: var(--dim);
+  /* A long folder-path or URL in this copy must not set the pane's min-content
+     width (§12b rule 4). */
+  overflow-wrap: anywhere;
+}
+
 .sidebar-root {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
   font-weight: 600;
   padding: var(--sp-1) var(--sp-1) var(--sp-2);
   text-transform: uppercase;
   font-size: var(--text-xs);
   letter-spacing: 0.06em;
   color: var(--dim);
+}
+
+/* The folder name yields to the buttons rather than pushing them out of the
+   pane — `min-width: 0` is what lets it ellipsize (§12b rule 3). */
+.sidebar-root-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-root-btn {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--target-sm);
+  min-height: var(--target-sm);
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-md);
+  line-height: 1;
+}
+
+.sidebar-root-btn:hover {
+  background: var(--hover-bg);
+  color: var(--fg);
+}
+
+/* ---- Inline name field (new note / new folder / rename) ------------------- */
+.sidebar-edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-1) 0;
+  min-width: 0;
+}
+
+.sidebar-edit-input {
+  min-height: var(--target-sm);
+  width: 100%;
+  min-width: 0;
+  padding: 0 var(--sp-1);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-sm);
+  background: var(--chrome-raised);
+  color: var(--fg);
+  font: inherit;
+}
+
+/* The message the backend refused the name with. `anywhere` because it can
+   quote a name the user typed, which may be one long unbroken string (§12b
+   rule 4). */
+.sidebar-edit-error {
+  font-size: var(--text-xs);
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+/* ---- Context menu -------------------------------------------------------- */
+.context-menu {
+  position: fixed;
+  z-index: var(--z-dialog);
+  min-width: 10rem;
+  padding: var(--sp-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--chrome-raised);
+  box-shadow: var(--shadow-panel);
+  font-size: var(--text-sm);
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: var(--target);
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--fg);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.context-menu-item:hover:not(:disabled),
+.context-menu-item:focus-visible {
+  background: var(--hover-bg);
+}
+
+.context-menu-item[data-danger="true"] {
+  color: var(--danger);
+}
+
+.context-menu-item:disabled {
+  color: var(--dim);
+  cursor: default;
+}
+
+.context-menu-sep {
+  height: 1px;
+  margin: var(--sp-1) 0;
+  background: var(--border);
 }
 
 #sidebar .tree {
@@ -747,6 +903,73 @@ body {
   background: rgb(255 255 255 / 12%);
 }
 
+/* ---- Update notice -------------------------------------------------------- */
+/* Out of flow on purpose (see `ui/updatenotice.ts`): an update is ambient news,
+   so it must not reflow the writing surface the way the conflict banner
+   deliberately does. Anchored bottom-right, clear of the status bar. */
+.update-notice {
+  position: fixed;
+  right: var(--sp-4);
+  /* Above the status bar rather than over it — the status bar is short and
+     fixed, so a constant clearance is honest here without measuring it. */
+  bottom: calc(var(--sp-6) + var(--sp-2));
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  /* Bounded so long release notes scroll inside the toast instead of growing it
+     across the editor (§12b rule 4). `max-width` is in ch so it tracks the font
+     rather than assuming a viewport. */
+  max-width: min(46ch, calc(100vw - var(--sp-6)));
+  max-height: 40vh;
+  overflow-y: auto;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  background: var(--chrome-raised);
+  color: var(--fg);
+  box-shadow: var(--shadow-panel);
+  font-size: var(--text-md);
+}
+
+.update-notice[hidden] {
+  display: none;
+}
+
+.update-notice-text {
+  margin: 0;
+  min-width: 0;
+  /* One long unbroken token in release notes must not set the toast's
+     min-content width (§12b rule 4). */
+  overflow-wrap: anywhere;
+}
+
+.update-notice-notes {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.update-notice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.update-notice-btn {
+  min-height: var(--target-sm);
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.update-notice-btn:hover {
+  background: var(--hover-bg);
+}
+
 /* ---- Properties strip ----------------------------------------------------- */
 /* A flex row in the #main column, above the writing surface (§12b rule 1). It
    holds its own scroll rather than growing without bound, so a note with thirty
@@ -947,6 +1170,23 @@ body {
   color: var(--muted);
   background: var(--chrome-bg);
   border-top: 1px solid var(--border);
+}
+
+/* The inline action a status message can carry (Undo, after a delete). Styled
+   as a link rather than a button: it sits inside a sentence, and the status bar
+   is 1.75rem tall — a bordered control would not fit without growing it. */
+.status-action {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+}
+
+.status-action:hover {
+  color: var(--fg);
 }
 
 .status-right {

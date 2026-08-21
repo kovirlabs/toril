@@ -34,7 +34,21 @@ fn take_launch_path(state: tauri::State<'_, LaunchPath>) -> Option<String> {
 pub fn run() {
     let launch_path = LaunchPath(Mutex::new(launch_path_from_args(std::env::args())));
 
-    tauri::Builder::default()
+    #[allow(unused_mut)]
+    let mut builder = tauri::Builder::default();
+
+    // Self-update, desktop only — the mobile targets install through their app
+    // stores (ROADMAP Movement V.28). Registering the plugin only exposes the
+    // *ability* to check and install; whether either happens is decided in
+    // `src/update.ts`, which never installs without the user saying so.
+    #[cfg(desktop)]
+    {
+        builder = builder
+            .plugin(tauri_plugin_updater::Builder::new().build())
+            .plugin(tauri_plugin_process::init());
+    }
+
+    builder
         // Single-instance: a second launch (e.g. double-clicking another file
         // while Toril is open) forwards its argv here instead of starting a new
         // process — open the file in the existing window and focus it.
@@ -47,6 +61,10 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
+        // Remember where the window was and how big it was. Presentational
+        // only — it writes its own file in the app config dir, never the vault.
+        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_opener::init())
         .menu(menu::build)
         .on_menu_event(menu::on_event)
         .manage(launch_path)
@@ -66,6 +84,10 @@ pub fn run() {
             commands::recovery::save_recovery,
             commands::recovery::load_recovery,
             commands::recovery::clear_recovery,
+            commands::entries::create_note,
+            commands::entries::create_folder,
+            commands::entries::suggest_note_name,
+            commands::entries::rename_entry,
             commands::trash::move_to_trash,
             commands::trash::list_trash,
             commands::trash::restore_from_trash,
@@ -80,6 +102,7 @@ pub fn run() {
             commands::secrets::clear_api_key,
             commands::secrets::has_api_key,
             commands::secrets::list_api_keys,
+            menu::set_recent_files,
             take_launch_path,
         ])
         .run(tauri::generate_context!())
