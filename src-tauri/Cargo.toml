@@ -12,6 +12,7 @@ members = [
     "crates/snapshots",
     "crates/mergemd",
     "crates/keystore",
+    "crates/fileops",
 ]
 # Vendored, security-patched glib (see [patch.crates-io] below). Excluded so it
 # is never a workspace member — we don't fmt/clippy/test upstream third-party code.
@@ -65,6 +66,7 @@ trashbin = { path = "crates/trashbin" }
 snapshots = { path = "crates/snapshots" }
 mergemd = { path = "crates/mergemd" }
 keystore = { path = "crates/keystore" }
+fileops = { path = "crates/fileops" }
 
 # Self-update, desktop only (ROADMAP Movement I.5). `v1.0.0` shipped with no
 # update path, so every installed copy is stranded on the version it was

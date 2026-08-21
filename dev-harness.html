@@ -96,6 +96,80 @@
         { hash: "c9d0e1f2", saved_at: Date.now() - 86_400_000 * 3, bytes: 201 },
       ];
 
+      // ---- in-memory vault mutations (ROADMAP II.12) --------------------------
+      //
+      // Enough of `fileops` / `trashbin` to drive the sidebar's file operations
+      // here: create, rename, delete-to-trash and restore against TREE + FILES.
+      // Deliberately *not* a reimplementation of the rules — the real ones are
+      // unit-tested in Rust. What this stub owes the harness is the small set of
+      // refusals the UI has to render (a taken name, a reserved device name), so
+      // the error path can be seen without a backend.
+      const TRASH = [];
+      let trashSeq = 0;
+
+      /** The children array a path belongs in, or null if the folder is unknown. */
+      function listFor(dir) {
+        if (dir === "/vault") return TREE;
+        let found = null;
+        const walk = (nodes) => {
+          for (const n of nodes) {
+            if (n.is_dir && n.path === dir) found = n.children;
+            else if (n.is_dir) walk(n.children);
+          }
+        };
+        walk(TREE);
+        return found;
+      }
+
+      function findNode(path) {
+        let hit = null;
+        const walk = (nodes, parent) => {
+          for (const n of nodes) {
+            if (n.path === path) hit = { node: n, siblings: nodes };
+            else if (n.is_dir) walk(n.children, n);
+          }
+        };
+        walk(TREE, null);
+        return hit;
+      }
+
+      // vaultscan's order: directories first, then case-insensitive by name.
+      function insert(list, node) {
+        list.push(node);
+        list.sort((a, b) =>
+          a.is_dir === b.is_dir
+            ? a.name.toLowerCase().localeCompare(b.name.toLowerCase())
+            : a.is_dir ? -1 : 1,
+        );
+      }
+
+      const RESERVED = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\.|$)/i;
+      function checkName(name) {
+        if (!name.trim()) throw new Error("Enter a name.");
+        if (/[<>:"/\\|?*]/.test(name)) throw new Error(`A name cannot contain ${name.match(/[<>:"/\\|?*]/)[0]}`);
+        if (/[. ]$/.test(name)) throw new Error("A name cannot end with a space or a dot.");
+        if (RESERVED.test(name)) throw new Error(`"${name.split(".")[0]}" is a reserved name on Windows.`);
+      }
+
+      function withExtension(name) {
+        return /\.(md|markdown|html?)$/i.test(name) ? name : `${name}.md`;
+      }
+
+      /**
+       * Move a subtree's paths (and any FILES entries) from one root to another.
+       * `from` stays the *original* root throughout, so a child's path — still
+       * un-rewritten when it is visited — slices correctly against it.
+       */
+      function repath(node, from, to) {
+        const oldPath = node.path;
+        node.path = to + oldPath.slice(from.length);
+        if (!node.is_dir && oldPath in FILES) {
+          FILES[node.path] = FILES[oldPath];
+          delete FILES[oldPath];
+        }
+        for (const child of node.children) repath(child, from, to);
+      }
+
       // ---- fake Tauri bridge --------------------------------------------------
       const callbacks = new Map();
       let nextCallbackId = 1;
@@ -146,7 +220,74 @@
         list_history: () => HISTORY,
         read_snapshot: ({ path }) => FILES[path] ?? "",
         restore_snapshot: () => null,
-        list_trash: () => [],
+        create_note: ({ dir, name }) => {
+          const fileName = withExtension(name);
+          checkName(fileName);
+          const list = listFor(dir);
+          if (!list) throw new Error("That location is outside the open folder.");
+          const path = `${dir}/${fileName}`;
+          if (findNode(path)) throw new Error(`"${fileName}" already exists`);
+          insert(list, { name: fileName, path, is_dir: false, children: [] });
+          FILES[path] = "";
+          return path;
+        },
+        create_folder: ({ parent, name }) => {
+          checkName(name);
+          const list = listFor(parent);
+          if (!list) throw new Error("That location is outside the open folder.");
+          const path = `${parent}/${name}`;
+          if (findNode(path)) throw new Error(`"${name}" already exists`);
+          insert(list, { name, path, is_dir: true, children: [] });
+          return path;
+        },
+        suggest_note_name: ({ dir, stem }) => { // vaultRoot ignored: one vault here
+
+          for (let n = 1; n < 100; n++) {
+            const candidate = n === 1 ? `${stem}.md` : `${stem} ${n}.md`;
+            if (!findNode(`${dir}/${candidate}`)) return candidate;
+          }
+          return `${stem}.md`;
+        },
+        rename_entry: ({ path, newName }) => {
+          checkName(newName);
+          const hit = findNode(path);
+          if (!hit) throw new Error("no such entry");
+          const parent = path.slice(0, path.lastIndexOf("/"));
+          const target = `${parent}/${newName}`;
+          if (target !== path && findNode(target)) throw new Error(`"${newName}" already exists`);
+          repath(hit.node, path, target);
+          hit.node.name = newName;
+          insert(hit.siblings, hit.siblings.splice(hit.siblings.indexOf(hit.node), 1)[0]);
+          return target;
+        },
+        move_to_trash: ({ path }) => {
+          const hit = findNode(path);
+          if (!hit) throw new Error("no such entry");
+          hit.siblings.splice(hit.siblings.indexOf(hit.node), 1);
+          const entry = {
+            id: `harness-${trashSeq++}`,
+            original_path: path,
+            name: hit.node.name,
+            deleted_at: Date.now(),
+          };
+          TRASH.push({ entry, node: hit.node });
+          return entry;
+        },
+        restore_from_trash: ({ id }) => {
+          const idx = TRASH.findIndex((t) => t.entry.id === id);
+          if (idx === -1) throw new Error("no such trash entry");
+          const { entry, node } = TRASH[idx];
+          const parent = entry.original_path.slice(0, entry.original_path.lastIndexOf("/"));
+          const list = listFor(parent);
+          if (!list) throw new Error("the original folder is gone");
+          // The real `restore` refuses rather than clobbers; so does this, since
+          // that refusal is a message the UI has to render.
+          if (findNode(entry.original_path)) throw new Error("something is already there");
+          insert(list, node);
+          TRASH.splice(idx, 1);
+          return entry.original_path;
+        },
+        list_trash: () => TRASH.map((t) => t.entry),
         list_api_keys: () => [
           { provider: "anthropic", configured: false },
           { provider: "openai", configured: false },

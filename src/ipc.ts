@@ -68,6 +68,82 @@ export function openFolder(path: string): Promise<FileNode[]> {
   return invoke<FileNode[]>("open_folder", { path });
 }
 
+/**
+ * Create an empty note called `name` inside `dir` (§5, ROADMAP II.12).
+ *
+ * `name` may omit the extension — Rust adds `.md`. Rejects, rather than
+ * overwrites, an existing file, and rejects a `dir` outside `vaultRoot`; both
+ * rules live in `crates/fileops` so there is one place they are enforced and
+ * one place they are tested. Resolves to the new note's path.
+ */
+export function createNote(vaultRoot: string, dir: string, name: string): Promise<string> {
+  return invoke<string>("create_note", { vaultRoot, dir, name });
+}
+
+/** Create a folder called `name` inside `parent`. Resolves to its path. */
+export function createFolder(vaultRoot: string, parent: string, name: string): Promise<string> {
+  return invoke<string>("create_folder", { vaultRoot, parent, name });
+}
+
+/**
+ * A note name not currently taken in `dir` — `Untitled.md`, `Untitled 2.md`, …
+ *
+ * Only a suggestion for the inline field's initial value; {@link createNote}
+ * still refuses a collision.
+ */
+export function suggestNoteName(
+  vaultRoot: string,
+  dir: string,
+  stem: string,
+): Promise<string> {
+  return invoke<string>("suggest_note_name", { vaultRoot, dir, stem });
+}
+
+/**
+ * Rename the file or folder at `path` to `newName`, in the same parent.
+ *
+ * Resolves to the new path. Version history follows the note (or every note
+ * under a renamed folder) via `snapshots::rekey`, best-effort — see
+ * `commands/entries.rs`. Refuses to overwrite a different existing entry.
+ */
+export function renameEntry(
+  vaultRoot: string,
+  path: string,
+  newName: string,
+): Promise<string> {
+  return invoke<string>("rename_entry", { vaultRoot, path, newName });
+}
+
+/** A soft-deleted item in the workspace trash (mirrors Rust `trashbin::TrashEntry`). */
+export interface TrashEntry {
+  id: string;
+  original_path: string;
+  name: string;
+  deleted_at: number;
+}
+
+/**
+ * Soft-delete `path` into `<vaultRoot>/.trash/` (§3). Resolves to the entry,
+ * whose `id` is what {@link restoreFromTrash} takes — which is what makes the
+ * delete undoable rather than merely recoverable-if-you-know-where-to-look.
+ */
+export function moveToTrash(vaultRoot: string, path: string): Promise<TrashEntry> {
+  return invoke<TrashEntry>("move_to_trash", { vaultRoot, path });
+}
+
+/** The workspace trash, newest first. */
+export function listTrash(vaultRoot: string): Promise<TrashEntry[]> {
+  return invoke<TrashEntry[]>("list_trash", { vaultRoot });
+}
+
+/**
+ * Restore trash entry `id` to its original path. Resolves to that path; rejects
+ * (without clobbering) if a file has since reappeared there.
+ */
+export function restoreFromTrash(vaultRoot: string, id: string): Promise<string> {
+  return invoke<string>("restore_from_trash", { vaultRoot, id });
+}
+
 /** Start watching `path` for external changes; events arrive via {@link onWorkspaceChange}. */
 export function watchFolder(path: string): Promise<void> {
   return invoke<void>("watch_folder", { path });
@@ -136,6 +212,19 @@ export async function installCloseGuard(
     }
     await win.destroy();
   });
+}
+
+/**
+ * Ask the user to confirm an action that would discard unsaved work.
+ *
+ * Native, like the close guard's prompt and for the same reason: this is the
+ * question that must not be missable, and an in-page banner can be scrolled
+ * past or ignored. It is deliberately the *only* native dialog the file
+ * operations use — every other decision they need is answered inline in the
+ * sidebar, where it can be driven by the headless gates.
+ */
+export function confirmDiscard(question: string): Promise<boolean> {
+  return ask(question, { title: "Toril", kind: "warning" });
 }
 
 /** Show the native "About Toril" dialog (Help menu). */

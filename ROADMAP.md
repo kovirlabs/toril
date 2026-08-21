@@ -46,7 +46,7 @@ It is a fine **editor**. It is not yet a **notes system** — no global search, 
 quick switcher, no links, no tags, no version history, no sync conflict handling,
 no AI. That gap is this roadmap.
 
-> **Status (2026-08-17).** Shipped through **`v1.0.0`** (see `CHANGELOG.md`).
+> **Status (2026-08-18).** Shipped through **`v1.0.0`** (see `CHANGELOG.md`).
 > **Movement I, branches 1–4 are complete** (autosave + crash-recovery journal;
 > safe-delete-to-trash; local version history; sync coexistence — 3-way merge, conflict
 > banner, parked conflict copies). **Branch 5 has landed** on `feat/release-readiness` —
@@ -63,11 +63,20 @@ no AI. That gap is this roadmap.
 > after it, so the next feature could not have reached anyone. §7's *trust before reach*
 > is what settles the order. Read the pointer below as the ordering, not the ladder.
 >
-> **▶ Pick up at Movement II, branch 6 — `feat/vault-search`.** (Branch 5 is done bar
+> **Branch 12 (sidebar file operations) has also landed** — PR #41, stacked on branch 5's
+> PR #40 — taken ahead of 6 for the same kind of reason 10 was: it wired two crates —
+> `trashbin` and `snapshots::rekey` — that had shipped with **no caller at all**, and until
+> it landed a note could be opened and saved but not renamed or deleted without leaving the
+> app. **Branch 12b (chrome rework) is ticked too**; it shipped on `main` 2026-08-12 and this
+> document had simply never recorded it.
+>
+> **▶ In progress: Movement II, branch 6 — `feat/vault-search`.** (Branch 5 is done bar
 > Azure signing, which is blocked on an account, not on code.)
 > Search is the largest remaining functional gap, and branch 7
 > (command palette) depends on it. Vet `tantivy` per §2 at
-> adoption — it would be the project's largest new dependency. Branch 4's spec lived
+> adoption — it would be the project's largest new dependency, and worth weighing
+> against a hand-rolled inverted index the way the snapshot store was weighed
+> against `gix` (§8). Branch 4's spec lived
 > **on its own branch**, not on `main`:
 > `docs/superpowers/specs/2026-07-24-sync-coexistence-design.md`; branch 10's is on
 > `main` at `docs/superpowers/specs/2026-08-17-frontmatter-properties-design.md`.
@@ -75,9 +84,10 @@ no AI. That gap is this roadmap.
 > *Landed since, outside the movement ladder:* a serializer-normalization precursor
 > (canonical markdown now matches Obsidian — `-` bullets, `---` rules, tight lists
 > preserved), which exists to keep branch 4's 3-way merge from drowning in
-> reformatting noise; the chrome/layout rework (CLAUDE.md §12b); a fix for programmatic
-> loads marking every document dirty; CI running the headless gates on Ubuntu and
-> Windows for every pull request; and the GitHub community-standards docs.
+> reformatting noise; a fix for programmatic loads marking every document dirty; CI running
+> the headless gates on Ubuntu and Windows for every pull request; and the GitHub
+> community-standards docs. (The chrome/layout rework — CLAUDE.md §12b — used to be listed
+> here as outside the ladder. It is not: it is **branch 12b**, and it is ticked below.)
 >
 > *Version note, and read it before leaning on the number:* `v1.0.0` says the editor and
 > its data-safety floor are ready to depend on — **not** that this roadmap is finished.
@@ -239,8 +249,12 @@ nice in a synced folder. This movement is also the prerequisite for the AI wedge
      `menu.rs`, `main.ts`.
    - *Gate:* `tests/update.test.ts` for the policy; §D of `docs/ON-DEVICE-VERIFICATION.md`
      for everything downstream of the network, which no headless gate can reach.
-   - [ ] **⬢ RELEASE `v0.2.0-alpha`** — *"Safe to live in."* First build you can hand to
-     someone without an asterisk on their data.
+   - [~] **⬢ RELEASE `v0.2.0-alpha`** — *"Safe to live in."* **Overtaken by the `v1.0.0`
+     tag**, which shipped the data-safety floor under a number this ladder never planned
+     for. Kept as the record of what the release point *meant* — the first build you can
+     hand to someone without an asterisk on their data — not as a version still to be cut.
+     The floor itself is complete; only Azure Trusted Signing is outstanding, and it is
+     blocked on provisioning, not on code.
 
 ---
 
@@ -303,11 +317,27 @@ editor something you keep using rather than something you tried.
     frontend (was §13 backlog).
     - *Touches:* `src/ui/outline.ts`. *Gate:* `tests/outline.test.ts`.
 
-- [ ] **12. `feat/sidebar-file-ops`** — new / rename / delete / new-folder via context menu,
-    backed by **atomic** Rust commands; delete routes through `trashbin`.
-    - *Touches:* `commands/files.rs` (new atomic ops + contract rows), `src/ui/sidebar.ts`;
-      mind the watcher interplay.
-    - *Gate:* extend `fsatomic` / a new ops suite.
+- [x] **12. `feat/sidebar-file-ops`** — *(shipped)* new / rename / delete / new-folder via a
+    context menu; delete routes through `trashbin` and offers **Undo** rather than a
+    confirmation, because a move into `.trash/` is reversible by construction. Wires two
+    crates that had no caller: `trashbin` and `snapshots::rekey`.
+    - *New crate:* `crates/fileops` — name validation (the Windows rules, applied on every
+      platform, since a vault is a folder that gets synced), vault containment, and
+      create/rename that refuse to clobber. Deliberately returns paths in the **caller's**
+      spelling: `canonicalize` is used to check containment and never to build a result,
+      because on Windows it yields `\\?\C:\…`, which matches neither the sidebar tree nor an
+      open tab nor a note's history key.
+    - *Built:* `commands/entries.rs` (thin wrapper + the history rekey, best-effort so it can
+      never fail a rename that already happened), `src/ui/contextmenu.ts`, file-ops UX in
+      `src/ui/sidebar.ts`.
+    - *§3:* the rename ordering in `main.ts`'s `doRenameEntry` — the watcher reports a rename
+      as delete-then-create, so tabs are re-pointed, `removalEpoch` bumped and `removedOnDisk`
+      cleared in one synchronous block, or an open tab would offer to recreate the old note
+      beside its new name.
+    - *Gate:* `cargo test -p fileops` + `tests/sidebar.test.ts` + `tests/contextmenu.test.ts`.
+    - *Open:* drag-to-move in the tree, multi-select, and a trash browser (`list_trash` is
+      wired to no UI, so Undo reaches only the most recent delete). On-device verification in
+      `docs/ON-DEVICE-VERIFICATION.md` §E.
     - [ ] **⬢ RELEASE `v0.5.0-beta.1`** — *"A real notes system."* First **beta**.
 
 ---
@@ -320,7 +350,7 @@ between an editor that works and one that is pleasant to spend hours in.
 
 **Branches**
 
-- [ ] **12b. `feat/chrome-ux`** — the UI shell around the editor: a **single tabbed right
+- [x] **12b. `feat/chrome-ux`** — *(shipped 2026-08-12)* the UI shell around the editor: a **single tabbed right
     rail** (outline and history become alternatives, not two rails), pane collapse/expand
     that actually animates, drag-to-resize with persisted widths, pointer-adaptive touch
     targets, a real design-token layer, and **real menu accelerators**. Taken out of
@@ -499,6 +529,7 @@ All follow the `crates/*` pattern: webview-free, unit-tested, healthy pure-Rust 
 | `trashbin` | Soft-delete + restore (atomic) | — | `feat/safe-delete-trash` |
 | `snapshots` | Content-addressed local version history | hand-rolled (`sha2` + `flate2`); see §8 | `feat/local-version-history` |
 | `mergemd` | 3-way markdown merge + conflict files | `similar` | `feat/sync-coexistence` |
+| `fileops` | Create/rename: name rules, containment, no clobber | — | `feat/sidebar-file-ops` |
 | `vaultsearch` | Incremental full-text vault index | `tantivy` | `feat/vault-search` |
 | `linkgraph` | `[[link]]`/`#tag` parse + backlink index | hand-rolled / `pulldown-cmark` | `feat/wikilinks-backlinks` |
 | `highlight` | Code → highlighted spans | `syntect` (`fancy-regex`) | `feat/code-highlighting` |

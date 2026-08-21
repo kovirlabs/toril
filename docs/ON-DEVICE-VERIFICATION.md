@@ -1,7 +1,7 @@
 # On-Device Verification
 
 CI covers the headless gates: `pnpm typecheck` / `test` / `build` and `cargo test` over
-the nine logic crates, on Ubuntu and Windows (CLAUDE.md §8). A green PR means those
+the ten logic crates, on Ubuntu and Windows (CLAUDE.md §8). A green PR means those
 passed — **not** that the app was driven.
 
 This file is the standing list of what a green PR cannot tell you: interactive flows
@@ -213,6 +213,47 @@ that a signed artifact downloads, verifies and replaces a running binary.
 - [ ] **D7 — The check is quiet when it should be.** With no network, launch: nothing
       appears. Ask via Help → Check for Updates: it says it could not check. That
       asymmetry is the whole design and is easy to regress.
+
+## E. Sidebar file operations (`feat/sidebar-file-ops`, 2026-08-17)
+
+The rules are gated hard (`cargo test -p fileops`, `tests/sidebar.test.ts`,
+`tests/contextmenu.test.ts`), but three things sit outside every headless gate: the
+*Windows* filesystem the name rules describe, the watcher's reaction to an operation
+Toril itself performed, and whether the version history actually followed the file.
+
+- [ ] **E1 — Rename does not resurrect the old note.** The §3 case, and the reason
+      `doRenameEntry` orders its work the way it does. Open a note, rename it from the
+      sidebar, then wait for the watcher: the tab must follow to the new name, must
+      **not** show "removed on disk", and autosave must not recreate the old path. Then
+      repeat with the note *dirty*, and with a note open inside a folder you rename.
+- [ ] **E2 — Version history followed the rename.** Save a note two or three times,
+      rename it, then open the history panel: the earlier versions must still be listed.
+      `snapshots::rekey` had **no caller before this branch**, so this is its first
+      real exercise. Repeat for a note inside a renamed folder (the subtree path).
+- [ ] **E3 — Delete and Undo.** Delete a note with a tab open: the tab closes, the file
+      appears under `.trash/`, and the status bar offers Undo. Click it — the note comes
+      back at its original path. Then delete a note, create a *different* file at that
+      path, and Undo: it must refuse rather than clobber, and say the note is still in
+      `.trash`. Finally delete a **dirty** tab's file and confirm the native prompt
+      appears (the one native dialog this feature uses — see B7 for the Linux hazard).
+- [ ] **E4 — Windows name rules against the real filesystem.** The crate's tests assert
+      what we *reject*; only Windows proves the rejections are the right ones. Try
+      `CON.md`, `note.` , `note ` (trailing space), `a:b.md` and a 300-character name —
+      each refused with a readable message beside the field. Then rename `notes.md` to
+      `Notes.md`: this **must succeed** on NTFS, where the destination "already exists"
+      as the source itself, and the sidebar must show the new casing.
+- [ ] **E5 — Paths keep their spelling.** After creating a note from the sidebar, confirm
+      the tab, the sidebar highlight and the window title all agree, and that saving it
+      produces history under the same key. A `\\?\`-prefixed path would work for I/O and
+      silently split the note into two identities; the crate pins this, the app proves it.
+- [ ] **E6 — The context menu in both engines.** It is `position: fixed` at `--z-dialog`.
+      Confirm in WebKitGTK as well as WebView2 that it is not clipped by a pane's
+      `overflow: hidden`, that right-clicking near the right edge or the bottom keeps it
+      on screen, and that Shift+F10 / the menu key opens it anchored to the row rather
+      than the window corner.
+- [ ] **E7 — The refresh race.** Start typing a new note's name, then touch an unrelated
+      file in the vault from outside (or let a sync client do it). The field must keep
+      what you typed; the new tree must appear as soon as you confirm or cancel.
 
 ## B. Standing items (pre-existing, not from this branch)
 

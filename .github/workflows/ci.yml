@@ -85,7 +85,7 @@ jobs:
           workspaces: ./src-tauri -> target
 
       # Named packages, NOT --workspace: that would pull in the Tauri app crate
-      # and with it WebKitGTK on Linux / WebView2 on Windows. These nine are
+      # and with it WebKitGTK on Linux / WebView2 on Windows. These ten are
       # split out (CLAUDE.md §4) precisely so their gates run without a webview.
       #
       # keystore's tests all run against its in-memory double. The real
@@ -94,7 +94,10 @@ jobs:
       #
       # Windows matters here too: fsatomic is the §3.1 atomic-save gate and the
       # one crate doing real filesystem syscalls, where replace-over-existing
-      # differs between rename(2) and MoveFileEx.
+      # differs between rename(2) and MoveFileEx. fileops is the second such
+      # crate and needs Windows even more specifically: the names it rejects
+      # (reserved devices, trailing dots) and the case-only rename it must allow
+      # are *Windows* behaviours, and the Linux leg alone cannot see either.
       - name: Test logic crates
         run: >
           cargo test
@@ -107,6 +110,7 @@ jobs:
           -p snapshots
           -p mergemd
           -p keystore
+          -p fileops
 
       # `--all` covers workspace *members*, and the vendored glib is excluded
       # from the workspace (§2) — so unlike clippy, this never touches upstream

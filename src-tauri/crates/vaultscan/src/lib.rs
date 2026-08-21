@@ -6,8 +6,11 @@
 //! - Hidden entries (name starting with `.`) are skipped — this drops `.git`,
 //!   `.obsidian`, etc.
 //! - Only `.md` / `.markdown` files are listed.
-//! - A directory is included only if its subtree contains at least one markdown
-//!   file, so empty / asset-only folders don't clutter the tree.
+//! - A directory is included if its subtree contains at least one markdown file
+//!   **or** it is empty, so asset-only folders don't clutter the tree but a
+//!   folder the user just made is still there. That second half is not a
+//!   refinement — without it, New Folder (ROADMAP II.12) creates a directory
+//!   that immediately disappears and cannot be put a note into.
 //! - Entries are sorted directories-first, then case-insensitive by name.
 //!
 //! No Tauri dependency: the walk is pure `std` + `serde` and fully unit-tested.
@@ -46,7 +49,7 @@ fn scan_dir(dir: &Path) -> io::Result<Vec<FileNode>> {
 
         if file_type.is_dir() {
             let children = scan_dir(&path)?;
-            if !children.is_empty() {
+            if !children.is_empty() || is_visibly_empty(&path) {
                 nodes.push(FileNode {
                     name,
                     path: path.to_string_lossy().into_owned(),
@@ -70,6 +73,23 @@ fn scan_dir(dir: &Path) -> io::Result<Vec<FileNode>> {
             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
     Ok(nodes)
+}
+
+/// Whether `dir` holds nothing the user would see — no entries at all, or only
+/// hidden ones.
+///
+/// Distinguishes "you just made this" from "this is an assets folder". A folder
+/// with a PNG in it stays pruned; a folder with nothing in it is shown, because
+/// the alternative is New Folder appearing to do nothing. An unreadable
+/// directory answers `false`: unknown is not empty, and guessing the other way
+/// would put a folder in the tree that nothing can be done with.
+fn is_visibly_empty(dir: &Path) -> bool {
+    match fs::read_dir(dir) {
+        Ok(entries) => !entries
+            .flatten()
+            .any(|e| !e.file_name().to_string_lossy().starts_with('.')),
+        Err(_) => false,
+    }
 }
 
 fn is_markdown(name: &str) -> bool {
@@ -137,6 +157,24 @@ mod tests {
         assert!(!file.is_dir);
         assert!(file.children.is_empty());
         assert!(file.path.ends_with("b-note.md"));
+    }
+
+    /// A folder the user just made has nothing in it yet. Pruning it would make
+    /// New Folder (ROADMAP II.12) look like it had failed, and leave nowhere to
+    /// put the first note.
+    #[test]
+    fn keeps_an_empty_directory_but_still_prunes_an_asset_only_one() {
+        let t = TempDir::new();
+        let root = &t.0;
+        touch(&root.join("note.md"));
+        fs::create_dir_all(root.join("Brand new")).unwrap();
+        touch(&root.join("assets/pic.png"));
+        // Only hidden entries: nothing the user can see, so it counts as empty.
+        touch(&root.join("quiet/.keep"));
+
+        let names: Vec<String> = scan(root).unwrap().into_iter().map(|n| n.name).collect();
+
+        assert_eq!(names, ["Brand new", "quiet", "note.md"]);
     }
 
     #[test]
