@@ -10,7 +10,9 @@ overrides:
   postcss@<8.5.18: 8.5.18
 
 patchedDependencies:
-  '@milkdown/preset-commonmark@7.21.1': fa4fde61a41fade3ff500c5496359365209922d8ad3fd08b4e69f631ea73eaaf
+  '@milkdown/preset-commonmark@7.21.1':
+    hash: fa4fde61a41fade3ff500c5496359365209922d8ad3fd08b4e69f631ea73eaaf
+    path: patches/@milkdown__preset-commonmark@7.21.1.patch
 
 importers:
 
@@ -44,8 +46,8 @@ importers:
         specifier: 2.4.1
         version: 2.4.1
       dompurify:
-        specifier: 3.4.12
-        version: 3.4.12
+        specifier: 3.4.13
+        version: 3.4.13
       smol-toml:
         specifier: 1.8.0
         version: 1.8.0
@@ -338,8 +340,8 @@ packages:
   '@lezer/lr@1.4.10':
     resolution: {integrity: sha512-rnCpTIBafOx4mRp43xOxDJbFipJm/c0cia/V5TiGlhmMa+wsSdoGmUN3w5Bqrks/09Q/D4tNAmWaT8p6NRi77A==}
 
-  '@marijn/find-cluster-break@1.0.3':
-    resolution: {integrity: sha512-FY+MKLBoTsLNJF/eLWaOsXGdz6uh3Iu1axjPf6TUq92IYumcTcXWHoS747JARLkcdlJ/Waiaxc5wQfFO8jC6NA==}
+  '@marijn/find-cluster-break@1.0.4':
+    resolution: {integrity: sha512-Wy0V7+SGUjnF9/TkiM1hKVDPj7jKXduPNboMVtHTA8dySMURWqfg/JZ9E2Sq8JgSJmkl7k7Qe9FLeMSrSraWmQ==}
 
   '@milkdown/components@7.21.1':
     resolution: {integrity: sha512-wyU/PPWfMJEbchiFnCHmgz5mMfcwp5ZbkWrbplJSak/H/zpDg46jAL7k7TZwvyb1YHF1P63BL26P8A3B6igUDQ==}
@@ -816,6 +818,9 @@ packages:
 
   dompurify@3.4.12:
     resolution: {integrity: sha512-zQvGet8Z2sWbQhCmfFz/T5QWH2oBmjnqK3qvOjaqaNLrLEF912WamU+ohnTp0TCep/MFVHpdJuCZEdFOdTnEFg==}
+
+  dompurify@3.4.13:
+    resolution: {integrity: sha512-2vmYIoqjze2d+kakP8S/nS5shfsl587kzwEjcGlTdiksUVgFHnFCsLYDVj/JNqJVOQZGSYBTmuycv0PodwmnMQ==}
 
   emoji-regex@10.6.0:
     resolution: {integrity: sha512-toUI84YS5YmxW219erniWD0CIVOo46xGKColeNQRgOzDorgBi1v4D71/OFzgD9GO2UGKIv1C3Sp8DAn0+j5w7A==}
@@ -1451,7 +1456,7 @@ snapshots:
 
   '@codemirror/state@6.6.0':
     dependencies:
-      '@marijn/find-cluster-break': 1.0.3
+      '@marijn/find-cluster-break': 1.0.4
 
   '@codemirror/view@6.43.0':
     dependencies:
@@ -1587,7 +1592,7 @@ snapshots:
     dependencies:
       '@lezer/common': 1.5.2
 
-  '@marijn/find-cluster-break@1.0.3': {}
+  '@marijn/find-cluster-break@1.0.4': {}
 
   '@milkdown/components@7.21.1(@codemirror/language@6.12.3)(@codemirror/state@6.6.0)(@codemirror/view@6.43.0)(typescript@5.6.3)':
     dependencies:
@@ -2199,6 +2204,10 @@ snapshots:
       dequal: 2.0.3
 
   dompurify@3.4.12:
+    optionalDependencies:
+      '@types/trusted-types': 2.0.7
+
+  dompurify@3.4.13:
     optionalDependencies:
       '@types/trusted-types': 2.0.7
 
