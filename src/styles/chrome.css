@@ -571,8 +571,25 @@ body {
   background: rgb(214 73 75 / 18%);
 }
 
+/* It was a bare <button> with only a cursor, so the panel's one action read as
+   a caption under the diff. Styled as the app's outlined primary action. */
 .history-restore {
+  align-self: flex-start;
+  min-height: var(--target-sm);
+  margin-top: var(--sp-2);
+  padding: 0 var(--sp-3);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--accent);
+  background: none;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-md);
   cursor: pointer;
+}
+
+.history-restore:hover {
+  background: var(--hover-bg);
 }
 
 /* ---- Main column --------------------------------------------------------- */

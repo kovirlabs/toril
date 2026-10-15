@@ -182,6 +182,7 @@ export class History {
     }
 
     const restore = document.createElement("button");
+    restore.type = "button";
     restore.className = "history-restore";
     restore.textContent = "Restore this version";
     restore.addEventListener("click", () => void this.doRestore(hash));
