@@ -68,6 +68,23 @@ GitHub Release notes plus the commits that shipped in it.
   nothing to restore — the two used to be the same two-line stub. With no folder open,
   the files pane now offers to open one instead of only saying that none is.
 
+### Fixed
+- **Closing a tab with unsaved changes discarded it without asking**, and History →
+  Restore went ahead even when you answered No. The dialog plugin makes the browser's
+  `confirm()` asynchronous, so the guard read a pending answer as "yes". Both now wait.
+- **Undo and Redo did nothing** — from the keyboard or the Edit menu. They work now, and
+  switching tabs can never be "undone" into the previous tab's text.
+- **A code block or table at the end of a note trapped the cursor**: clicking below it
+  or pressing ↓ went nowhere. Both now start a new line after it. Clicking anywhere on
+  the page of a short or blank note now places the cursor too.
+- **A note opened halfway down the page** when the previous tab had been scrolled. New
+  tabs open at the top, and each tab remembers its own scroll position.
+- **Saving straight after typing left the tab marked unsaved**, which brought back the
+  close prompt and an extra autosave. Text that matches what is on disk is never
+  "unsaved" — including after undoing back to it.
+- **A new note from the files pane didn't take the keyboard**, so the first words typed
+  were lost.
+
 ### Notes
 - Updates are cryptographically signed, and an installed Toril refuses one that does not
   verify. Setting that up is a one-time step for whoever cuts releases — see

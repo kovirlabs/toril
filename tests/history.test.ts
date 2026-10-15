@@ -191,4 +191,23 @@ describe("History panel", () => {
     await flush();
     expect(restores).toEqual([["/n.md", "aaa"]]);
   });
+
+  // The shipping host is the native dialog, which answers asynchronously. A
+  // Promise is truthy, so an un-awaited "No" used to restore anyway.
+  it("waits for an async confirmation and honours an async decline", async () => {
+    const h = new History(el, port(), host);
+    await h.setActive("/n.md", "current");
+    (el.querySelector(".history-entry") as HTMLButtonElement).click();
+    await flush();
+
+    host.confirm = () => Promise.resolve(false);
+    (el.querySelector(".history-restore") as HTMLButtonElement).click();
+    await flush();
+    expect(restores).toEqual([]);
+
+    host.confirm = () => Promise.resolve(true);
+    (el.querySelector(".history-restore") as HTMLButtonElement).click();
+    await flush();
+    expect(restores).toEqual([["/n.md", "aaa"]]);
+  });
 });

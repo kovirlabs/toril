@@ -42,8 +42,8 @@ the feature-by-feature record.
   included, it links and its tests run) and `cargo clippy --workspace --all-targets` are available
   and **should be run**, not skipped. Don't assume the Rust side can't be compiled here; check before
   concluding that. (On a box genuinely missing the webview deps, the fallback in §Commands applies.)
-- Tab switching does **not** preserve per-tab undo history (single shared editor, content swapped).
-  Acceptable for now.
+- Tab switching does **not** preserve per-tab undo history (single shared editor, content swapped):
+  every load resets it via `resetHistory`, so undo is per-visit. Acceptable for now.
 - **An unused link reference definition is deleted on save.** `[ex]: https://example.com` with no
   `[…][ex]` referencing it does not survive a round-trip: nothing in the ProseMirror doc records an
   unreferenced definition, so remark cannot re-emit it. Pre-existing remark/Milkdown behavior, not
@@ -145,6 +145,43 @@ New crate `crates/fileops` holds the rules; `commands/entries.rs` wraps it; the 
 argument are in §5 (Sidebar file operations). Still open from the branch: drag-to-move in
 the tree, multi-select, and a trash browser (`list_trash` has a command and a wrapper but
 no UI, so Undo reaches only the most recent delete).
+
+**On-device UI sweep — 2026-10-14 (`fix/ui-sweep-2026-10`).** The dev build was driven by hand
+(`pnpm tauri dev` on Windows/WebView2) across every screen. Six defects were fixed and verified
+in the window; see `CHANGELOG.md` → Unreleased → Fixed. Lessons that bind future work:
+- **Never call `window.confirm` / `window.alert`.** `tauri-plugin-dialog` replaces them with
+  *async* functions, so `if (!confirm(…))` tests a Promise — always truthy — and the guard
+  passes without waiting. Use `confirmDiscard` (`ipc.ts`, awaited). `window.prompt` is *not*
+  overridden, which is why the link/image buttons still work.
+- **Undo exists now (`@milkdown/kit/plugin/history`), and every load resets it.**
+  `loadIntoEditor` calls `resetHistory` (`milkdown.ts`) after the swap: a tab switch is a
+  whole-document replace, and an undoable one would restore the previous tab's text.
+  `caret: "start"` for a tab activation, `"keep"` for a reload of the same file.
+- **Dirty means "differs from disk".** `onEditorChange` clears dirty when the serialized
+  text equals `tab.base` — the 200 ms listener debounce otherwise re-dirties a tab saved
+  straight after a keystroke.
+- **The shared scroller (`#editor`) keeps per-tab `scrollTop`** (`TabState.scrollTop`).
+- `reachTheEndPlugin` (`milkdown.ts`) owns clicks outside the ProseMirror element and ↓ from
+  the last textblock; it appends a paragraph when the doc ends in a non-writable block.
+
+**Still open from that sweep — start here to continue the fixes:**
+1. **Pasted markdown text is not parsed** — `**bold**`, `## h`, `- x` paste as literal text.
+   `@milkdown/kit/plugin/clipboard` is not loaded; adding it must keep the image-paste plugin
+   and the §3.3 sanitize path intact.
+2. **List buttons don't convert or toggle** (`toolbar.ts`): Bullet/Ordered/Quote are no-ops
+   inside an existing list item. Expected: bullet↔ordered converts the list, the active type
+   lifts to a paragraph, task→bullet clears `checked`. Gate in `tests/toolbar.test.ts`.
+3. **Link/Image use `window.prompt`**, titled "localhost:1420 says" (tauri.localhost in a
+   release). Replace with an in-app field in the sidebar's inline-field style.
+4. **Table header row looks like a body row** — style `th` in `editor.css`, both themes.
+5. Heading dropdown silently refuses inside a list item (schema: list items start with a
+   paragraph). Acceptable, but it gives no feedback.
+6. `.html` files never appear in the sidebar — `vaultscan` lists `.md`/`.markdown` only, by
+   its own docs, while HTML is advertised as first-class. A product decision, not a bug fix.
+
+Driving tips: the native `<select>` popups belong to `msedgewebview2.exe`, so computer-use
+needs that granted too, or they screenshot as black boxes. A test vault lives at
+`~/toril-test-vault` (also under `OneDrive\Documents`, which the folder dialog opens to).
 
 **Next:** finish Phase 4 — remaining is Azure Trusted Signing once an account exists, and
 on-device verification. A backlog of further QoL features is in §13. The

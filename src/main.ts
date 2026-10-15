@@ -4,8 +4,8 @@
 // ipc.ts (§3.2, §5).
 import "@milkdown/theme-nord/style.css";
 import "./styles.css";
-import type { Editor } from "@milkdown/kit/core";
-import { createEditor } from "./editor/milkdown";
+import { editorViewCtx, type Editor } from "@milkdown/kit/core";
+import { createEditor, resetHistory } from "./editor/milkdown";
 import { docToMarkdown, markdownToDoc } from "./editor/serializer";
 import { docToHtml, htmlToDoc } from "./editor/html-serializer";
 import type { FrontMatter, SplitFile } from "./editor/frontmatter";
@@ -250,7 +250,7 @@ function onPropertiesChange(next: FrontMatter | null): void {
 
 // Format-aware bridges to the two canonical serializers (§3.2). The active tab's
 // `format` decides which one runs; everything else (tabs, save, session) is shared.
-function loadIntoEditor(content: string, format: DocFormat): void {
+function loadIntoEditor(content: string, format: DocFormat, caret: "keep" | "start" = "keep"): void {
   loading = true;
   if (format === "html") {
     // Front matter is a markdown-file concept; an `.html` document has none, and
@@ -261,6 +261,10 @@ function loadIntoEditor(content: string, format: DocFormat): void {
     liveSplit = splitFrontMatter(content);
     markdownToDoc(editor, liveSplit.body);
   }
+  // A load is not an edit, so it must not be undoable: Ctrl+Z after a tab
+  // switch would otherwise bring the previous tab's text back into this one.
+  resetHistory(editor, caret);
+  searchBar?.refresh(); // its highlights lived in the state that was just reset
   // The strip mirrors whatever is in the editor, including "nothing to show".
   properties?.setDocument(liveSplit.frontMatter, format !== "html");
   loading = false;
@@ -299,9 +303,22 @@ function onEditorChange(): void {
   // A load's own echo, arriving after the debounce. Nothing changed, so nothing
   // downstream needs doing: `onActivate` already refreshed the chrome, and
   // marking dirty here would arm autosave to rewrite a note nobody edited.
-  if (active && loadEcho.isEcho(serializeEditor(active.format))) return;
+  const current = active ? serializeEditor(active.format) : "";
+  if (active && loadEcho.isEcho(current)) return;
   statusBar?.refresh();
   outline?.refresh();
+  // The listener is debounced 200ms, so the notification for the last keystroke
+  // before a quick Ctrl+S lands *after* the save marked the tab clean, and used
+  // to re-dirty it — a close prompt and an autosave for a note already on disk.
+  // Text identical to what is on disk is not an unsaved change, whenever the
+  // notification arrives (and undoing back to the saved text is clean too).
+  if (active?.path && !active.diverged && !active.removedOnDisk && current === active.base) {
+    if (active.dirty) {
+      tabs.setDirty(active.id, false);
+      updateTitle();
+    }
+    return;
+  }
   if (active && !active.dirty) {
     tabs.setDirty(active.id, true);
     updateTitle();
@@ -311,12 +328,22 @@ function onEditorChange(): void {
 
 // ---- Tab lifecycle: keep editor and per-tab buffers in sync ----------------
 
+/** The element that scrolls the writing surface — shared by every tab. */
+function editorScroller(): HTMLElement | null {
+  return document.querySelector<HTMLElement>("#editor");
+}
+
 function onDeactivate(tab: TabState): void {
   tab.content = serializeEditor(tab.format); // persist outgoing tab's edits
+  tab.scrollTop = editorScroller()?.scrollTop ?? 0;
 }
 
 function onActivate(tab: TabState): void {
-  loadIntoEditor(tab.content, tab.format);
+  loadIntoEditor(tab.content, tab.format, "start");
+  // The scroller is shared, so without this a newly opened note inherited the
+  // previous tab's offset and opened halfway down. New tabs start at the top.
+  const scroller = editorScroller();
+  if (scroller) scroller.scrollTop = tab.scrollTop ?? 0;
   updateTitle();
   formatToolbar?.refresh();
   statusBar?.refresh();
@@ -326,9 +353,12 @@ function onActivate(tab: TabState): void {
   renderConflictBar(); // the banner is per-tab, so it re-renders on every switch
 }
 
-function onCloseRequest(tab: TabState): void {
-  if (tab.dirty && !confirm(`Discard unsaved changes to ${tab.name}?`)) return;
-  tabs.close(tab.id);
+// Never `window.confirm` here: tauri-plugin-dialog replaces it with an *async*
+// function, so `confirm(...)` is a Promise — always truthy — and the guard used
+// to discard the tab without waiting for (or even showing) the answer.
+async function onCloseRequest(tab: TabState): Promise<void> {
+  if (tab.dirty && !(await confirmDiscard(`Discard unsaved changes to ${tab.name}?`))) return;
+  tabs.close(tab.id); // a no-op if the tab went away while the dialog was up
   if (!tabs.active()) {
     openDocument(null, "Untitled", ""); // never leave zero tabs
   }
@@ -633,6 +663,10 @@ async function doCreateNote(dir: string, name: string): Promise<void> {
   // is empty. `base` is "" for the same reason, which is exactly right — that
   // is what is on disk.
   openDocument(path, basename(path), "", formatForPath(path));
+  // A new note is for writing in. Focus would otherwise stay on the name field
+  // that is about to be removed, and the first keystrokes went nowhere. (The
+  // sidebar is `busy` until this resolves, so the blur is not read as a cancel.)
+  editor.action((ctx) => ctx.get(editorViewCtx).focus());
   rememberRecent(path);
   scheduleSessionSave();
   setStatus(`Created ${basename(path)}`);
@@ -1903,7 +1937,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     history = new History(
       historyEl,
       { list: listHistory, read: readSnapshot, restore: restoreVersion },
-      { now: () => Date.now(), confirm: (message) => confirm(message) },
+      { now: () => Date.now(), confirm: (message) => confirmDiscard(message) },
     );
   }
   const searchEl = document.querySelector<HTMLElement>("#searchbar");

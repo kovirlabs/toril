@@ -51,6 +51,9 @@ export interface TabState {
    * silently resurrect the old note beside the renamed one (§3).
    */
   removedOnDisk: boolean;
+  /** Where the shared editor was scrolled when this tab was last shown; unset
+   *  for a tab never shown yet, which opens at the top. */
+  scrollTop?: number;
 }
 
 export interface TabCallbacks {

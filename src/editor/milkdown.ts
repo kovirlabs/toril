@@ -3,12 +3,14 @@
 // Phase 3 adds emoji shortcodes (`:smile:` → 😄). Math is deferred — its only
 // Milkdown plugin is deprecated (§8). Plugins are added here, never by
 // hand-rolling ProseMirror nodes (§11).
-import { Editor, commandsCtx, defaultValueCtx, rootCtx } from "@milkdown/kit/core";
+import { Editor, commandsCtx, defaultValueCtx, editorViewCtx, rootCtx } from "@milkdown/kit/core";
 import { commonmark, insertImageCommand } from "@milkdown/kit/preset/commonmark";
 import { gfm } from "@milkdown/kit/preset/gfm";
+import { history } from "@milkdown/kit/plugin/history";
 import { listener, listenerCtx } from "@milkdown/kit/plugin/listener";
 import { $prose } from "@milkdown/kit/utils";
-import { Plugin, PluginKey } from "@milkdown/kit/prose/state";
+import { EditorState, Plugin, PluginKey, TextSelection } from "@milkdown/kit/prose/state";
+import type { EditorView } from "@milkdown/kit/prose/view";
 import { emoji } from "@milkdown/plugin-emoji";
 import { nord } from "@milkdown/theme-nord";
 import { searchPlugin } from "../ui/search";
@@ -56,6 +58,104 @@ function imagePastePlugin(onImagePaste: ImagePasteHandler) {
   );
 }
 
+/** Blocks a caret can simply be put at the end of. Anything else at the end of
+ *  the document (code block, table, list, quote, rule, …) needs a paragraph
+ *  after it before there is anywhere to type. */
+function endsInWritableBlock(view: EditorView): boolean {
+  const name = view.state.doc.lastChild?.type.name;
+  return name === "paragraph" || name === "heading";
+}
+
+/** Put the caret at the very end of the document, appending an empty paragraph
+ *  first when the last block is one the caret cannot follow. */
+function caretToEnd(view: EditorView): void {
+  let tr = view.state.tr;
+  if (!endsInWritableBlock(view)) {
+    tr = tr.insert(tr.doc.content.size, view.state.schema.nodes.paragraph.create());
+  }
+  view.dispatch(tr.setSelection(TextSelection.atEnd(tr.doc)).scrollIntoView());
+  view.focus();
+}
+
+// Found by driving the app: a document ending in a code block or table was a
+// trap — clicking below it did nothing and ↓ stayed put (only the unadvertised
+// Mod-Enter escaped a code block). And the area around the ProseMirror element
+// is not part of it, so in a short or empty note most of the visible page
+// ignored clicks entirely: a blank new note could not be focused except by
+// hitting its one invisible line.
+function reachTheEndPlugin(root: HTMLElement) {
+  return $prose(
+    () =>
+      new Plugin({
+        key: new PluginKey("toril-reach-the-end"),
+        props: {
+          handleKeyDown: (view, event) => {
+            if (event.key !== "ArrowDown" || event.shiftKey || event.altKey) return false;
+            if (event.ctrlKey || event.metaKey) return false;
+            const { selection, doc } = view.state;
+            if (!selection.empty || endsInWritableBlock(view)) return false;
+            if (!view.endOfTextblock("down")) return false;
+            // Only from the last line of the last textblock: anywhere else, ↓
+            // already has somewhere to go.
+            let later = false;
+            doc.nodesBetween(selection.$head.after(), doc.content.size, (node) => {
+              if (node.isTextblock) later = true;
+              return !later;
+            });
+            if (later) return false;
+            caretToEnd(view);
+            return true;
+          },
+        },
+        view: (view) => {
+          const onMouseDown = (e: MouseEvent) => {
+            if (e.button !== 0 || view.dom.contains(e.target as Node)) return;
+            // Leave the root's own scrollbars alone: a press there is a drag.
+            const box = root.getBoundingClientRect();
+            if (e.clientX >= box.left + root.clientLeft + root.clientWidth) return;
+            if (e.clientY >= box.top + root.clientTop + root.clientHeight) return;
+            const content = view.dom.getBoundingClientRect();
+            if (e.clientY < content.top) return;
+            e.preventDefault();
+            if (e.clientY > content.bottom) {
+              caretToEnd(view);
+              return;
+            }
+            // Beside the text (the margins of the measure): the nearest line.
+            const left = Math.min(Math.max(e.clientX, content.left + 1), content.right - 1);
+            const hit = view.posAtCoords({ left, top: e.clientY });
+            if (hit) {
+              const $pos = view.state.doc.resolve(hit.pos);
+              view.dispatch(view.state.tr.setSelection(TextSelection.near($pos)));
+            }
+            view.focus();
+          };
+          root.addEventListener("mousedown", onMouseDown);
+          return { destroy: () => root.removeEventListener("mousedown", onMouseDown) };
+        },
+      }),
+  );
+}
+
+/**
+ * Start the editor's state over on the document it already holds: empty undo
+ * history. Called after every programmatic load, because the tabs share one
+ * editor — without it, the first Ctrl+Z after switching tabs would "undo" the
+ * switch and put the previous tab's text into this one.
+ *
+ * `caret: "start"` is for showing a different document; `"keep"` (a reload of
+ * the same one) leaves the caret where the load mapped it.
+ */
+export function resetHistory(editor: Editor, caret: "keep" | "start" = "keep"): void {
+  editor.action((ctx) => {
+    const view = ctx.get(editorViewCtx);
+    const { doc, plugins, selection } = view.state;
+    view.updateState(
+      EditorState.create({ doc, plugins, selection: caret === "keep" ? selection : undefined }),
+    );
+  });
+}
+
 export interface CreateEditorOptions {
   /** Element the editor mounts into. */
   root: HTMLElement;
@@ -84,8 +184,10 @@ export function createEditor(options: CreateEditorOptions): Promise<Editor> {
       .use(gfm)
       .use(emoji)
       .use(htmlConstructs)
+      .use(history)
       .use(listener)
-      .use(searchPlugin()),
+      .use(searchPlugin())
+      .use(reachTheEndPlugin(root)),
   );
   if (onImagePaste) {
     editor = editor.use(imagePastePlugin(onImagePaste));
