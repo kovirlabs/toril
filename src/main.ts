@@ -314,8 +314,10 @@ function onEditorChange(): void {
   // before a quick Ctrl+S lands *after* the save marked the tab clean, and used
   // to re-dirty it — a close prompt and an autosave for a note already on disk.
   // Text identical to what is on disk is not an unsaved change, whenever the
-  // notification arrives (and undoing back to the saved text is clean too).
-  if (active?.path && !active.diverged && !active.removedOnDisk && current === active.base) {
+  // notification arrives (and undoing back to the saved text is clean too). An
+  // Untitled tab's base is what it opened with, so emptying one is clean as well
+  // — otherwise closing a blank tab asks whether to discard nothing.
+  if (active && !active.diverged && !active.removedOnDisk && current === active.base) {
     if (active.dirty) {
       tabs.setDirty(active.id, false);
       updateTitle();
@@ -1851,6 +1853,10 @@ async function recoverCrashedBuffers(): Promise<void> {
         format: entry.format,
       });
       tabs.setDirty(tab.id, true);
+      // An Untitled buffer has nothing on disk, so its base is empty — never
+      // the recovered text, or undoing back to it would read as "clean" and a
+      // close would discard recovered work without asking.
+      if (!entry.path) tabs.setBase(tab.id, "");
       // `tabs.open` seeds `base` from the content it is given, but a recovered
       // buffer is *newer* than disk — leaving it as the base would make the next
       // reconcile read the older file as an external change and reload over the

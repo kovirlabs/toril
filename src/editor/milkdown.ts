@@ -6,6 +6,7 @@
 import { Editor, commandsCtx, defaultValueCtx, editorViewCtx, rootCtx } from "@milkdown/kit/core";
 import { commonmark, insertImageCommand } from "@milkdown/kit/preset/commonmark";
 import { gfm } from "@milkdown/kit/preset/gfm";
+import { clipboard } from "@milkdown/kit/plugin/clipboard";
 import { history } from "@milkdown/kit/plugin/history";
 import { listener, listenerCtx } from "@milkdown/kit/plugin/listener";
 import { $prose } from "@milkdown/kit/utils";
@@ -212,5 +213,15 @@ export function createEditor(options: CreateEditorOptions): Promise<Editor> {
   if (onImagePaste) {
     editor = editor.use(imagePastePlugin(onImagePaste));
   }
+  // Paste handlers run in registration order, so this must come after the
+  // image handler: a copied image often carries an HTML twin that the clipboard
+  // plugin would otherwise take first.
+  //
+  // Pasting markdown as plain text used to arrive literally — `**bold**`,
+  // `## Heading` — in a markdown editor. This parses text/plain through the same
+  // parser that opens files (§3.2), leaves HTML pastes on ProseMirror's
+  // schema-limited path, and pastes literally inside a code block. It also
+  // makes a copy *out* of Toril put markdown, not bare text, on the clipboard.
+  editor = editor.use(clipboard);
   return editor.create();
 }

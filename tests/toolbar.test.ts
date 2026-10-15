@@ -210,3 +210,56 @@ describe("formatting toolbar — active state reflects the selection", () => {
     await editor.destroy();
   });
 });
+
+
+// Found driving the app: inside an existing list the Bullet, Numbered and Quote
+// buttons did nothing — no way to change a list's kind, un-task an item, or get
+// back to a paragraph without retyping.
+describe("list and quote buttons toggle and convert", () => {
+  /** An editor on `md` with the caret inside the text `at`. */
+  async function caretIn(md: string, at: string): Promise<Editor> {
+    const editor = await makeEditor(md);
+    editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx);
+      let pos = -1;
+      view.state.doc.descendants((node, p) => {
+        if (pos === -1 && node.isText && node.text?.includes(at)) pos = p + 1;
+      });
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos)));
+    });
+    return editor;
+  }
+
+  it("Numbered converts a bullet list, and Bullet converts it back", async () => {
+    const editor = await caretIn("- one\n- two\n", "two");
+    editorCommands.orderedList(editor);
+    expect(docToMarkdown(editor)).toBe("1. one\n2. two\n");
+    editorCommands.bulletList(editor);
+    expect(docToMarkdown(editor)).toBe("- one\n- two\n");
+    await editor.destroy();
+  });
+
+  it("the active kind lifts the item out to a paragraph", async () => {
+    const editor = await caretIn("- one\n- two\n", "two");
+    editorCommands.bulletList(editor);
+    expect(docToMarkdown(editor)).toBe("- one\n\ntwo\n");
+    await editor.destroy();
+  });
+
+  it("Bullet on a task item makes it a plain bullet", async () => {
+    const editor = await caretIn("- [ ] todo\n", "todo");
+    editorCommands.bulletList(editor);
+    expect(docToMarkdown(editor)).toBe("- todo\n");
+    expect(activeState(editor).isTask).toBe(false);
+    await editor.destroy();
+  });
+
+  it("Quote inside a quote unwraps it", async () => {
+    const editor = await caretIn("> quoted\n", "quoted");
+    editorCommands.blockquote(editor);
+    expect(docToMarkdown(editor)).toBe("quoted\n");
+    editorCommands.blockquote(editor);
+    expect(docToMarkdown(editor)).toBe("> quoted\n");
+    await editor.destroy();
+  });
+});

@@ -164,24 +164,48 @@ in the window; see `CHANGELOG.md` → Unreleased → Fixed. Lessons that bind fu
 - `reachTheEndPlugin` (`milkdown.ts`) owns clicks outside the ProseMirror element and ↓ from
   the last textblock; it appends a paragraph when the doc ends in a non-writable block.
 
-**Still open from that sweep — start here to continue the fixes:**
-1. **Pasted markdown text is not parsed** — `**bold**`, `## h`, `- x` paste as literal text.
-   `@milkdown/kit/plugin/clipboard` is not loaded; adding it must keep the image-paste plugin
-   and the §3.3 sanitize path intact.
-2. **List buttons don't convert or toggle** (`toolbar.ts`): Bullet/Ordered/Quote are no-ops
-   inside an existing list item. Expected: bullet↔ordered converts the list, the active type
-   lifts to a paragraph, task→bullet clears `checked`. Gate in `tests/toolbar.test.ts`.
-3. **Link/Image use `window.prompt`**, titled "localhost:1420 says" (tauri.localhost in a
-   release). Replace with an in-app field in the sidebar's inline-field style.
-4. **Table header row looks like a body row** — style `th` in `editor.css`, both themes.
-5. Heading dropdown silently refuses inside a list item (schema: list items start with a
+**Second and third passes (2026-10-15)** fixed everything the first left open (paste parses
+markdown, list/quote buttons convert and toggle, an in-app Link/Image form replaced
+`window.prompt`) plus another round — see CHANGELOG → Unreleased → Fixed. More lessons:
+- **Chromium fires `blur` on a focused input *while removing it*** (it is still connected).
+  Any "blur cancels / commits" handler must ignore blurs caused by its own re-render
+  (`sidebar.ts` `rendering` flag). jsdom fires nothing, so gates need to simulate it.
+- **Commit-on-`change` + synchronous re-render destroys the next control** — `change`
+  fires on the Tab/click that moves focus. `properties.ts` defers drawing until the
+  interaction settles and makes handlers read the *current* rows, never captured ones.
+- **Never mutate DOM inside the editable** (e.g. a `title` on a link) — ProseMirror reads
+  it back as a document change. Hover UI lives in `<body>` (`installLinkTip`).
+- **Persisted pane widths are never viewport-clamped on restore** (a minimized launch
+  reports width 0). Only `effectiveLayout` adapts, at render.
+- Save As serializes for the **chosen** extension (it is also md⇄html conversion); the
+  Rust `save_file_as` command is gone — the path is picked in `pickSavePath`.
+- The dev harness (`pnpm dev` → `/dev-harness.html`) in the built-in browser is the way
+  to measure layout and inspect the DOM; when the browser pane is hidden its CSS
+  transitions freeze — `document.getAnimations().forEach(a => a.finish())` before measuring.
+
+**Still open — start here to continue:**
+1. **Toolbar highlight can be stale right after launch** (seen: Bullet lit while the caret
+   sat in a heading of an HTML tab, after crash recovery restored tabs). Corrects on the
+   first click/selection change. Not reproduced by a normal tab switch — look at the
+   bootstrap path (`restoreSession` → `recoverCrashedBuffers` → `setActive(wasActive)`).
+2. Heading dropdown silently refuses inside a list item (schema: list items start with a
    paragraph). Acceptable, but it gives no feedback.
-6. `.html` files never appear in the sidebar — `vaultscan` lists `.md`/`.markdown` only, by
-   its own docs, while HTML is advertised as first-class. A product decision, not a bug fix.
+3. `.html` files never appear in the sidebar — `vaultscan` lists `.md`/`.markdown` only
+   (its doc comment also says empty folders are hidden, but they show — the comment is
+   stale). HTML is advertised as first-class; showing it is a product decision.
+4. `app.security.csp` is `null` in `tauri.conf.json`. Sanitization (§3.3) is the real
+   guard, but a CSP is cheap defence in depth — worth a deliberate decision.
+5. Pasting multi-block markdown in the *middle* of a non-empty paragraph merges the first
+   pasted block into it (ProseMirror's open-slice behaviour, same as HTML paste).
+6. Not Toril: on the dev machine Ctrl+Shift+S is grabbed by a global overlay hotkey
+   (likely AMD Software) before the app sees it; File → Save As works.
 
 Driving tips: the native `<select>` popups belong to `msedgewebview2.exe`, so computer-use
-needs that granted too, or they screenshot as black boxes. A test vault lives at
-`~/toril-test-vault` (also under `OneDrive\Documents`, which the folder dialog opens to).
+needs that granted too (request it *while* a dropdown is open — it only resolves then), or
+they screenshot as black boxes. File dialogs accept typing only in the File name box. A
+Rust edit restarts the app (and a `.ts` edit reloads the page), so re-maximize and expect
+"N documents recovered". Test vault: `~/toril-test-vault`, also under
+`OneDrive\Documents\toril-test-vault`, which the folder dialog opens to.
 
 **Next:** finish Phase 4 — remaining is Azure Trusted Signing once an account exists, and
 on-device verification. A backlog of further QoL features is in §13. The

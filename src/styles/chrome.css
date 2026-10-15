@@ -798,6 +798,73 @@ body {
   flex: 0 0 auto;
 }
 
+/* Inline form for Link / Image (toolbar.ts askInline) — replaces window.prompt. */
+.fmt-ask {
+  position: fixed;
+  z-index: var(--z-dialog);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  width: min(22rem, calc(100vw - 16px));
+  padding: var(--sp-3);
+  background: var(--chrome-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-panel);
+  font-size: var(--text-sm);
+}
+
+.fmt-ask-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  color: var(--muted);
+}
+
+.fmt-ask-input {
+  min-height: var(--target-sm);
+  padding: 0 var(--sp-2);
+  font: inherit;
+  color: var(--fg);
+  background: var(--editor-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+
+.fmt-ask-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.fmt-ask-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}
+
+.fmt-ask-btn {
+  min-height: var(--target-sm);
+  padding: 0 var(--sp-3);
+  font: inherit;
+  color: var(--fg);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  cursor: pointer;
+}
+
+.fmt-ask-btn:hover {
+  background: var(--hover-bg);
+}
+
+/* Outlined in the accent, like the app's other primary actions — no filled
+   button exists anywhere else, and no on-accent text token to put on one. */
+.fmt-ask-primary {
+  color: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
 .fmt-emoji {
   position: relative;
   display: inline-flex;

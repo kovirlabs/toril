@@ -118,6 +118,15 @@ GitHub Release notes plus the commits that shipped in it.
   taskbar. It is now kept inside the screen it opens on.
 - Hovering a link shows where it goes and that Ctrl+click opens it. Tables and code
   blocks keep the same spacing below them as a paragraph.
+- **Pasting Markdown text now formats it.** Paste `## Heading` or `**bold**` from
+  anywhere and you get a heading and bold text, not the symbols. Copying out of Toril
+  puts Markdown on the clipboard.
+- **The list and quote buttons work inside lists.** Bullet ⇄ Numbered converts the
+  list, clicking the active one turns the item back into a paragraph, Bullet turns a
+  task into a plain item, and Quote toggles off.
+- **Link and Image open a small form under the button** instead of a browser prompt
+  titled "localhost says". Link on an existing link removes it.
+- An Untitled tab emptied back to nothing is no longer "unsaved".
 
 ### Notes
 - Updates are cryptographically signed, and an installed Toril refuses one that does not
