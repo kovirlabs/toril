@@ -182,22 +182,21 @@ markdown, list/quote buttons convert and toggle, an in-app Link/Image form repla
 - The dev harness (`pnpm dev` → `/dev-harness.html`) in the built-in browser is the way
   to measure layout and inspect the DOM; when the browser pane is hidden its CSS
   transitions freeze — `document.getAnimations().forEach(a => a.finish())` before measuring.
+- A toolbar button under a resting pointer *looks* active (hover and active were a shade
+  apart). Active now carries an accent bar; check pointer position before calling a
+  highlight stale.
 
 **Still open — start here to continue:**
-1. **Toolbar highlight can be stale right after launch** (seen: Bullet lit while the caret
-   sat in a heading of an HTML tab, after crash recovery restored tabs). Corrects on the
-   first click/selection change. Not reproduced by a normal tab switch — look at the
-   bootstrap path (`restoreSession` → `recoverCrashedBuffers` → `setActive(wasActive)`).
-2. Heading dropdown silently refuses inside a list item (schema: list items start with a
+1. Heading dropdown silently refuses inside a list item (schema: list items start with a
    paragraph). Acceptable, but it gives no feedback.
-3. `.html` files never appear in the sidebar — `vaultscan` lists `.md`/`.markdown` only
+2. `.html` files never appear in the sidebar — `vaultscan` lists `.md`/`.markdown` only
    (its doc comment also says empty folders are hidden, but they show — the comment is
    stale). HTML is advertised as first-class; showing it is a product decision.
-4. `app.security.csp` is `null` in `tauri.conf.json`. Sanitization (§3.3) is the real
+3. `app.security.csp` is `null` in `tauri.conf.json`. Sanitization (§3.3) is the real
    guard, but a CSP is cheap defence in depth — worth a deliberate decision.
-5. Pasting multi-block markdown in the *middle* of a non-empty paragraph merges the first
+4. Pasting multi-block markdown in the *middle* of a non-empty paragraph merges the first
    pasted block into it (ProseMirror's open-slice behaviour, same as HTML paste).
-6. Not Toril: on the dev machine Ctrl+Shift+S is grabbed by a global overlay hotkey
+5. Not Toril: on the dev machine Ctrl+Shift+S is grabbed by a global overlay hotkey
    (likely AMD Software) before the app sees it; File → Save As works.
 
 Driving tips: the native `<select>` popups belong to `msedgewebview2.exe`, so computer-use

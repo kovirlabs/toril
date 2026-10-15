@@ -772,10 +772,15 @@ body {
   color: var(--fg);
 }
 
+/* Active carries a mark hover never has — the accent bar — because the two
+   backgrounds are a shade apart: a hovered button read as "bold is on" (found
+   on-device, where the pointer resting on a button after a click looked like a
+   stuck format). */
 .fmt-btn[data-active="true"] {
   background: var(--active-bg);
   color: var(--active-fg);
   border-color: var(--border-strong);
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .fmt-heading {
