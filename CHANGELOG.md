@@ -82,6 +82,12 @@ this one is offered from inside the app.
 - **smol-toml 1.8.0 → 1.9.0**, the TOML front-matter parser. Its fix for a
   denial-of-service path (GHSA-r4xh-jqrq-34v2) is included; a hostile `+++` block could
   otherwise stall the properties strip.
+- **prosemirror-view 1.41.8 → 1.42.4**, the editor's view layer: fixes an XSS in paste
+  handling (GHSA-c8x8-7fp4-3x9w). Pinned with `prosemirror-model` 1.25.11 so the editor
+  runs on a single document model — the newer 1.25.12 rejects Milkdown's list
+  attributes and would break every list on save.
+- Transitive copies raised past their advisories: Milkdown's own DOMPurify (it had been
+  held at 3.4.12), and the development-only undici, postcss and Vue SSR packages.
 
 ### Changed
 - Test runner moved to vitest 5 (development only, no effect on the app).
