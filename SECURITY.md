@@ -6,7 +6,7 @@ notes are plain files on your own disk. That shapes the threat model below.
 
 ## Supported Versions
 
-Toril is at **`v1.0.0`**. Security fixes land on the latest release and `main`
+Toril is at **`v1.1.0`**. Security fixes land on the latest release and `main`
 only; there are no maintained back-release branches.
 
 | Version | Supported |
