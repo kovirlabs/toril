@@ -11,6 +11,13 @@ GitHub Release notes plus the commits that shipped in it.
 
 ## [Unreleased]
 
+## [v1.1.0] — 2026-10-15
+
+Toril can now organize your notes, not only edit them, and it can update itself.
+**This is the first release with an update path.** A copy of `v1.0.0` has no updater,
+so it will not offer this version; install `v1.1.0` by hand once. Every release after
+this one is offered from inside the app.
+
 ### Added
 - **Manage your notes from the files pane.** New note, new folder, rename and delete,
   from a right-click on any file or folder — or the `＋` button beside the folder name.
@@ -68,10 +75,20 @@ GitHub Release notes plus the commits that shipped in it.
   nothing to restore — the two used to be the same two-line stub. With no folder open,
   the files pane now offers to open one instead of only saying that none is.
 
+### Security
+- **DOMPurify 3.4.13 → 3.4.16**, the sanitizer behind every piece of HTML Toril renders
+  (CLAUDE.md §3.3). It brings upstream fixes for bypasses when risky tags are
+  allow-listed, and hardening against clobbering in XML content.
+- **smol-toml 1.8.0 → 1.9.0**, the TOML front-matter parser. Its fix for a
+  denial-of-service path (GHSA-r4xh-jqrq-34v2) is included; a hostile `+++` block could
+  otherwise stall the properties strip.
+
+### Changed
+- Test runner moved to vitest 5 (development only, no effect on the app).
+
 ### Notes
 - Updates are cryptographically signed, and an installed Toril refuses one that does not
-  verify. Setting that up is a one-time step for whoever cuts releases — see
-  `docs/RELEASE-SIGNING.md`.
+  verify. See `docs/RELEASE-SIGNING.md`.
 - Windows installers are still unsigned, so SmartScreen still warns on first run. The
   wiring for Azure Trusted Signing is in place but inert until an account exists.
 

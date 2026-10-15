@@ -126,11 +126,11 @@ HTML/RTF always serialize via `docToMarkdown`).
 (ROADMAP Movement I.5).** `v1.0.0` shipped with no update path, so every installed copy
 was stranded on the version it was installed with; that is now closed. Details and the
 two-signatures distinction are in §5 (Self-update) and `docs/RELEASE-SIGNING.md`.
-**One manual step remains before it does anything:** generate the minisign keypair, paste
-the public half into `plugins.updater.pubkey`, and add the private half as a repository
-secret. Until then `plugins.updater.pubkey` is empty, so a check degrades to a reported
-error rather than a crash, and `release.yml` refuses to cut a tag with a one-line
-explanation instead of failing deep in a Rust build.
+**The minisign keypair exists (2026-10-15, for `v1.1.0`):** the public half is in
+`plugins.updater.pubkey`, the private half and its password are the repository secrets
+`TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. `v1.1.0` is the
+first release an installed copy can update *from*; `v1.0.0` has no updater and must be
+upgraded by hand once. `release.yml` still refuses a tag if either half goes missing.
 
 The **QoL half of the same branch** has also landed: editor zoom, open-links-in-browser,
 drag-and-drop open, a recent-files list in File → Open Recent, and a real first-run
