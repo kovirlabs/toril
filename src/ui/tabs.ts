@@ -73,7 +73,20 @@ export class TabManager {
   constructor(
     private readonly container: HTMLElement,
     private readonly cb: TabCallbacks,
-  ) {}
+  ) {
+    // The strip scrolls sideways once tabs reach their minimum width, but a
+    // mouse wheel only scrolls vertically — map it, or overflowed tabs are
+    // reachable only by dragging a scrollbar the strip no longer shows.
+    container.addEventListener(
+      "wheel",
+      (e) => {
+        if (e.deltaY === 0 || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+        container.scrollLeft += e.deltaY;
+        e.preventDefault();
+      },
+      { passive: false },
+    );
+  }
 
   list(): readonly TabState[] {
     return this.items;
@@ -193,6 +206,7 @@ export class TabManager {
       const label = document.createElement("span");
       label.className = "tab-label";
       label.textContent = `${tab.dirty ? "• " : ""}${tab.name}`;
+      label.title = tab.path ?? tab.name; // the label may be ellipsized
       label.addEventListener("click", () => this.setActive(tab.id));
 
       const close = document.createElement("button");
@@ -206,6 +220,9 @@ export class TabManager {
 
       el.append(label, close);
       this.container.append(el);
+      // A re-render rebuilds the strip; without this the active tab could sit
+      // clipped past the edge — including a tab that was just opened.
+      if (tab.id === this.activeId) el.scrollIntoView?.({ block: "nearest", inline: "nearest" });
     }
   }
 }

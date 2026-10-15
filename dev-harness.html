@@ -179,6 +179,7 @@
         "plugin:event|listen": () => 0,
         "plugin:event|unlisten": () => null,
         "plugin:dialog|open": () => null,
+        "plugin:dialog|save": () => null,
         "plugin:dialog|ask": () => true,
         "plugin:dialog|message": () => null,
         // The updater, faked so the notice can actually be driven here (§8).
@@ -215,7 +216,6 @@
           return { path, content: FILES[path] };
         },
         save_file: ({ path, content }) => { FILES[path] = content; return null; },
-        save_file_as: () => null,
         merge_external: () => ({ outcome: "unchanged" }),
         list_history: () => HISTORY,
         read_snapshot: ({ path }) => FILES[path] ?? "",

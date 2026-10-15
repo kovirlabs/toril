@@ -653,13 +653,19 @@ body {
   flex: 1 1 auto;
   min-width: 0;
   overflow-x: auto;
-  scrollbar-width: thin;
+  /* Even a "thin" scrollbar took a third of the strip's height and squeezed the
+     tabs. The wheel scrolls it sideways (tabs.ts) and the active tab is kept in
+     view, so the bar carries no information worth the room. */
+  scrollbar-width: none;
 }
 
+/* Tabs give up width (label ellipsized) before the strip has to scroll at all. */
 .tab {
   display: flex;
   align-items: center;
   gap: var(--sp-1);
+  flex: 0 1 auto;
+  min-width: 7rem;
   min-height: var(--target);
   max-width: 15rem;
   padding: 0 var(--sp-1) 0 var(--sp-2);
@@ -686,6 +692,8 @@ body {
 }
 
 .tab-label {
+  flex: 1 1 auto;
+  min-width: 0;
   cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;

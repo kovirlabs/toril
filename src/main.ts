@@ -5,7 +5,7 @@
 import "@milkdown/theme-nord/style.css";
 import "./styles.css";
 import { editorViewCtx, type Editor } from "@milkdown/kit/core";
-import { createEditor, resetHistory } from "./editor/milkdown";
+import { caretOf, createEditor, resetHistory } from "./editor/milkdown";
 import { docToMarkdown, markdownToDoc } from "./editor/serializer";
 import { docToHtml, htmlToDoc } from "./editor/html-serializer";
 import type { FrontMatter, SplitFile } from "./editor/frontmatter";
@@ -48,7 +48,7 @@ import {
   restoreSnapshot,
   saveClipboardImage,
   saveFile,
-  saveFileAs,
+  pickSavePath,
   saveRecovery,
   saveSettings,
   setRecentFiles,
@@ -251,6 +251,8 @@ function onPropertiesChange(next: FrontMatter | null): void {
 // Format-aware bridges to the two canonical serializers (§3.2). The active tab's
 // `format` decides which one runs; everything else (tabs, save, session) is shared.
 function loadIntoEditor(content: string, format: DocFormat, caret: "keep" | "start" = "keep"): void {
+  // Taken before the swap: afterwards every position has been mapped to the end.
+  const before = caret === "keep" ? caretOf(editor) : "start";
   loading = true;
   if (format === "html") {
     // Front matter is a markdown-file concept; an `.html` document has none, and
@@ -263,7 +265,7 @@ function loadIntoEditor(content: string, format: DocFormat, caret: "keep" | "sta
   }
   // A load is not an edit, so it must not be undoable: Ctrl+Z after a tab
   // switch would otherwise bring the previous tab's text back into this one.
-  resetHistory(editor, caret);
+  resetHistory(editor, before);
   searchBar?.refresh(); // its highlights lived in the state that was just reset
   // The strip mirrors whatever is in the editor, including "nothing to show".
   properties?.setDocument(liveSplit.frontMatter, format !== "html");
@@ -605,9 +607,21 @@ async function doSaveAs(): Promise<void> {
   const tab = tabs.active();
   if (!tab) return;
   try {
-    const content = serializeEditor(tab.format);
-    const path = await saveFileAs(content);
+    const suggested = tab.path ? basename(tab.path) : tab.format === "html" ? "untitled.html" : "untitled.md";
+    const path = await pickSavePath(suggested, tab.format);
     if (!path) return; // cancelled
+    // Serialize for the extension chosen, not the one the tab had: both
+    // formats come off the same document, so Save As is also the conversion.
+    const format = formatForPath(path);
+    const converted = format !== tab.format;
+    // HTML has no front matter, so a note's properties cannot come along.
+    const droppedProperties = format === "html" && liveSplit.frontMatter !== null;
+    const content = serializeEditor(format);
+    await saveFile(path, content);
+    if (converted) {
+      tab.format = format;
+      loadIntoEditor(content, format); // re-split front matter / hide the strip for the new format
+    }
     tab.content = content;
     tabs.setBase(tab.id, content);
     tabs.setPath(tab.id, path, basename(path));
@@ -620,7 +634,12 @@ async function doSaveAs(): Promise<void> {
     tabs.setRemovedOnDisk(tab.id, false);
     renderConflictBar();
     updateTitle();
-    setStatus(`Saved ${basename(path)}`);
+    refreshHistory(); // the panel was still listing the old path's versions
+    setStatus(
+      droppedProperties
+        ? `Saved ${basename(path)} — HTML has no front matter, so the properties were left out`
+        : `Saved ${basename(path)}`,
+    );
     autosave?.notifyChange();
     if (workspaceRoot && path.startsWith(workspaceRoot)) scheduleSidebarRefresh();
     scheduleSessionSave(); // the tab now has a path — make it restorable
@@ -1470,6 +1489,9 @@ async function reconcile(tab: TabState): Promise<void> {
           message: action.message,
         });
         renderConflictBar();
+        // Replace whatever the status line said last — it was often an earlier
+        // "Merged external changes…", contradicting the banner beside it.
+        setStatus(`${tab.name} changed on disk — choose a version`);
         return;
     }
   }
@@ -1736,6 +1758,10 @@ async function recoverCrashedBuffers(): Promise<void> {
   }
   if (entries.length === 0) return;
 
+  // `tabs.open` activates what it opens, so every recovered Untitled buffer
+  // used to take focus in turn and the session came back on the last one
+  // rather than on the note that was being worked on.
+  const wasActive = tabs.active()?.id ?? null;
   for (const entry of entries) {
     const existing = entry.path ? tabs.byPath(entry.path) : undefined;
     if (existing) {
@@ -1769,6 +1795,7 @@ async function recoverCrashedBuffers(): Promise<void> {
       }
     }
   }
+  if (wasActive !== null && tabs.active()?.id !== wasActive) tabs.setActive(wasActive);
   updateTitle();
   setStatus(`${entries.length} document${entries.length === 1 ? "" : "s"} recovered`);
   autosave?.notifyChange(); // re-establish the journal from the live buffers

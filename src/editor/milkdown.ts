@@ -9,7 +9,7 @@ import { gfm } from "@milkdown/kit/preset/gfm";
 import { history } from "@milkdown/kit/plugin/history";
 import { listener, listenerCtx } from "@milkdown/kit/plugin/listener";
 import { $prose } from "@milkdown/kit/utils";
-import { EditorState, Plugin, PluginKey, TextSelection } from "@milkdown/kit/prose/state";
+import { EditorState, Plugin, PluginKey, TextSelection, type Selection } from "@milkdown/kit/prose/state";
 import type { EditorView } from "@milkdown/kit/prose/view";
 import { emoji } from "@milkdown/plugin-emoji";
 import { nord } from "@milkdown/theme-nord";
@@ -143,16 +143,36 @@ function reachTheEndPlugin(root: HTMLElement) {
  * editor — without it, the first Ctrl+Z after switching tabs would "undo" the
  * switch and put the previous tab's text into this one.
  *
- * `caret: "start"` is for showing a different document; `"keep"` (a reload of
- * the same one) leaves the caret where the load mapped it.
+ * `caret: "start"` is for showing a different document. For a reload of the
+ * same one (an external change merged in), pass the {@link caretOf} taken
+ * *before* the load: a whole-document replace maps every position to the end,
+ * so someone typing in the first line when a merge landed found their next
+ * keystrokes at the bottom of the note. The old offsets, clamped, are right
+ * whenever the change was below the caret and close otherwise.
  */
-export function resetHistory(editor: Editor, caret: "keep" | "start" = "keep"): void {
+export function resetHistory(editor: Editor, caret: "start" | CaretSnapshot = "start"): void {
   editor.action((ctx) => {
     const view = ctx.get(editorViewCtx);
-    const { doc, plugins, selection } = view.state;
-    view.updateState(
-      EditorState.create({ doc, plugins, selection: caret === "keep" ? selection : undefined }),
-    );
+    const { doc, plugins } = view.state;
+    let selection: Selection | undefined;
+    if (caret !== "start") {
+      const clamp = (pos: number) => Math.max(0, Math.min(pos, doc.content.size));
+      selection = TextSelection.between(doc.resolve(clamp(caret.anchor)), doc.resolve(clamp(caret.head)));
+    }
+    view.updateState(EditorState.create({ doc, plugins, selection }));
+  });
+}
+
+/** Where the caret is, as plain offsets that survive a document swap. */
+export interface CaretSnapshot {
+  anchor: number;
+  head: number;
+}
+
+export function caretOf(editor: Editor): CaretSnapshot {
+  return editor.action((ctx) => {
+    const { anchor, head } = ctx.get(editorViewCtx).state.selection;
+    return { anchor, head };
   });
 }
 

@@ -71,6 +71,7 @@ pub fn to_rtf(markdown: &str) -> String {
     let mut w = Writer {
         out: String::from(HEADER),
         depth: 0,
+        footnotes: 0,
     };
     w.blocks(root);
     w.out.push('}');
@@ -103,6 +104,9 @@ struct Writer {
     out: String,
     /// List-nesting depth, for left-indent of list items.
     depth: i32,
+    /// Footnote definitions emitted so far. comrak moves them to the end of the
+    /// document in reference order, so the running count is each one's number.
+    footnotes: u32,
 }
 
 impl Writer {
@@ -200,6 +204,25 @@ impl Writer {
                 self.out.push_str("\\pard\\sa120\\f1 ");
                 escape_into(&mut self.out, h.literal.trim_end_matches('\n'));
                 self.out.push_str("\\f0\\par\n");
+            }
+
+            // `[^1]: text` → a paragraph led by the same superscript number the
+            // reference carries. Without this the marker vanished from both ends
+            // and nothing tied the note back to its sentence.
+            NodeValue::FootnoteDefinition(_) => {
+                self.footnotes += 1;
+                let mut numbered = false;
+                for child in node.children() {
+                    if !numbered && matches!(child.data.borrow().value, NodeValue::Paragraph) {
+                        self.out
+                            .push_str(&format!("\\pard\\sa120 {{\\super {}}} ", self.footnotes));
+                        self.inlines(child);
+                        self.out.push_str("\\par\n");
+                        numbered = true;
+                    } else {
+                        self.block(child);
+                    }
+                }
             }
 
             _ => {
@@ -333,6 +356,9 @@ impl Writer {
                     self.out.push(')');
                 }
                 self.out.push(']');
+            }
+            NodeValue::FootnoteReference(r) => {
+                self.out.push_str(&format!("{{\\super {}}}", r.ix));
             }
             // Raw inline HTML → escaped literal text (never interpreted).
             NodeValue::HtmlInline(h) => escape_into(&mut self.out, h),
@@ -507,5 +533,17 @@ mod tests {
             rtf("***\n\nBelow.\n\n***\n\nEnd.\n"),
             rtf("---\n\nBelow.\n\n---\n\nEnd.\n")
         );
+    }
+
+    #[test]
+    fn numbers_footnote_references_and_definitions() {
+        let out = rtf("Claim[^a] and another[^b].\n\n[^a]: First note.\n[^b]: Second note.\n");
+        // Each reference keeps its number, and each note leads with the same one.
+        assert!(
+            out.contains(r"Claim{\super 1} and another{\super 2}."),
+            "{out}"
+        );
+        assert!(out.contains(r"{\super 1} First note."), "{out}");
+        assert!(out.contains(r"{\super 2} Second note."), "{out}");
     }
 }

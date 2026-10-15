@@ -348,7 +348,8 @@ pub fn merge3(base: &str, mine: &str, theirs: &str) -> Divergence {
     Divergence::Merged(out)
 }
 
-/// Format `now` as `YYYY-MM-DD HH-MM-SS` in UTC, using dashes throughout so the
+/// Format `now` as `YYYY-MM-DD HH-MM-SS` (read as UTC — callers wanting local
+/// wall-clock time shift the instant first), using dashes throughout so the
 /// result is a legal filename on Windows (§3.4).
 fn stamp(now: SystemTime) -> String {
     let secs = now

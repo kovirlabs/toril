@@ -72,7 +72,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::files::open_file,
             commands::files::save_file,
-            commands::files::save_file_as,
             commands::workspace::open_folder,
             commands::workspace::watch_folder,
             commands::export::markdown_to_html,

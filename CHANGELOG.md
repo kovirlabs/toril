@@ -84,6 +84,26 @@ GitHub Release notes plus the commits that shipped in it.
   "unsaved" — including after undoing back to it.
 - **A new note from the files pane didn't take the keyboard**, so the first words typed
   were lost.
+- **HTML files could not be opened from File → Open** — the picker only offered
+  Markdown. It now lists both.
+- **Save As could write HTML into a `.md` file.** It always offered `untitled.md` with a
+  Markdown filter, then wrote the tab's HTML. Save As now suggests the current name and
+  format, and writes whichever format the chosen extension means — so it is also how you
+  convert a note between Markdown and HTML.
+- **Typing in the properties strip could vanish.** A value typed after Tab, a renamed
+  property, a click on "+ Add property" right after editing — the strip redrew under the
+  move and the input was lost. A new property now also starts with its name selected.
+- **A merged external change moved the cursor** to the end of the note, mid-typing. It
+  stays where it was.
+- **Conflict copies were stamped in UTC**, so a copy made at 5:53 PM was named `21-53`.
+  They now use your clock.
+- **Exported RTF lost footnote numbers** at both the reference and the note.
+- **After a restart, the session reopened on a recovered Untitled buffer** instead of the
+  note you had been in.
+- The tab strip clipped the active tab once it overflowed. Tabs now shrink first, the
+  wheel scrolls the strip, and the active tab is always in view. Long tab and file names
+  show in full on hover. The History panel follows a Save As, and the status line no
+  longer says "merged" while the conflict banner says otherwise.
 
 ### Notes
 - Updates are cryptographically signed, and an installed Toril refuses one that does not

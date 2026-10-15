@@ -9,7 +9,8 @@ import { editorViewCtx } from "@milkdown/kit/core";
 import { redoCommand, undoCommand } from "@milkdown/kit/plugin/history";
 import { callCommand } from "@milkdown/kit/utils";
 import type { Editor } from "@milkdown/kit/core";
-import { createEditor, resetHistory } from "../src/editor/milkdown";
+import { caretOf, createEditor, resetHistory } from "../src/editor/milkdown";
+import { TextSelection } from "@milkdown/kit/prose/state";
 import { docToMarkdown, markdownToDoc } from "../src/editor/serializer";
 
 async function makeEditor(initial: string): Promise<Editor> {
@@ -65,8 +66,26 @@ describe("undo history", () => {
 
     typeAtEnd(editor, "!");
     const before = caret();
-    resetHistory(editor, "keep");
+    resetHistory(editor, caretOf(editor));
     expect(caret()).toBe(before);
+    await editor.destroy();
+  });
+
+  // Found driving the app: a merged external change moved the caret from the
+  // line being typed in to the end of the note, because a whole-document
+  // replace maps every position to the end.
+  it("keeps the caret in place across a reload of the same document", async () => {
+    const editor = await makeEditor("first line\n\nlast line\n");
+    editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx);
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 6)));
+    });
+    const snapshot = caretOf(editor);
+
+    markdownToDoc(editor, "first line\n\nlast line, changed on disk\n"); // what a merge loads
+    resetHistory(editor, snapshot);
+
+    expect(editor.action((ctx) => ctx.get(editorViewCtx).state.selection.head)).toBe(6);
     await editor.destroy();
   });
 });

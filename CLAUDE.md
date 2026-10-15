@@ -74,7 +74,7 @@ marks and `<div class="callout">`, `<details>`/`<summary>`, `<dl>`/`<dt>`/`<dd>`
 - **Figure/figcaption** — deferred (image is inline; the figure content model is awkward).
 - **Toolbar / menu affordances** for the new constructs — they currently only enter the doc via HTML
   parsing, not via buttons. A UX increment.
-- **"Save As .html" dialog filter** — Rust `save_file_as` is currently Markdown-oriented.
+- ~~**"Save As .html" dialog filter**~~ — *done* (UI sweep): Save As picks the path in the frontend (`pickSavePath`) and serializes for the **chosen** extension, so Save As is also the md⇄html conversion; `save_file_as` is gone.
 - **Interactive GUI verification** of the HTML flows (needs a human driving a window, §0) — open a real
   AI `.html` artifact, edit, save, reopen; confirm the supported subset survives and unsupported markup
   is cleanly normalized.
@@ -388,7 +388,6 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 |---|---|---|---|
 | `open_file` | `path` | `{ path, content }` | UTF-8 read |
 | `save_file` | `path, content` | `()` | **atomic** (temp + fsync + rename) — §3.1; also records version-history snapshots of the pre-existing *and* new content (best-effort, additive) |
-| `save_file_as` | `content` | `path` | native dialog |
 | `open_folder` | `path` | `FileNode[]` | recursive `.md` tree |
 | `watch_folder` | `path` | event stream | external-change events (`notify` crate) |
 | `markdown_to_html` | `content` | `html` | comrak (`mdhtml`) → **untrusted** HTML; caller sanitizes (§3.3, §7) |
@@ -488,7 +487,7 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 > per-note dir under `<app-config>/history/<hash(path)>/` — a `manifest.json` + gzip,
 > sha256-addressed blobs. It lives **outside the vault** (like recovery/session, §1) so it
 > never pollutes plain files or rides folder-sync. Capture is a **best-effort, additive**
-> side-effect of `save_file`/`save_file_as` (a failure never blocks a save, §3), taken on **both
+> side-effect of `save_file` — Save As included, it picks a path then calls `save_file` — (a failure never blocks a save, §3), taken on **both
 > sides** of the write — `snapshot_existing` records the bytes already on disk before they are
 > overwritten, so the first Toril save of an externally-authored note (the moment canonical-form
 > normalization lands) is itself undoable; content-dedup; **time-decay thinning** (keep-all <24h → hourly <7d → daily <30d → weekly,

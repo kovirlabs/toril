@@ -218,6 +218,7 @@ export class Sidebar {
     details.open = true;
     const summary = document.createElement("summary");
     summary.textContent = node.name;
+    summary.title = node.name; // the pane is narrow and long names are clipped
     summary.dataset.path = node.path;
     summary.addEventListener("contextmenu", (e) => this.openMenuForFolder(e, node.path, node));
     details.append(summary, this.renderNodes(node.children, node.path));
@@ -231,6 +232,7 @@ export class Sidebar {
     entry.className = "file-entry";
     entry.dataset.path = node.path;
     entry.textContent = node.name;
+    entry.title = node.name; // the pane is narrow and long names are clipped
     entry.addEventListener("click", () => this.cb.onOpenFile(node.path));
     entry.addEventListener("contextmenu", (e) => this.openMenuForFile(e, node));
     li.append(entry);
