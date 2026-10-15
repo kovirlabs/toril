@@ -19,6 +19,17 @@ overrides:
   # GHSA-r28c-9q8g-f849 (path traversal in sourceMappingURL auto-loading leaks
   # arbitrary .map files). Drop once both parents' ranges move past it.
   postcss@<8.5.18: 8.5.18
+  # One prosemirror-model for the whole tree, and a prosemirror-view that has
+  # the paste-handling XSS fix (GHSA-c8x8-7fp4-3x9w, fixed in 1.42.3). Milkdown
+  # 7.21.1 pins model 1.25.7; view 1.42.5+ needs model ^1.25.12, and 1.25.12
+  # started validating attr types, which Milkdown fails (list `spread` is the
+  # string "false" — the same upstream bug patches/ works around), breaking
+  # every list round-trip. view 1.42.4 needs only ^1.25.8, so 1.25.11 is the
+  # newest model that satisfies both. Letting the tree split instead (as #44
+  # did) puts two models in one editor, which breaks ProseMirror's instanceof
+  # checks at runtime and fails `tsc`. Drop both pins once Milkdown is fixed.
+  prosemirror-model: 1.25.11
+  prosemirror-view: 1.42.4
 
 # Milkdown forwards the list `spread` attribute to mdast as the string "false",
 # which is truthy, so every bullet list serializes loose. A local extendSchema
