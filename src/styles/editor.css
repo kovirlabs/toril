@@ -11,8 +11,12 @@
    content, so without it the editor refuses to shrink below what its widest
    line wants and pushes out over the rail. `overflow-x: auto` then keeps any
    genuinely-too-wide content (a wide table, a long code line) scrolling *inside*
-   the editor rather than escaping it. */
-.editor {
+   the editor rather than escaping it.
+
+   Selected by id, not `.editor`: Milkdown's nord theme also puts an `editor`
+   class on the ProseMirror element *inside* this one, so a class selector
+   styled both — doubled padding, and a second nested scroll container. */
+#editor {
   flex: 1 1 0;
   min-width: 0;
   min-height: 0;
@@ -66,8 +70,9 @@
   letter-spacing: 0.06em;
 }
 
-/* The first heading in a document should not push itself away from the top. */
-.editor .milkdown > :first-child {
+/* The first heading in a document should not push itself away from the top.
+   `.milkdown`'s own first child is the ProseMirror element, not the block. */
+.editor .milkdown .ProseMirror > :first-child {
   margin-top: 0;
 }
 
