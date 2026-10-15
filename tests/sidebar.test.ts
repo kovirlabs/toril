@@ -248,6 +248,28 @@ describe("renaming", () => {
     expect(field(container).value).toBe("CON.md");
   });
 
+  // Found on-device: Chromium fires `blur` on a focused input as it is removed,
+  // while it is still connected. Showing the error re-renders the tree, so the
+  // field's blur handler cancelled the edit and the message vanished with it.
+  // jsdom fires nothing on removal, so reproduce Chromium here.
+  it("keeps the field and message when removal blurs the input (Chromium)", async () => {
+    const onRename = vi.fn().mockRejectedValue('"bad:name" contains ":"');
+    const { container } = mount({ onRename });
+    const replace = container.replaceChildren.bind(container);
+    container.replaceChildren = (...nodes: (Node | string)[]) => {
+      container.querySelector(".sidebar-edit-input")?.dispatchEvent(new Event("blur"));
+      replace(...nodes);
+    };
+
+    rightClick(container.querySelector(".file-entry")!);
+    clickMenu("Rename…");
+    typeAndConfirm(field(container), "bad:name.md");
+    await settle();
+
+    expect(container.querySelector(".sidebar-edit-error")?.textContent).toBe('"bad:name" contains ":"');
+    expect(field(container).value).toBe("bad:name.md");
+  });
+
   it("Escape cancels without renaming", async () => {
     const onRename = vi.fn();
     const { container } = mount({ onRename });

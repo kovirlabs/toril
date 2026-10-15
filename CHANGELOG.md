@@ -104,6 +104,20 @@ GitHub Release notes plus the commits that shipped in it.
   wheel scrolls the strip, and the active tab is always in view. Long tab and file names
   show in full on hover. The History panel follows a Save As, and the status line no
   longer says "merged" while the conflict banner says otherwise.
+- **Launching in a small or minimized window shrank the side panes for good.** The saved
+  widths were squeezed to fit the window at startup and then saved back. Your chosen
+  widths now survive; only what is drawn adapts to the window.
+- **A rejected file name lost its error message** (and the name field) — the message
+  appeared and the field closed in the same instant. It now stays, and says which
+  character is the problem.
+- **The View menu's toggles had no checkmarks**, so you could not see whether Autosave
+  was on. Files Pane, Outline, Version History, Autosave and update checks now show
+  their state, and Zoom In shows its shortcut.
+- **Holding a shortcut (e.g. Ctrl+= to zoom) repeated at a fraction of the rate.**
+- **The window could open taller than the screen**, with the status bar behind the
+  taskbar. It is now kept inside the screen it opens on.
+- Hovering a link shows where it goes and that Ctrl+click opens it. Tables and code
+  blocks keep the same spacing below them as a paragraph.
 
 ### Notes
 - Updates are cryptographically signed, and an installed Toril refuses one that does not

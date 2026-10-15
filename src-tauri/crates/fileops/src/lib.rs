@@ -108,7 +108,9 @@ pub fn validate_name(name: &str) -> io::Result<()> {
         return Err(invalid("\".\" and \"..\" are not names."));
     }
     if let Some(c) = name.chars().find(|c| FORBIDDEN_CHARS.contains(c)) {
-        return Err(invalid(&format!("A name cannot contain {c}")));
+        // Quoted and ended with a period: a bare `:` or `.` at the end of the
+        // sentence read as punctuation, not as the character being refused.
+        return Err(invalid(&format!("A name cannot contain \"{c}\".")));
     }
     if name.chars().any(|c| c.is_control()) {
         return Err(invalid("A name cannot contain control characters."));

@@ -226,19 +226,26 @@ export function setRailWidth(state: PaneState, width: number, viewportWidth: num
  * Outline — deterministic, and documented in the design rather than left to
  * whichever branch happened to run last.
  */
-export function restorePaneState(settings: Settings, viewportWidth: number): PaneState {
+export function restorePaneState(settings: Settings, _viewportWidth?: number): PaneState {
   const base = defaultPaneState();
 
+  // Sanitized against the panes' own bounds only — never the window. These are
+  // the widths the user *chose*; what fits is `effectiveLayout`'s job at render
+  // (rule 6, §12b). Clamping here against the window at launch stored the
+  // squeezed result, and the next session save wrote it over the preference:
+  // starting Toril in a narrow window — or minimized, where the viewport reads
+  // 0 — permanently shrank both panes to their minimums. (Found by measuring
+  // the dev harness after it loaded in a hidden pane.)
   const sidebarVisible = settings.sidebar_visible ?? base.sidebarVisible;
   const sidebarWidth = clampWidth(
     settings.sidebar_width ?? base.sidebarWidth,
     PANE_LIMITS.sidebar,
-    viewportWidth,
+    Number.POSITIVE_INFINITY,
   );
   const railWidth = clampWidth(
     settings.rail_width ?? base.railWidth,
     PANE_LIMITS.rail,
-    viewportWidth,
+    Number.POSITIVE_INFINITY,
   );
 
   // Prefer the new fields; fall back to the legacy pair only when the rail has

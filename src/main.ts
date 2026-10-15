@@ -51,6 +51,7 @@ import {
   pickSavePath,
   saveRecovery,
   saveSettings,
+  setMenuChecks,
   setRecentFiles,
   showAbout,
   suggestNoteName,
@@ -59,7 +60,7 @@ import {
   watchFolder,
   writeConflictCopy,
 } from "./ipc";
-import { ActionDispatcher } from "./actions";
+import { ActionDispatcher, type ActionSource } from "./actions";
 import { AutosaveScheduler, type RecoveryEntry, selectDirtySaved, snapshotDirty } from "./autosave";
 import { isExternallyOpenable, linkHrefFrom } from "./links";
 import { isAtOrUnder, selectOpenable } from "./paths";
@@ -863,6 +864,7 @@ function applyPanes(): void {
   }
 
   rail?.setActive(panes.railTab);
+  syncMenuChecks();
 
   const sidebarHandle = document.querySelector<HTMLElement>("#resize-sidebar");
   if (sidebarHandle) syncHandleValue(sidebarHandle, layout.sidebarWidth, PANE_LIMITS.sidebar);
@@ -995,8 +997,32 @@ async function restoreVersion(path: string, hash: string): Promise<void> {
   setStatus(`Restored a previous version of ${basename(path)}`);
 }
 
+/**
+ * Push every View-menu toggle's state to the native menu. Cheap, idempotent and
+ * best-effort: a stale tick is cosmetic, never worth an error over.
+ */
+let sentMenuChecks = "";
+function syncMenuChecks(): void {
+  const layout = effectiveLayout(panes, window.innerWidth);
+  const checks = {
+    menu_toggle_sidebar: layout.sidebarVisible,
+    menu_toggle_outline: layout.railVisible && panes.railTab === "outline",
+    menu_toggle_history: layout.railVisible && panes.railTab === "history",
+    menu_toggle_autosave: autosaveEnabled,
+    menu_toggle_update_check: updateState.enabled,
+  };
+  // applyPanes runs on every resize event; only cross the IPC boundary on a change.
+  const key = JSON.stringify(checks);
+  if (key === sentMenuChecks) return;
+  sentMenuChecks = key;
+  void setMenuChecks(checks).catch(() => {
+    sentMenuChecks = ""; // let the next call retry
+  });
+}
+
 function toggleAutosave(): void {
   autosaveEnabled = !autosaveEnabled;
+  syncMenuChecks();
   autosave?.setConfig({ enabled: autosaveEnabled });
   setStatus(`Autosave ${autosaveEnabled ? "on" : "off"}`);
   scheduleSessionSave();
@@ -1093,6 +1119,53 @@ function installLinkOpener(root: HTMLElement): void {
     }
     void openExternal(href).catch((err: unknown) => setStatus(`Could not open link: ${String(err)}`));
   });
+  installLinkTip(root);
+}
+
+/**
+ * Hovering a link shows where it goes and how to follow it. Nothing used to:
+ * a plain click (correctly) only places the caret, so the one way to open a link
+ * was a shortcut the UI never mentioned.
+ *
+ * The tip lives in <body>, not on the link: a `title` set on the anchor would be
+ * a DOM mutation inside the editable, which ProseMirror reads back into the
+ * document as the link's own title attribute — an edit nobody made (§3.2).
+ */
+function installLinkTip(root: HTMLElement): void {
+  const tip = document.createElement("div");
+  tip.className = "link-tip";
+  tip.hidden = true;
+  tip.setAttribute("role", "tooltip");
+  document.body.append(tip);
+
+  const modifier = /Mac|iPhone|iPad/.test(navigator.platform) ? "Cmd" : "Ctrl";
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const hide = () => {
+    clearTimeout(timer);
+    tip.hidden = true;
+  };
+
+  root.addEventListener("mouseover", (e) => {
+    const href = linkHrefFrom(e.target);
+    const anchor = e.target instanceof Element ? e.target.closest("a") : null;
+    if (!href || !anchor) return;
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      tip.textContent = isExternallyOpenable(href)
+        ? `${href} — ${modifier}+click to open`
+        : `${href} — not a web link, so it is not opened`;
+      tip.hidden = false;
+      const box = anchor.getBoundingClientRect();
+      const left = Math.min(box.left, window.innerWidth - tip.offsetWidth - 8);
+      tip.style.left = `${Math.max(8, left)}px`;
+      tip.style.top = `${box.bottom + 6}px`;
+    }, 400);
+  });
+  root.addEventListener("mouseout", (e) => {
+    if (linkHrefFrom(e.target)) hide();
+  });
+  root.addEventListener("keydown", hide);
+  root.addEventListener("scroll", hide, true);
 }
 
 // ---- Editor zoom -----------------------------------------------------------
@@ -1126,6 +1199,7 @@ function setZoom(next: number): void {
 
 function toggleUpdateCheck(): void {
   updateState.enabled = !updateState.enabled;
+  syncMenuChecks();
   setStatus(`Update checks ${updateState.enabled ? "on" : "off"}`);
   scheduleSessionSave();
 }
@@ -1706,6 +1780,7 @@ async function restoreSession(): Promise<void> {
   autosave?.setConfig({ enabled: autosaveEnabled, debounceMs: autosaveDebounceMs });
 
   if (settings.update_check !== null) updateState.enabled = settings.update_check;
+  syncMenuChecks(); // the saved autosave / update-check state, ticked
   updateState.lastCheckedAt = settings.update_last_checked;
   updateState.skippedVersion = settings.update_skipped_version;
 
@@ -1846,18 +1921,18 @@ const dispatcher = new ActionDispatcher();
  * the menu and from the webview keydown. The dispatcher collapses the pair; see
  * `actions.ts` for why both doors are kept rather than one being disabled.
  */
-function runAction(id: string): void {
+function runAction(id: string, source?: ActionSource): void {
   // Recent-file items are generated, so they cannot live in the static ACTIONS
   // table — their ids carry an index into `recentFiles`. Matched before the
   // table lookup, and still routed through the dispatcher so a menu item with
   // an accelerator could be added later without reintroducing the double-fire.
   const recent = /^menu_recent_(\d+)$/.exec(id);
   if (recent) {
-    dispatcher.dispatch(id, () => void openRecent(Number(recent[1])));
+    dispatcher.dispatch(id, () => void openRecent(Number(recent[1])), source);
     return;
   }
   const action = ACTIONS[id];
-  if (action) dispatcher.dispatch(id, action);
+  if (action) dispatcher.dispatch(id, action, source);
 }
 
 function installShortcuts(): void {
@@ -1866,7 +1941,7 @@ function installShortcuts(): void {
     const id = shortcutAction(e);
     if (!id) return;
     e.preventDefault();
-    runAction(id);
+    runAction(id, "key");
   });
 }
 
@@ -2031,7 +2106,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   installShortcuts();
   installResizers();
   installLinkOpener(editorRoot);
-  void onMenuAction(runAction); // native menu → the same named actions as the keyboard
+  void onMenuAction((id) => runAction(id, "menu")); // native menu → the same named actions as the keyboard
   // Guard against losing unsaved work on close, and clear the recovery journal
   // on every clean close so a leftover journal always means "we crashed" (§3).
   void installCloseGuard(

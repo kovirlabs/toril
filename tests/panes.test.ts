@@ -133,6 +133,24 @@ describe("restorePaneState", () => {
     expect(1280 - (sidebarWidth + railWidth)).toBeGreaterThan(400);
   });
 
+  it("keeps the chosen widths when launched into a small (or minimized) window", () => {
+    // A minimized window reports a 0px viewport. Restore used to clamp against
+    // it and *store* the minimums, so widening never gave the layout back.
+    const saved = emptySettings({ sidebar_width: 300, rail_width: 320 });
+    for (const viewport of [0, 700, 900]) {
+      const state = restorePaneState(saved, viewport);
+      expect(state.sidebarWidth).toBe(300);
+      expect(state.railWidth).toBe(320);
+      expect(effectiveLayout(state, 1600)).toMatchObject({ sidebarWidth: 300, railWidth: 320 });
+    }
+  });
+
+  it("still sanitizes a corrupt or out-of-range saved width", () => {
+    const state = restorePaneState(emptySettings({ sidebar_width: Number.NaN, rail_width: 9999 }), WIDE);
+    expect(state.sidebarWidth).toBe(PANE_LIMITS.sidebar.preferred);
+    expect(state.railWidth).toBe(PANE_LIMITS.rail.max);
+  });
+
   it("prefers the new fields over the legacy pair", () => {
     const state = restorePaneState(
       emptySettings({ rail_visible: false, rail_tab: "history", outline_visible: true }),

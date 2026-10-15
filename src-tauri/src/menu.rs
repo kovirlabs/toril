@@ -33,8 +33,74 @@
 //! add — but do not read this as a verified mnemonic. Tracked as A2 in
 //! `docs/ON-DEVICE-VERIFICATION.md`.
 
-use tauri::menu::{Menu, MenuBuilder, MenuEvent, MenuItemBuilder, SubmenuBuilder};
-use tauri::{AppHandle, Emitter, Runtime};
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+use tauri::menu::{
+    CheckMenuItem, CheckMenuItemBuilder, Menu, MenuBuilder, MenuEvent, MenuItemBuilder,
+    SubmenuBuilder,
+};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
+
+/// Checked state of the View menu's toggles, keyed by item id.
+///
+/// The frontend owns the truth (pane layout, autosave, update checks) and
+/// reports it through [`set_menu_checks`]. It is held here as well because the
+/// whole menu is rebuilt whenever the recent-files list changes, and a rebuilt
+/// toggle must come back with its tick rather than unticked.
+#[derive(Default)]
+pub struct MenuChecks(Mutex<HashMap<String, bool>>);
+
+fn is_checked<R: Runtime>(app: &AppHandle<R>, id: &str) -> bool {
+    app.try_state::<MenuChecks>()
+        .and_then(|state| state.0.lock().ok().and_then(|map| map.get(id).copied()))
+        .unwrap_or(false)
+}
+
+/// A View-menu toggle: a real check item, ticked from [`MenuChecks`].
+///
+/// These were plain items, so "Autosave" gave no hint whether autosave was on —
+/// the only way to find out was to click it and read the status line, which
+/// also flipped it.
+fn toggle<R: Runtime>(
+    app: &AppHandle<R>,
+    id: &str,
+    label: &str,
+    accelerator: Option<&str>,
+) -> tauri::Result<CheckMenuItem<R>> {
+    let mut builder = CheckMenuItemBuilder::with_id(id, label).checked(is_checked(app, id));
+    if let Some(accelerator) = accelerator {
+        builder = builder.accelerator(accelerator);
+    }
+    builder.build(app)
+}
+
+/// Record the toggles' state and tick the live menu to match.
+#[tauri::command]
+pub fn set_menu_checks(app: AppHandle, checks: HashMap<String, bool>) -> Result<(), String> {
+    if let Some(state) = app.try_state::<MenuChecks>()
+        && let Ok(mut map) = state.0.lock()
+    {
+        map.extend(checks.iter().map(|(id, on)| (id.clone(), *on)));
+    }
+    let Some(menu) = app.menu() else {
+        return Ok(());
+    };
+    // `Menu::get` only looks at top-level entries; the toggles live in View.
+    for entry in menu.items().map_err(|e| e.to_string())? {
+        let Some(submenu) = entry.as_submenu() else {
+            continue;
+        };
+        for (id, on) in &checks {
+            if let Some(item) = submenu.get(id.as_str())
+                && let Some(check) = item.as_check_menuitem()
+            {
+                check.set_checked(*on).map_err(|e| e.to_string())?;
+            }
+        }
+    }
+    Ok(())
+}
 
 /// Build the application menu with an empty recent-files list.
 ///
@@ -154,21 +220,29 @@ fn build_with_recent<R: Runtime>(app: &AppHandle<R>, recent: &[String]) -> tauri
     let find = MenuItemBuilder::with_id("menu_find", "&Find && Replace…")
         .accelerator("CmdOrCtrl+F")
         .build(app)?;
-    let toggle_sidebar = MenuItemBuilder::with_id("menu_toggle_sidebar", "Files &Pane")
-        .accelerator("CmdOrCtrl+\\")
-        .build(app)?;
+    let toggle_sidebar = toggle(
+        app,
+        "menu_toggle_sidebar",
+        "Files &Pane",
+        Some("CmdOrCtrl+\\"),
+    )?;
     // One rail, two panels: these select a tab rather than toggling independent
     // columns, so choosing Outline while History is open switches instead of
     // widening the chrome (see `src/ui/panes.ts`).
-    let toggle_outline = MenuItemBuilder::with_id("menu_toggle_outline", "&Outline")
-        .accelerator("CmdOrCtrl+Shift+\\")
-        .build(app)?;
-    let toggle_history =
-        MenuItemBuilder::with_id("menu_toggle_history", "Version &History").build(app)?;
+    let toggle_outline = toggle(
+        app,
+        "menu_toggle_outline",
+        "&Outline",
+        Some("CmdOrCtrl+Shift+\\"),
+    )?;
+    let toggle_history = toggle(app, "menu_toggle_history", "Version &History", None)?;
     // Zoom scales the writing surface, not the chrome — the OS already scales
     // the whole UI, and a bigger tab bar is not what a tired writer wants.
+    // `=`, not `Plus`: Windows renders no label for a Plus accelerator, so Zoom In
+    // was the one zoom item with an empty shortcut column — and Ctrl+= (the
+    // unshifted key) is what is actually pressed. The frontend accepts both.
     let zoom_in = MenuItemBuilder::with_id("menu_zoom_in", "Zoom &In")
-        .accelerator("CmdOrCtrl+Plus")
+        .accelerator("CmdOrCtrl+=")
         .build(app)?;
     let zoom_out = MenuItemBuilder::with_id("menu_zoom_out", "Zoom O&ut")
         .accelerator("CmdOrCtrl+-")
@@ -177,11 +251,13 @@ fn build_with_recent<R: Runtime>(app: &AppHandle<R>, recent: &[String]) -> tauri
         .accelerator("CmdOrCtrl+0")
         .build(app)?;
 
-    let toggle_autosave =
-        MenuItemBuilder::with_id("menu_toggle_autosave", "&Autosave").build(app)?;
-    let toggle_update_check =
-        MenuItemBuilder::with_id("menu_toggle_update_check", "Check for &Updates on Launch")
-            .build(app)?;
+    let toggle_autosave = toggle(app, "menu_toggle_autosave", "&Autosave", None)?;
+    let toggle_update_check = toggle(
+        app,
+        "menu_toggle_update_check",
+        "Check for &Updates on Launch",
+        None,
+    )?;
 
     let view = SubmenuBuilder::new(app, "&View")
         .item(&find)

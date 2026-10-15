@@ -315,6 +315,14 @@ export async function relaunchApp(): Promise<void> {
  * `menu_recent_3` — and the frontend resolves that against its own list, so an
  * arbitrary path never has to survive a round trip through a menu id.
  */
+/**
+ * Tick the View menu's toggles to match the app (keys are menu item ids). The
+ * menu cannot ask; without this every toggle showed unticked whatever its state.
+ */
+export function setMenuChecks(checks: Record<string, boolean>): Promise<void> {
+  return invoke<void>("set_menu_checks", { checks });
+}
+
 export function setRecentFiles(paths: string[]): Promise<void> {
   return invoke<void>("set_recent_files", { paths });
 }

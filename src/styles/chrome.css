@@ -293,6 +293,22 @@ body {
   font-size: var(--text-sm);
 }
 
+/* Where a hovered link goes, and how to follow it (main.ts installLinkTip). */
+.link-tip {
+  position: fixed;
+  z-index: var(--z-dialog);
+  max-width: min(32rem, calc(100vw - 16px));
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--chrome-raised);
+  box-shadow: var(--shadow-panel);
+  color: var(--fg);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+
 .context-menu-item {
   display: flex;
   align-items: center;

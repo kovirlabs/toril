@@ -184,6 +184,12 @@
 }
 
 /* ---- Tables -------------------------------------------------------------- */
+/* The same bottom rhythm as a paragraph. Neither had one, so a code block
+   directly under a table sat flush against it, border on border. */
+.editor .milkdown .ProseMirror :is(table, pre) {
+  margin: 0 0 var(--sp-3); /* outranks the nord theme's prose margins */
+}
+
 .editor .milkdown :where(tr, th, td) {
   border-color: var(--border);
 }

@@ -69,6 +69,13 @@ pub fn run() {
         .on_menu_event(menu::on_event)
         .manage(launch_path)
         .manage(WatcherState::default())
+        .manage(menu::MenuChecks::default())
+        .setup(|app| {
+            if let Some(win) = app.get_webview_window("main") {
+                fit_to_work_area(&win);
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::files::open_file,
             commands::files::save_file,
@@ -102,15 +109,109 @@ pub fn run() {
             commands::secrets::has_api_key,
             commands::secrets::list_api_keys,
             menu::set_recent_files,
+            menu::set_menu_checks,
             take_launch_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
 
+/// A window rectangle in physical pixels: x, y, width, height.
+type Rect = (i32, i32, u32, u32);
+
+/// Where `window` must go to lie inside `area`, or `None` if it already does.
+///
+/// Shrinks first (never below nothing), then slides it in. Pure so it is tested
+/// without a display.
+fn fit_rect(window: Rect, area: Rect) -> Option<Rect> {
+    let (wx, wy, ww, wh) = window;
+    let (ax, ay, aw, ah) = area;
+    let w = ww.min(aw);
+    let h = wh.min(ah);
+    let max_x = ax + i32::try_from(aw - w).unwrap_or(i32::MAX);
+    let max_y = ay + i32::try_from(ah - h).unwrap_or(i32::MAX);
+    let x = wx.clamp(ax, max_x);
+    let y = wy.clamp(ay, max_y);
+    let fitted = (x, y, w, h);
+    (fitted != window).then_some(fitted)
+}
+
+/// Keep the window on the screen it opens on.
+///
+/// Found on a 1280×720 (scaled) laptop: the default 700px-tall window, plus its
+/// frame, is taller than the 672px work area, so the status bar opened behind
+/// the taskbar — and the window-state plugin then faithfully restored that
+/// every launch. Runs after the plugin's restore; a maximized window is left
+/// alone, and one that already fits is not touched at all.
+fn fit_to_work_area<R: tauri::Runtime>(win: &tauri::WebviewWindow<R>) {
+    if win.is_maximized().unwrap_or(false) {
+        return;
+    }
+    let (Ok(Some(monitor)), Ok(pos), Ok(outer), Ok(inner)) = (
+        win.current_monitor(),
+        win.outer_position(),
+        win.outer_size(),
+        win.inner_size(),
+    ) else {
+        return;
+    };
+    let work = monitor.work_area();
+    let area = (
+        work.position.x,
+        work.position.y,
+        work.size.width,
+        work.size.height,
+    );
+    let Some((x, y, w, h)) = fit_rect((pos.x, pos.y, outer.width, outer.height), area) else {
+        return;
+    };
+    // `set_size` takes the inner size; the frame is whatever outer adds to it.
+    let frame_w = outer.width.saturating_sub(inner.width);
+    let frame_h = outer.height.saturating_sub(inner.height);
+    let _ = win.set_size(tauri::PhysicalSize::new(
+        w.saturating_sub(frame_w),
+        h.saturating_sub(frame_h),
+    ));
+    let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
+}
+
 #[cfg(test)]
 mod tests {
-    use super::launch_path_from_args;
+    use super::{fit_rect, launch_path_from_args};
+
+    #[test]
+    fn a_window_that_fits_is_left_alone() {
+        assert_eq!(fit_rect((100, 50, 800, 600), (0, 0, 1920, 1032)), None);
+    }
+
+    #[test]
+    fn a_window_taller_than_the_work_area_is_shrunk_to_it() {
+        // The on-device case: 1280x672 work area, a window ~742 tall.
+        assert_eq!(
+            fit_rect((140, 0, 1016, 742), (0, 0, 1280, 672)),
+            Some((140, 0, 1016, 672))
+        );
+    }
+
+    #[test]
+    fn a_window_hanging_off_an_edge_is_slid_back_on() {
+        assert_eq!(
+            fit_rect((1500, 900, 600, 400), (0, 0, 1920, 1040)),
+            Some((1320, 640, 600, 400))
+        );
+        assert_eq!(
+            fit_rect((-50, -20, 600, 400), (0, 0, 1920, 1040)),
+            Some((0, 0, 600, 400))
+        );
+    }
+
+    #[test]
+    fn works_on_a_second_monitor_with_an_offset_origin() {
+        assert_eq!(
+            fit_rect((1900, 100, 800, 1200), (1920, 0, 1920, 1040)),
+            Some((1920, 0, 800, 1040))
+        );
+    }
 
     fn args(parts: &[&str]) -> Vec<String> {
         parts.iter().map(|s| s.to_string()).collect()
