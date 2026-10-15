@@ -42,8 +42,8 @@ the feature-by-feature record.
   included, it links and its tests run) and `cargo clippy --workspace --all-targets` are available
   and **should be run**, not skipped. Don't assume the Rust side can't be compiled here; check before
   concluding that. (On a box genuinely missing the webview deps, the fallback in §Commands applies.)
-- Tab switching does **not** preserve per-tab undo history (single shared editor, content swapped).
-  Acceptable for now.
+- Tab switching does **not** preserve per-tab undo history (single shared editor, content swapped):
+  every load resets it via `resetHistory`, so undo is per-visit. Acceptable for now.
 - **An unused link reference definition is deleted on save.** `[ex]: https://example.com` with no
   `[…][ex]` referencing it does not survive a round-trip: nothing in the ProseMirror doc records an
   unreferenced definition, so remark cannot re-emit it. Pre-existing remark/Milkdown behavior, not
@@ -74,7 +74,7 @@ marks and `<div class="callout">`, `<details>`/`<summary>`, `<dl>`/`<dt>`/`<dd>`
 - **Figure/figcaption** — deferred (image is inline; the figure content model is awkward).
 - **Toolbar / menu affordances** for the new constructs — they currently only enter the doc via HTML
   parsing, not via buttons. A UX increment.
-- **"Save As .html" dialog filter** — Rust `save_file_as` is currently Markdown-oriented.
+- ~~**"Save As .html" dialog filter**~~ — *done* (UI sweep): Save As picks the path in the frontend (`pickSavePath`) and serializes for the **chosen** extension, so Save As is also the md⇄html conversion; `save_file_as` is gone.
 - **Interactive GUI verification** of the HTML flows (needs a human driving a window, §0) — open a real
   AI `.html` artifact, edit, save, reopen; confirm the supported subset survives and unsupported markup
   is cleanly normalized.
@@ -145,6 +145,66 @@ New crate `crates/fileops` holds the rules; `commands/entries.rs` wraps it; the 
 argument are in §5 (Sidebar file operations). Still open from the branch: drag-to-move in
 the tree, multi-select, and a trash browser (`list_trash` has a command and a wrapper but
 no UI, so Undo reaches only the most recent delete).
+
+**On-device UI sweep — 2026-10-14 (`fix/ui-sweep-2026-10`).** The dev build was driven by hand
+(`pnpm tauri dev` on Windows/WebView2) across every screen. Six defects were fixed and verified
+in the window; see `CHANGELOG.md` → Unreleased → Fixed. Lessons that bind future work:
+- **Never call `window.confirm` / `window.alert`.** `tauri-plugin-dialog` replaces them with
+  *async* functions, so `if (!confirm(…))` tests a Promise — always truthy — and the guard
+  passes without waiting. Use `confirmDiscard` (`ipc.ts`, awaited). `window.prompt` is *not*
+  overridden, which is why the link/image buttons still work.
+- **Undo exists now (`@milkdown/kit/plugin/history`), and every load resets it.**
+  `loadIntoEditor` calls `resetHistory` (`milkdown.ts`) after the swap: a tab switch is a
+  whole-document replace, and an undoable one would restore the previous tab's text.
+  `caret: "start"` for a tab activation, `"keep"` for a reload of the same file.
+- **Dirty means "differs from disk".** `onEditorChange` clears dirty when the serialized
+  text equals `tab.base` — the 200 ms listener debounce otherwise re-dirties a tab saved
+  straight after a keystroke.
+- **The shared scroller (`#editor`) keeps per-tab `scrollTop`** (`TabState.scrollTop`).
+- `reachTheEndPlugin` (`milkdown.ts`) owns clicks outside the ProseMirror element and ↓ from
+  the last textblock; it appends a paragraph when the doc ends in a non-writable block.
+
+**Second and third passes (2026-10-15)** fixed everything the first left open (paste parses
+markdown, list/quote buttons convert and toggle, an in-app Link/Image form replaced
+`window.prompt`) plus another round — see CHANGELOG → Unreleased → Fixed. More lessons:
+- **Chromium fires `blur` on a focused input *while removing it*** (it is still connected).
+  Any "blur cancels / commits" handler must ignore blurs caused by its own re-render
+  (`sidebar.ts` `rendering` flag). jsdom fires nothing, so gates need to simulate it.
+- **Commit-on-`change` + synchronous re-render destroys the next control** — `change`
+  fires on the Tab/click that moves focus. `properties.ts` defers drawing until the
+  interaction settles and makes handlers read the *current* rows, never captured ones.
+- **Never mutate DOM inside the editable** (e.g. a `title` on a link) — ProseMirror reads
+  it back as a document change. Hover UI lives in `<body>` (`installLinkTip`).
+- **Persisted pane widths are never viewport-clamped on restore** (a minimized launch
+  reports width 0). Only `effectiveLayout` adapts, at render.
+- Save As serializes for the **chosen** extension (it is also md⇄html conversion); the
+  Rust `save_file_as` command is gone — the path is picked in `pickSavePath`.
+- The dev harness (`pnpm dev` → `/dev-harness.html`) in the built-in browser is the way
+  to measure layout and inspect the DOM; when the browser pane is hidden its CSS
+  transitions freeze — `document.getAnimations().forEach(a => a.finish())` before measuring.
+- A toolbar button under a resting pointer *looks* active (hover and active were a shade
+  apart). Active now carries an accent bar; check pointer position before calling a
+  highlight stale.
+
+**Still open — start here to continue:**
+1. Heading dropdown silently refuses inside a list item (schema: list items start with a
+   paragraph). Acceptable, but it gives no feedback.
+2. `.html` files never appear in the sidebar — `vaultscan` lists `.md`/`.markdown` only
+   (its doc comment also says empty folders are hidden, but they show — the comment is
+   stale). HTML is advertised as first-class; showing it is a product decision.
+3. `app.security.csp` is `null` in `tauri.conf.json`. Sanitization (§3.3) is the real
+   guard, but a CSP is cheap defence in depth — worth a deliberate decision.
+4. Pasting multi-block markdown in the *middle* of a non-empty paragraph merges the first
+   pasted block into it (ProseMirror's open-slice behaviour, same as HTML paste).
+5. Not Toril: on the dev machine Ctrl+Shift+S is grabbed by a global overlay hotkey
+   (likely AMD Software) before the app sees it; File → Save As works.
+
+Driving tips: the native `<select>` popups belong to `msedgewebview2.exe`, so computer-use
+needs that granted too (request it *while* a dropdown is open — it only resolves then), or
+they screenshot as black boxes. File dialogs accept typing only in the File name box. A
+Rust edit restarts the app (and a `.ts` edit reloads the page), so re-maximize and expect
+"N documents recovered". Test vault: `~/toril-test-vault`, also under
+`OneDrive\Documents\toril-test-vault`, which the folder dialog opens to.
 
 **Next:** finish Phase 4 — remaining is Azure Trusted Signing once an account exists, and
 on-device verification. A backlog of further QoL features is in §13. The
@@ -351,7 +411,6 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 |---|---|---|---|
 | `open_file` | `path` | `{ path, content }` | UTF-8 read |
 | `save_file` | `path, content` | `()` | **atomic** (temp + fsync + rename) — §3.1; also records version-history snapshots of the pre-existing *and* new content (best-effort, additive) |
-| `save_file_as` | `content` | `path` | native dialog |
 | `open_folder` | `path` | `FileNode[]` | recursive `.md` tree |
 | `watch_folder` | `path` | event stream | external-change events (`notify` crate) |
 | `markdown_to_html` | `content` | `html` | comrak (`mdhtml`) → **untrusted** HTML; caller sanitizes (§3.3, §7) |
@@ -451,7 +510,7 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 > per-note dir under `<app-config>/history/<hash(path)>/` — a `manifest.json` + gzip,
 > sha256-addressed blobs. It lives **outside the vault** (like recovery/session, §1) so it
 > never pollutes plain files or rides folder-sync. Capture is a **best-effort, additive**
-> side-effect of `save_file`/`save_file_as` (a failure never blocks a save, §3), taken on **both
+> side-effect of `save_file` — Save As included, it picks a path then calls `save_file` — (a failure never blocks a save, §3), taken on **both
 > sides** of the write — `snapshot_existing` records the bytes already on disk before they are
 > overwritten, so the first Toril save of an externally-authored note (the moment canonical-form
 > normalization lands) is itself undoable; content-dedup; **time-decay thinning** (keep-all <24h → hourly <7d → daily <30d → weekly,

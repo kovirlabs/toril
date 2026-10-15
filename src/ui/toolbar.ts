@@ -28,10 +28,12 @@ import { callCommand } from "@milkdown/kit/utils";
 import type { $Command } from "@milkdown/kit/utils";
 import type { Node as ProseNode } from "@milkdown/kit/prose/model";
 import type { EditorState } from "@milkdown/kit/prose/state";
+import { lift } from "@milkdown/kit/prose/commands";
 import {
   createCodeBlockCommand,
   insertHrCommand,
   insertImageCommand,
+  liftListItemCommand,
   toggleEmphasisCommand,
   toggleInlineCodeCommand,
   toggleLinkCommand,
@@ -94,6 +96,90 @@ function toggleTaskList(editor: Editor): void {
   });
 }
 
+/** The innermost list around the caret, and the item of it the caret is in. */
+function findList(
+  state: EditorState,
+): { list: ProseNode; listPos: number; item: ProseNode; itemPos: number } | null {
+  const { $from } = state.selection;
+  for (let d = $from.depth; d > 1; d--) {
+    if ($from.node(d).type.name !== "list_item") continue;
+    return {
+      list: $from.node(d - 1),
+      listPos: $from.before(d - 1),
+      item: $from.node(d),
+      itemPos: $from.before(d),
+    };
+  }
+  return null;
+}
+
+type ListKind = "bullet_list" | "ordered_list";
+
+/**
+ * The Bullet and Numbered buttons. They used to only *wrap* — inside an
+ * existing list they did nothing at all, so there was no way to turn a numbered
+ * list into bullets, a task back into a plain item, or a list item back into a
+ * paragraph, short of retyping. Now, like every other editor:
+ *
+ * - not in a list          → wrap the paragraph in one (unchanged)
+ * - in the other kind      → convert the whole list
+ * - in a task item, Bullet → make it a plain bullet
+ * - in the same kind       → lift the item out to a paragraph
+ */
+function toggleList(editor: Editor, kind: ListKind): void {
+  editor.action((ctx) => {
+    const view = ctx.get(editorViewCtx);
+    const found = findList(view.state);
+    if (!found) {
+      callCommand(kind === "bullet_list" ? wrapInBulletListCommand.key : wrapInOrderedListCommand.key)(ctx);
+      return;
+    }
+    const { state } = view;
+    if (found.list.type.name === kind) {
+      if (kind === "bullet_list" && found.item.attrs.checked != null) {
+        view.dispatch(
+          state.tr.setNodeMarkup(found.itemPos, undefined, { ...found.item.attrs, checked: null }),
+        );
+      } else {
+        callCommand(liftListItemCommand.key)(ctx);
+      }
+      return;
+    }
+    // Convert: the list node *and* every item's own listType/label. Milkdown's
+    // list-order sync turns a bullet list whose first item still says
+    // "ordered" straight back into a numbered one, so the items must agree.
+    const ordered = kind === "ordered_list";
+    let tr = state.tr.setNodeMarkup(found.listPos, state.schema.nodes[kind], {
+      ...found.list.attrs,
+      ...(ordered ? { order: 1 } : {}),
+    });
+    found.list.forEach((child, offset) => {
+      if (child.type.name !== "list_item") return;
+      tr = tr.setNodeMarkup(found.listPos + 1 + offset, undefined, {
+        ...child.attrs,
+        listType: ordered ? "ordered" : "bullet",
+        label: ordered ? child.attrs.label : "•",
+      });
+    });
+    view.dispatch(tr);
+  });
+}
+
+/** Blockquote button: wrap, or — inside a quote already — unwrap. */
+function toggleBlockquote(editor: Editor): void {
+  editor.action((ctx) => {
+    const view = ctx.get(editorViewCtx);
+    const { $from } = view.state.selection;
+    for (let d = $from.depth; d > 0; d--) {
+      if ($from.node(d).type.name === "blockquote") {
+        lift(view.state, view.dispatch);
+        return;
+      }
+    }
+    callCommand(wrapInBlockquoteCommand.key)(ctx);
+  });
+}
+
 /**
  * Strip every inline mark (bold/italic/strike/code/link) from the selection.
  * Block type is left alone — use the heading control's "Paragraph" entry to
@@ -131,10 +217,10 @@ export const editorCommands = {
   italic: (editor: Editor) => run(editor, toggleEmphasisCommand),
   strikethrough: (editor: Editor) => run(editor, toggleStrikethroughCommand),
   inlineCode: (editor: Editor) => run(editor, toggleInlineCodeCommand),
-  bulletList: (editor: Editor) => run(editor, wrapInBulletListCommand),
-  orderedList: (editor: Editor) => run(editor, wrapInOrderedListCommand),
+  bulletList: (editor: Editor) => toggleList(editor, "bullet_list"),
+  orderedList: (editor: Editor) => toggleList(editor, "ordered_list"),
   taskList: toggleTaskList,
-  blockquote: (editor: Editor) => run(editor, wrapInBlockquoteCommand),
+  blockquote: toggleBlockquote,
   codeBlock: (editor: Editor) => run(editor, createCodeBlockCommand),
   hr: (editor: Editor) => run(editor, insertHrCommand),
   table: (editor: Editor) => run(editor, insertTableCommand),
@@ -285,7 +371,7 @@ export class FormattingToolbar {
     this.refresh();
   }
 
-  private makeButton(spec: ButtonSpec, onClick: () => void): HTMLButtonElement {
+  private makeButton(spec: ButtonSpec, onClick: (btn: HTMLButtonElement) => void): HTMLButtonElement {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "fmt-btn";
@@ -295,7 +381,7 @@ export class FormattingToolbar {
     // before the command runs.
     btn.addEventListener("mousedown", (e) => {
       e.preventDefault();
-      onClick();
+      onClick(btn);
     });
     return btn;
   }
@@ -343,7 +429,7 @@ export class FormattingToolbar {
 
     // Inline marks.
     for (const spec of MARK_BUTTONS) {
-      const btn = this.makeButton(spec, () => this.onButton(spec));
+      const btn = this.makeButton(spec, (anchor) => this.onButton(spec, anchor));
       if (spec.mark) this.markButtons.set(spec.mark, btn);
       this.container.append(btn);
     }
@@ -351,7 +437,7 @@ export class FormattingToolbar {
 
     // Block structures.
     for (const spec of BLOCK_BUTTONS) {
-      const btn = this.makeButton(spec, () => this.onButton(spec));
+      const btn = this.makeButton(spec, (anchor) => this.onButton(spec, anchor));
       if (spec.id === "bulletList") this.bulletBtn = btn;
       if (spec.id === "orderedList") this.orderedBtn = btn;
       if (spec.id === "taskList") this.taskBtn = btn;
@@ -370,18 +456,37 @@ export class FormattingToolbar {
     this.refresh();
   }
 
-  private onButton(spec: ButtonSpec): void {
+  private onButton(spec: ButtonSpec, anchor: HTMLElement): void {
     switch (spec.id) {
       case "link": {
-        const href = window.prompt("Link URL:");
-        if (href) this.dispatch((editor) => editorCommands.link(editor, { href }));
+        // On a link already, the (lit) button unlinks. It used to ask for a URL
+        // first and then remove the link anyway, ignoring what was typed.
+        if (activeState(this.editor).marks.has("link")) {
+          this.dispatch((editor) => editorCommands.link(editor, { href: "" }));
+          return;
+        }
+        void this.askInline(anchor, [{ label: "Link URL", placeholder: "https://…" }]).then(
+          (values) => {
+            const href = values?.[0];
+            if (href) this.dispatch((editor) => editorCommands.link(editor, { href }));
+            else this.focusEditor();
+          },
+        );
         return;
       }
       case "image": {
-        const src = window.prompt("Image URL:");
-        if (!src) return;
-        const alt = window.prompt("Alt text (optional):") ?? undefined;
-        this.dispatch((editor) => editorCommands.image(editor, { src, alt }));
+        void this.askInline(anchor, [
+          { label: "Image URL", placeholder: "https://… or assets/picture.png" },
+          { label: "Alt text", placeholder: "optional" },
+        ]).then((values) => {
+          const src = values?.[0];
+          if (!src) {
+            this.focusEditor();
+            return;
+          }
+          const alt = values?.[1] || undefined;
+          this.dispatch((editor) => editorCommands.image(editor, { src, alt }));
+        });
         return;
       }
       default: {
@@ -390,6 +495,94 @@ export class FormattingToolbar {
         this.dispatch(fn as (editor: Editor) => void);
       }
     }
+  }
+
+  private focusEditor(): void {
+    this.editor.action((ctx) => ctx.get(editorViewCtx).focus());
+  }
+
+  /** Dismisses the open inline form, if any (one at a time). */
+  private closeAsk: (() => void) | null = null;
+
+  /**
+   * A small form anchored under a toolbar button; resolves to the trimmed
+   * values, or `null` if dismissed (Escape, Cancel, a click elsewhere).
+   *
+   * Replaces `window.prompt`, which in a webview is a bare browser dialog titled
+   * with the page's origin — "localhost:1420 says" in development and
+   * "tauri.localhost says" in a release build — and which took two separate
+   * modal prompts to insert one image.
+   */
+  private askInline(
+    anchor: HTMLElement,
+    fields: { label: string; placeholder?: string }[],
+  ): Promise<string[] | null> {
+    this.closeAsk?.();
+    return new Promise((resolve) => {
+      const form = document.createElement("form");
+      form.className = "fmt-ask";
+      form.setAttribute("role", "dialog");
+      form.setAttribute("aria-label", fields[0]?.label ?? "Insert");
+
+      const inputs = fields.map((field) => {
+        const label = document.createElement("label");
+        label.className = "fmt-ask-field";
+        const caption = document.createElement("span");
+        caption.textContent = field.label;
+        const input = document.createElement("input");
+        input.type = "text";
+        input.className = "fmt-ask-input";
+        input.placeholder = field.placeholder ?? "";
+        input.spellcheck = false;
+        label.append(caption, input);
+        form.append(label);
+        return input;
+      });
+
+      const actions = document.createElement("div");
+      actions.className = "fmt-ask-actions";
+      const cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.className = "fmt-ask-btn";
+      cancel.textContent = "Cancel";
+      const ok = document.createElement("button");
+      ok.type = "submit";
+      ok.className = "fmt-ask-btn fmt-ask-primary";
+      ok.textContent = "Insert";
+      actions.append(cancel, ok);
+      form.append(actions);
+
+      const onOutside = (e: MouseEvent) => {
+        if (!form.contains(e.target as Node)) finish(null);
+      };
+      const finish = (values: string[] | null) => {
+        document.removeEventListener("mousedown", onOutside, true);
+        form.remove();
+        this.closeAsk = null;
+        resolve(values);
+      };
+      this.closeAsk = () => finish(null);
+
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        finish(inputs.map((input) => input.value.trim()));
+      });
+      cancel.addEventListener("click", () => finish(null));
+      form.addEventListener("keydown", (e) => {
+        if (e.key !== "Escape") return;
+        e.preventDefault();
+        e.stopPropagation(); // not the global keymap's Escape
+        finish(null);
+      });
+
+      document.body.append(form);
+      const box = anchor.getBoundingClientRect();
+      const left = Math.min(box.left, window.innerWidth - form.offsetWidth - 8);
+      form.style.left = `${Math.max(8, left)}px`;
+      form.style.top = `${box.bottom + 4}px`;
+      document.addEventListener("mousedown", onOutside, true);
+      inputs[0]?.focus();
+    });
   }
 
   private buildEmojiPicker(): HTMLElement {

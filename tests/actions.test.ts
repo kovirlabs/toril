@@ -57,6 +57,30 @@ describe("ActionDispatcher", () => {
     expect(d.dispatch("save", () => {})).toBe(false);
   });
 
+  it("collapses the pair whichever door is first", () => {
+    let ran = 0;
+    const d = new ActionDispatcher(fakeClock().now);
+    d.dispatch("save_as", () => ran++, "menu");
+    d.dispatch("save_as", () => ran++, "key");
+    d.dispatch("zoom", () => ran++, "key");
+    d.dispatch("zoom", () => ran++, "menu");
+    expect(ran).toBe(2);
+  });
+
+  // Found on-device: key auto-repeat is ~33ms apart, inside the window, so
+  // holding Ctrl+= used to zoom once per window rather than once per repeat.
+  it("runs every repeat through the same door, even inside the window", () => {
+    let ran = 0;
+    const clock = fakeClock();
+    const d = new ActionDispatcher(clock.now);
+    for (let i = 0; i < 4; i++) {
+      d.dispatch("zoom_in", () => ran++, "key"); // the keypress itself
+      d.dispatch("zoom_in", () => ran++, "menu"); // its accelerator twin
+      clock.advance(33);
+    }
+    expect(ran).toBe(4);
+  });
+
   it("holds the guard open for exactly the window, not a moving target", () => {
     let ran = 0;
     const clock = fakeClock();

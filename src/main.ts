@@ -4,8 +4,8 @@
 // ipc.ts (§3.2, §5).
 import "@milkdown/theme-nord/style.css";
 import "./styles.css";
-import type { Editor } from "@milkdown/kit/core";
-import { createEditor } from "./editor/milkdown";
+import { editorViewCtx, type Editor } from "@milkdown/kit/core";
+import { caretOf, createEditor, resetHistory } from "./editor/milkdown";
 import { docToMarkdown, markdownToDoc } from "./editor/serializer";
 import { docToHtml, htmlToDoc } from "./editor/html-serializer";
 import type { FrontMatter, SplitFile } from "./editor/frontmatter";
@@ -48,9 +48,10 @@ import {
   restoreSnapshot,
   saveClipboardImage,
   saveFile,
-  saveFileAs,
+  pickSavePath,
   saveRecovery,
   saveSettings,
+  setMenuChecks,
   setRecentFiles,
   showAbout,
   suggestNoteName,
@@ -59,7 +60,7 @@ import {
   watchFolder,
   writeConflictCopy,
 } from "./ipc";
-import { ActionDispatcher } from "./actions";
+import { ActionDispatcher, type ActionSource } from "./actions";
 import { AutosaveScheduler, type RecoveryEntry, selectDirtySaved, snapshotDirty } from "./autosave";
 import { isExternallyOpenable, linkHrefFrom } from "./links";
 import { isAtOrUnder, selectOpenable } from "./paths";
@@ -250,7 +251,9 @@ function onPropertiesChange(next: FrontMatter | null): void {
 
 // Format-aware bridges to the two canonical serializers (§3.2). The active tab's
 // `format` decides which one runs; everything else (tabs, save, session) is shared.
-function loadIntoEditor(content: string, format: DocFormat): void {
+function loadIntoEditor(content: string, format: DocFormat, caret: "keep" | "start" = "keep"): void {
+  // Taken before the swap: afterwards every position has been mapped to the end.
+  const before = caret === "keep" ? caretOf(editor) : "start";
   loading = true;
   if (format === "html") {
     // Front matter is a markdown-file concept; an `.html` document has none, and
@@ -261,6 +264,10 @@ function loadIntoEditor(content: string, format: DocFormat): void {
     liveSplit = splitFrontMatter(content);
     markdownToDoc(editor, liveSplit.body);
   }
+  // A load is not an edit, so it must not be undoable: Ctrl+Z after a tab
+  // switch would otherwise bring the previous tab's text back into this one.
+  resetHistory(editor, before);
+  searchBar?.refresh(); // its highlights lived in the state that was just reset
   // The strip mirrors whatever is in the editor, including "nothing to show".
   properties?.setDocument(liveSplit.frontMatter, format !== "html");
   loading = false;
@@ -299,9 +306,24 @@ function onEditorChange(): void {
   // A load's own echo, arriving after the debounce. Nothing changed, so nothing
   // downstream needs doing: `onActivate` already refreshed the chrome, and
   // marking dirty here would arm autosave to rewrite a note nobody edited.
-  if (active && loadEcho.isEcho(serializeEditor(active.format))) return;
+  const current = active ? serializeEditor(active.format) : "";
+  if (active && loadEcho.isEcho(current)) return;
   statusBar?.refresh();
   outline?.refresh();
+  // The listener is debounced 200ms, so the notification for the last keystroke
+  // before a quick Ctrl+S lands *after* the save marked the tab clean, and used
+  // to re-dirty it — a close prompt and an autosave for a note already on disk.
+  // Text identical to what is on disk is not an unsaved change, whenever the
+  // notification arrives (and undoing back to the saved text is clean too). An
+  // Untitled tab's base is what it opened with, so emptying one is clean as well
+  // — otherwise closing a blank tab asks whether to discard nothing.
+  if (active && !active.diverged && !active.removedOnDisk && current === active.base) {
+    if (active.dirty) {
+      tabs.setDirty(active.id, false);
+      updateTitle();
+    }
+    return;
+  }
   if (active && !active.dirty) {
     tabs.setDirty(active.id, true);
     updateTitle();
@@ -311,12 +333,22 @@ function onEditorChange(): void {
 
 // ---- Tab lifecycle: keep editor and per-tab buffers in sync ----------------
 
+/** The element that scrolls the writing surface — shared by every tab. */
+function editorScroller(): HTMLElement | null {
+  return document.querySelector<HTMLElement>("#editor");
+}
+
 function onDeactivate(tab: TabState): void {
   tab.content = serializeEditor(tab.format); // persist outgoing tab's edits
+  tab.scrollTop = editorScroller()?.scrollTop ?? 0;
 }
 
 function onActivate(tab: TabState): void {
-  loadIntoEditor(tab.content, tab.format);
+  loadIntoEditor(tab.content, tab.format, "start");
+  // The scroller is shared, so without this a newly opened note inherited the
+  // previous tab's offset and opened halfway down. New tabs start at the top.
+  const scroller = editorScroller();
+  if (scroller) scroller.scrollTop = tab.scrollTop ?? 0;
   updateTitle();
   formatToolbar?.refresh();
   statusBar?.refresh();
@@ -326,9 +358,12 @@ function onActivate(tab: TabState): void {
   renderConflictBar(); // the banner is per-tab, so it re-renders on every switch
 }
 
-function onCloseRequest(tab: TabState): void {
-  if (tab.dirty && !confirm(`Discard unsaved changes to ${tab.name}?`)) return;
-  tabs.close(tab.id);
+// Never `window.confirm` here: tauri-plugin-dialog replaces it with an *async*
+// function, so `confirm(...)` is a Promise — always truthy — and the guard used
+// to discard the tab without waiting for (or even showing) the answer.
+async function onCloseRequest(tab: TabState): Promise<void> {
+  if (tab.dirty && !(await confirmDiscard(`Discard unsaved changes to ${tab.name}?`))) return;
+  tabs.close(tab.id); // a no-op if the tab went away while the dialog was up
   if (!tabs.active()) {
     openDocument(null, "Untitled", ""); // never leave zero tabs
   }
@@ -575,9 +610,21 @@ async function doSaveAs(): Promise<void> {
   const tab = tabs.active();
   if (!tab) return;
   try {
-    const content = serializeEditor(tab.format);
-    const path = await saveFileAs(content);
+    const suggested = tab.path ? basename(tab.path) : tab.format === "html" ? "untitled.html" : "untitled.md";
+    const path = await pickSavePath(suggested, tab.format);
     if (!path) return; // cancelled
+    // Serialize for the extension chosen, not the one the tab had: both
+    // formats come off the same document, so Save As is also the conversion.
+    const format = formatForPath(path);
+    const converted = format !== tab.format;
+    // HTML has no front matter, so a note's properties cannot come along.
+    const droppedProperties = format === "html" && liveSplit.frontMatter !== null;
+    const content = serializeEditor(format);
+    await saveFile(path, content);
+    if (converted) {
+      tab.format = format;
+      loadIntoEditor(content, format); // re-split front matter / hide the strip for the new format
+    }
     tab.content = content;
     tabs.setBase(tab.id, content);
     tabs.setPath(tab.id, path, basename(path));
@@ -590,7 +637,12 @@ async function doSaveAs(): Promise<void> {
     tabs.setRemovedOnDisk(tab.id, false);
     renderConflictBar();
     updateTitle();
-    setStatus(`Saved ${basename(path)}`);
+    refreshHistory(); // the panel was still listing the old path's versions
+    setStatus(
+      droppedProperties
+        ? `Saved ${basename(path)} — HTML has no front matter, so the properties were left out`
+        : `Saved ${basename(path)}`,
+    );
     autosave?.notifyChange();
     if (workspaceRoot && path.startsWith(workspaceRoot)) scheduleSidebarRefresh();
     scheduleSessionSave(); // the tab now has a path — make it restorable
@@ -633,6 +685,10 @@ async function doCreateNote(dir: string, name: string): Promise<void> {
   // is empty. `base` is "" for the same reason, which is exactly right — that
   // is what is on disk.
   openDocument(path, basename(path), "", formatForPath(path));
+  // A new note is for writing in. Focus would otherwise stay on the name field
+  // that is about to be removed, and the first keystrokes went nowhere. (The
+  // sidebar is `busy` until this resolves, so the blur is not read as a cancel.)
+  editor.action((ctx) => ctx.get(editorViewCtx).focus());
   rememberRecent(path);
   scheduleSessionSave();
   setStatus(`Created ${basename(path)}`);
@@ -810,6 +866,7 @@ function applyPanes(): void {
   }
 
   rail?.setActive(panes.railTab);
+  syncMenuChecks();
 
   const sidebarHandle = document.querySelector<HTMLElement>("#resize-sidebar");
   if (sidebarHandle) syncHandleValue(sidebarHandle, layout.sidebarWidth, PANE_LIMITS.sidebar);
@@ -942,8 +999,32 @@ async function restoreVersion(path: string, hash: string): Promise<void> {
   setStatus(`Restored a previous version of ${basename(path)}`);
 }
 
+/**
+ * Push every View-menu toggle's state to the native menu. Cheap, idempotent and
+ * best-effort: a stale tick is cosmetic, never worth an error over.
+ */
+let sentMenuChecks = "";
+function syncMenuChecks(): void {
+  const layout = effectiveLayout(panes, window.innerWidth);
+  const checks = {
+    menu_toggle_sidebar: layout.sidebarVisible,
+    menu_toggle_outline: layout.railVisible && panes.railTab === "outline",
+    menu_toggle_history: layout.railVisible && panes.railTab === "history",
+    menu_toggle_autosave: autosaveEnabled,
+    menu_toggle_update_check: updateState.enabled,
+  };
+  // applyPanes runs on every resize event; only cross the IPC boundary on a change.
+  const key = JSON.stringify(checks);
+  if (key === sentMenuChecks) return;
+  sentMenuChecks = key;
+  void setMenuChecks(checks).catch(() => {
+    sentMenuChecks = ""; // let the next call retry
+  });
+}
+
 function toggleAutosave(): void {
   autosaveEnabled = !autosaveEnabled;
+  syncMenuChecks();
   autosave?.setConfig({ enabled: autosaveEnabled });
   setStatus(`Autosave ${autosaveEnabled ? "on" : "off"}`);
   scheduleSessionSave();
@@ -1040,6 +1121,53 @@ function installLinkOpener(root: HTMLElement): void {
     }
     void openExternal(href).catch((err: unknown) => setStatus(`Could not open link: ${String(err)}`));
   });
+  installLinkTip(root);
+}
+
+/**
+ * Hovering a link shows where it goes and how to follow it. Nothing used to:
+ * a plain click (correctly) only places the caret, so the one way to open a link
+ * was a shortcut the UI never mentioned.
+ *
+ * The tip lives in <body>, not on the link: a `title` set on the anchor would be
+ * a DOM mutation inside the editable, which ProseMirror reads back into the
+ * document as the link's own title attribute — an edit nobody made (§3.2).
+ */
+function installLinkTip(root: HTMLElement): void {
+  const tip = document.createElement("div");
+  tip.className = "link-tip";
+  tip.hidden = true;
+  tip.setAttribute("role", "tooltip");
+  document.body.append(tip);
+
+  const modifier = /Mac|iPhone|iPad/.test(navigator.platform) ? "Cmd" : "Ctrl";
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const hide = () => {
+    clearTimeout(timer);
+    tip.hidden = true;
+  };
+
+  root.addEventListener("mouseover", (e) => {
+    const href = linkHrefFrom(e.target);
+    const anchor = e.target instanceof Element ? e.target.closest("a") : null;
+    if (!href || !anchor) return;
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      tip.textContent = isExternallyOpenable(href)
+        ? `${href} — ${modifier}+click to open`
+        : `${href} — not a web link, so it is not opened`;
+      tip.hidden = false;
+      const box = anchor.getBoundingClientRect();
+      const left = Math.min(box.left, window.innerWidth - tip.offsetWidth - 8);
+      tip.style.left = `${Math.max(8, left)}px`;
+      tip.style.top = `${box.bottom + 6}px`;
+    }, 400);
+  });
+  root.addEventListener("mouseout", (e) => {
+    if (linkHrefFrom(e.target)) hide();
+  });
+  root.addEventListener("keydown", hide);
+  root.addEventListener("scroll", hide, true);
 }
 
 // ---- Editor zoom -----------------------------------------------------------
@@ -1073,6 +1201,7 @@ function setZoom(next: number): void {
 
 function toggleUpdateCheck(): void {
   updateState.enabled = !updateState.enabled;
+  syncMenuChecks();
   setStatus(`Update checks ${updateState.enabled ? "on" : "off"}`);
   scheduleSessionSave();
 }
@@ -1436,6 +1565,9 @@ async function reconcile(tab: TabState): Promise<void> {
           message: action.message,
         });
         renderConflictBar();
+        // Replace whatever the status line said last — it was often an earlier
+        // "Merged external changes…", contradicting the banner beside it.
+        setStatus(`${tab.name} changed on disk — choose a version`);
         return;
     }
   }
@@ -1650,6 +1782,7 @@ async function restoreSession(): Promise<void> {
   autosave?.setConfig({ enabled: autosaveEnabled, debounceMs: autosaveDebounceMs });
 
   if (settings.update_check !== null) updateState.enabled = settings.update_check;
+  syncMenuChecks(); // the saved autosave / update-check state, ticked
   updateState.lastCheckedAt = settings.update_last_checked;
   updateState.skippedVersion = settings.update_skipped_version;
 
@@ -1702,6 +1835,10 @@ async function recoverCrashedBuffers(): Promise<void> {
   }
   if (entries.length === 0) return;
 
+  // `tabs.open` activates what it opens, so every recovered Untitled buffer
+  // used to take focus in turn and the session came back on the last one
+  // rather than on the note that was being worked on.
+  const wasActive = tabs.active()?.id ?? null;
   for (const entry of entries) {
     const existing = entry.path ? tabs.byPath(entry.path) : undefined;
     if (existing) {
@@ -1716,6 +1853,10 @@ async function recoverCrashedBuffers(): Promise<void> {
         format: entry.format,
       });
       tabs.setDirty(tab.id, true);
+      // An Untitled buffer has nothing on disk, so its base is empty — never
+      // the recovered text, or undoing back to it would read as "clean" and a
+      // close would discard recovered work without asking.
+      if (!entry.path) tabs.setBase(tab.id, "");
       // `tabs.open` seeds `base` from the content it is given, but a recovered
       // buffer is *newer* than disk — leaving it as the base would make the next
       // reconcile read the older file as an external change and reload over the
@@ -1735,6 +1876,7 @@ async function recoverCrashedBuffers(): Promise<void> {
       }
     }
   }
+  if (wasActive !== null && tabs.active()?.id !== wasActive) tabs.setActive(wasActive);
   updateTitle();
   setStatus(`${entries.length} document${entries.length === 1 ? "" : "s"} recovered`);
   autosave?.notifyChange(); // re-establish the journal from the live buffers
@@ -1785,18 +1927,18 @@ const dispatcher = new ActionDispatcher();
  * the menu and from the webview keydown. The dispatcher collapses the pair; see
  * `actions.ts` for why both doors are kept rather than one being disabled.
  */
-function runAction(id: string): void {
+function runAction(id: string, source?: ActionSource): void {
   // Recent-file items are generated, so they cannot live in the static ACTIONS
   // table — their ids carry an index into `recentFiles`. Matched before the
   // table lookup, and still routed through the dispatcher so a menu item with
   // an accelerator could be added later without reintroducing the double-fire.
   const recent = /^menu_recent_(\d+)$/.exec(id);
   if (recent) {
-    dispatcher.dispatch(id, () => void openRecent(Number(recent[1])));
+    dispatcher.dispatch(id, () => void openRecent(Number(recent[1])), source);
     return;
   }
   const action = ACTIONS[id];
-  if (action) dispatcher.dispatch(id, action);
+  if (action) dispatcher.dispatch(id, action, source);
 }
 
 function installShortcuts(): void {
@@ -1805,7 +1947,7 @@ function installShortcuts(): void {
     const id = shortcutAction(e);
     if (!id) return;
     e.preventDefault();
-    runAction(id);
+    runAction(id, "key");
   });
 }
 
@@ -1903,7 +2045,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     history = new History(
       historyEl,
       { list: listHistory, read: readSnapshot, restore: restoreVersion },
-      { now: () => Date.now(), confirm: (message) => confirm(message) },
+      { now: () => Date.now(), confirm: (message) => confirmDiscard(message) },
     );
   }
   const searchEl = document.querySelector<HTMLElement>("#searchbar");
@@ -1970,7 +2112,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   installShortcuts();
   installResizers();
   installLinkOpener(editorRoot);
-  void onMenuAction(runAction); // native menu → the same named actions as the keyboard
+  void onMenuAction((id) => runAction(id, "menu")); // native menu → the same named actions as the keyboard
   // Guard against losing unsaved work on close, and clear the recovery journal
   // on every clean close so a leftover journal always means "we crashed" (§3).
   void installCloseGuard(

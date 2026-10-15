@@ -26,8 +26,17 @@
  */
 export const DEDUPE_MS = 80;
 
+/**
+ * Which door an action came through. A keypress's double delivery always uses
+ * *both* doors, so two deliveries through the **same** door are two presses —
+ * key auto-repeat lands every ~33ms, inside the window, and was being collapsed:
+ * holding Ctrl+= zoomed at a fraction of the rate it should.
+ */
+export type ActionSource = "key" | "menu";
+
 export class ActionDispatcher {
-  private readonly last = new Map<string, number>();
+  /** The last delivery that *ran*, per action. */
+  private readonly last = new Map<string, { at: number; source?: ActionSource }>();
 
   constructor(private readonly now: () => number = () => Date.now()) {}
 
@@ -35,11 +44,12 @@ export class ActionDispatcher {
    * Run `fn` unless this action already ran within {@link DEDUPE_MS}.
    * Returns whether it ran, which is what the tests assert on.
    */
-  dispatch(action: string, fn: () => void): boolean {
+  dispatch(action: string, fn: () => void, source?: ActionSource): boolean {
     const at = this.now();
     const previous = this.last.get(action);
-    if (previous !== undefined && at - previous < DEDUPE_MS) return false;
-    this.last.set(action, at);
+    const sameDoor = source !== undefined && previous?.source === source;
+    if (previous !== undefined && !sameDoor && at - previous.at < DEDUPE_MS) return false;
+    this.last.set(action, { at, source });
     fn();
     return true;
   }

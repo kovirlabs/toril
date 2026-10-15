@@ -18,7 +18,8 @@ export interface HistoryPort {
 /** Ambient dependencies (clock + confirmation), injected for determinism. */
 export interface HistoryHost {
   now(): number;
-  confirm(message: string): boolean;
+  /** May be async — the native dialog is. Always awaited. */
+  confirm(message: string): boolean | Promise<boolean>;
 }
 
 /**
@@ -181,6 +182,7 @@ export class History {
     }
 
     const restore = document.createElement("button");
+    restore.type = "button";
     restore.className = "history-restore";
     restore.textContent = "Restore this version";
     restore.addEventListener("click", () => void this.doRestore(hash));
@@ -191,7 +193,7 @@ export class History {
 
   private async doRestore(hash: string): Promise<void> {
     if (!this.path) return;
-    if (!this.host.confirm("Restore this version? Your current text is saved to history first.")) {
+    if (!(await this.host.confirm("Restore this version? Your current text is saved to history first."))) {
       return;
     }
     await this.port.restore(this.path, hash);

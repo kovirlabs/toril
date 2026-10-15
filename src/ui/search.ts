@@ -186,6 +186,15 @@ export class SearchBar {
     this.setQuery(""); // clear highlights
   }
 
+  /** Re-apply the open query after the editor's state was rebuilt (a document
+   *  swap resets plugin state, which is where the highlights live). */
+  refresh(): void {
+    if (this.container.hidden) return;
+    this.active = 0;
+    this.pushState();
+    this.updateCount();
+  }
+
   private selectionText(): string {
     let text = "";
     this.editor.action((ctx) => {

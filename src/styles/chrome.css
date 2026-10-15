@@ -293,6 +293,22 @@ body {
   font-size: var(--text-sm);
 }
 
+/* Where a hovered link goes, and how to follow it (main.ts installLinkTip). */
+.link-tip {
+  position: fixed;
+  z-index: var(--z-dialog);
+  max-width: min(32rem, calc(100vw - 16px));
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--chrome-raised);
+  box-shadow: var(--shadow-panel);
+  color: var(--fg);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+
 .context-menu-item {
   display: flex;
   align-items: center;
@@ -555,8 +571,25 @@ body {
   background: rgb(214 73 75 / 18%);
 }
 
+/* It was a bare <button> with only a cursor, so the panel's one action read as
+   a caption under the diff. Styled as the app's outlined primary action. */
 .history-restore {
+  align-self: flex-start;
+  min-height: var(--target-sm);
+  margin-top: var(--sp-2);
+  padding: 0 var(--sp-3);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--accent);
+  background: none;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-md);
   cursor: pointer;
+}
+
+.history-restore:hover {
+  background: var(--hover-bg);
 }
 
 /* ---- Main column --------------------------------------------------------- */
@@ -653,13 +686,19 @@ body {
   flex: 1 1 auto;
   min-width: 0;
   overflow-x: auto;
-  scrollbar-width: thin;
+  /* Even a "thin" scrollbar took a third of the strip's height and squeezed the
+     tabs. The wheel scrolls it sideways (tabs.ts) and the active tab is kept in
+     view, so the bar carries no information worth the room. */
+  scrollbar-width: none;
 }
 
+/* Tabs give up width (label ellipsized) before the strip has to scroll at all. */
 .tab {
   display: flex;
   align-items: center;
   gap: var(--sp-1);
+  flex: 0 1 auto;
+  min-width: 7rem;
   min-height: var(--target);
   max-width: 15rem;
   padding: 0 var(--sp-1) 0 var(--sp-2);
@@ -686,6 +725,8 @@ body {
 }
 
 .tab-label {
+  flex: 1 1 auto;
+  min-width: 0;
   cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -748,10 +789,15 @@ body {
   color: var(--fg);
 }
 
+/* Active carries a mark hover never has — the accent bar — because the two
+   backgrounds are a shade apart: a hovered button read as "bold is on" (found
+   on-device, where the pointer resting on a button after a click looked like a
+   stuck format). */
 .fmt-btn[data-active="true"] {
   background: var(--active-bg);
   color: var(--active-fg);
   border-color: var(--border-strong);
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .fmt-heading {
@@ -772,6 +818,73 @@ body {
   margin: 0 var(--sp-1);
   background: var(--border);
   flex: 0 0 auto;
+}
+
+/* Inline form for Link / Image (toolbar.ts askInline) — replaces window.prompt. */
+.fmt-ask {
+  position: fixed;
+  z-index: var(--z-dialog);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  width: min(22rem, calc(100vw - 16px));
+  padding: var(--sp-3);
+  background: var(--chrome-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-panel);
+  font-size: var(--text-sm);
+}
+
+.fmt-ask-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  color: var(--muted);
+}
+
+.fmt-ask-input {
+  min-height: var(--target-sm);
+  padding: 0 var(--sp-2);
+  font: inherit;
+  color: var(--fg);
+  background: var(--editor-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+
+.fmt-ask-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.fmt-ask-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}
+
+.fmt-ask-btn {
+  min-height: var(--target-sm);
+  padding: 0 var(--sp-3);
+  font: inherit;
+  color: var(--fg);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  cursor: pointer;
+}
+
+.fmt-ask-btn:hover {
+  background: var(--hover-bg);
+}
+
+/* Outlined in the accent, like the app's other primary actions — no filled
+   button exists anywhere else, and no on-accent text token to put on one. */
+.fmt-ask-primary {
+  color: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
 }
 
 .fmt-emoji {

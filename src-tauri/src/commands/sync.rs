@@ -10,7 +10,7 @@
 
 use mergemd::{Divergence, merge3, unique_conflict_path};
 use serde::Serialize;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -82,10 +82,27 @@ pub fn merge_external(path: String, base: String, mine: String) -> Result<MergeR
 /// same note can't be resolved concurrently, and the conflict banner clears on
 /// first resolution. Not closing it; recorded so the next reader doesn't have
 /// to re-derive that.
+///
+/// `utc_offset_minutes` (the webview's, east-positive) makes the stamp the
+/// user's wall-clock time: a copy named `21-53-51` while the taskbar says 5:53 PM
+/// reads as some other event. std has no local timezone and this is not worth a
+/// date dependency (§2), so the instant is shifted before it is formatted.
 #[tauri::command]
-pub fn write_conflict_copy(path: String, content: String) -> Result<String, String> {
-    let target = unique_conflict_path(std::path::Path::new(&path), SystemTime::now())
-        .map_err(|e| e.to_string())?;
+pub fn write_conflict_copy(
+    path: String,
+    content: String,
+    utc_offset_minutes: Option<i32>,
+) -> Result<String, String> {
+    let offset = i64::from(utc_offset_minutes.unwrap_or(0)) * 60;
+    let now = SystemTime::now();
+    let wall = if offset >= 0 {
+        now.checked_add(Duration::from_secs(offset.unsigned_abs()))
+    } else {
+        now.checked_sub(Duration::from_secs(offset.unsigned_abs()))
+    }
+    .unwrap_or(now);
+    let target =
+        unique_conflict_path(std::path::Path::new(&path), wall).map_err(|e| e.to_string())?;
     fsatomic::atomic_write(&target, content.as_bytes()).map_err(|e| e.to_string())?;
     Ok(target.to_string_lossy().into_owned())
 }

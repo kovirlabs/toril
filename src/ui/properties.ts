@@ -52,6 +52,12 @@ export class PropertiesStrip {
 
   private doc: Doc = { kind: "hidden" };
   private expanded: boolean;
+  /** An edit is waiting to be drawn (see {@link scheduleRender}). */
+  private renderQueued = false;
+  /** A press that began inside the strip has not been released yet. */
+  private pointerHeld = false;
+  /** Focus this control (text selected) on the next draw instead of restoring. */
+  private focusNext: string | null = null;
 
   constructor(host: HTMLElement, private readonly opts: PropertiesStripOptions, expanded = true) {
     this.expanded = expanded;
@@ -78,6 +84,16 @@ export class PropertiesStrip {
 
     this.el.appendChild(this.header);
     this.el.appendChild(this.body);
+
+    this.el.addEventListener("pointerdown", () => (this.pointerHeld = true), true);
+    const release = () => {
+      if (!this.pointerHeld) return;
+      this.pointerHeld = false;
+      // The click this press completes is dispatched after this; draw after it.
+      if (this.renderQueued) setTimeout(() => this.flushRender(), 0);
+    };
+    window.addEventListener("pointerup", release, true);
+    window.addEventListener("pointercancel", release, true);
   }
 
   /** Point the strip at a document. Pass `null` for a format with no front matter. */
@@ -103,6 +119,7 @@ export class PropertiesStrip {
   // ---- rendering -----------------------------------------------------------
 
   private render(): void {
+    this.renderQueued = false;
     // Every edit re-renders the strip, which destroys the control the user is
     // typing in. Each control carries a stable id so focus lands back where it
     // was — otherwise ticking a checkbox or removing a list item silently sends
@@ -110,6 +127,10 @@ export class PropertiesStrip {
     const active = document.activeElement;
     const focusId =
       active instanceof HTMLElement && this.el.contains(active) ? (active.dataset.focusId ?? null) : null;
+    const caret =
+      active instanceof HTMLInputElement && focusId !== null
+        ? { start: active.selectionStart, end: active.selectionEnd }
+        : null;
 
     this.body.replaceChildren();
 
@@ -152,17 +173,71 @@ export class PropertiesStrip {
     if (!this.expanded) return;
 
     if (view.mode === "raw") this.renderRaw(fm, view.reason);
-    else this.renderTyped(fm, view.properties);
+    else this.renderTyped(view.properties);
 
-    this.restoreFocus(focusId);
+    if (this.focusNext !== null) {
+      const id = this.focusNext;
+      this.focusNext = null;
+      const target = this.body.querySelector<HTMLElement>(`[data-focus-id="${id}"]`);
+      target?.focus();
+      if (target instanceof HTMLInputElement) target.select();
+      return;
+    }
+    this.restoreFocus(focusId, caret);
   }
 
-  private restoreFocus(focusId: string | null): void {
+  private restoreFocus(
+    focusId: string | null,
+    caret: { start: number | null; end: number | null } | null,
+  ): void {
     if (focusId === null) return;
     const match = Array.from(this.body.querySelectorAll<HTMLElement>("[data-focus-id]")).find(
       (el) => el.dataset.focusId === focusId,
     );
     match?.focus();
+    // A click lands the caret where the user pointed; rebuilding the control
+    // would otherwise move it to the end of the text.
+    if (match instanceof HTMLInputElement && match.type === "text" && caret?.start != null) {
+      match.setSelectionRange(caret.start, caret.end ?? caret.start);
+    }
+  }
+
+  /**
+   * Draw an edit once the interaction that made it is over.
+   *
+   * Fields commit on `change`, which fires as focus *leaves* them, on the Tab
+   * or click that moves the user to the next control. Re-rendering right then
+   * destroyed that next control mid-move: focus fell out of the strip, the
+   * following keystrokes went nowhere (a value typed after Tab was lost), and a
+   * click on "+ Add property" could land on a button that no longer existed.
+   * Found driving the app; jsdom never moves focus, so no unit test saw it.
+   */
+  private scheduleRender(): void {
+    this.renderQueued = true;
+    if (!this.pointerHeld) setTimeout(() => this.flushRender(), 0);
+  }
+
+  private flushRender(): void {
+    if (this.renderQueued) this.render();
+  }
+
+  /**
+   * The block and its rows as they are **now**. Handlers start from this, never
+   * from the list they closed over when drawn: with drawing deferred, a control
+   * can outlive an edit, and a stale list would write an older value back over
+   * a newer one.
+   */
+  private currentTyped(): { fm: FrontMatter; properties: Property[] } | null {
+    if (this.doc.kind !== "present") return null;
+    const view = readProperties(this.doc.frontMatter);
+    return view.mode === "typed" ? { fm: this.doc.frontMatter, properties: view.properties } : null;
+  }
+
+  /** Apply `change` to the current rows and report the new block. */
+  private update(change: (properties: Property[]) => Property[]): void {
+    const current = this.currentTyped();
+    if (!current) return;
+    this.emit(this.blockFrom(change(current.properties), current.fm));
   }
 
   private renderRaw(fm: FrontMatter, reason: string): void {
@@ -203,12 +278,12 @@ export class PropertiesStrip {
     this.body.appendChild(area);
   }
 
-  private renderTyped(fm: FrontMatter, properties: Property[]): void {
+  private renderTyped(properties: Property[]): void {
     const list = document.createElement("div");
     list.className = "properties-rows";
 
     properties.forEach((property, index) => {
-      list.appendChild(this.renderRow(fm, properties, property, index));
+      list.appendChild(this.renderRow(property, index));
     });
     this.body.appendChild(list);
 
@@ -218,25 +293,21 @@ export class PropertiesStrip {
     add.dataset.focusId = "add";
     add.textContent = "+ Add property";
     add.addEventListener("click", () => {
-      const next = [...properties, { key: uniqueKey(properties), value: textValue("") }];
-      this.emit(this.blockFrom(next, fm));
+      // A new row exists to be named: land in its name, selected, so typing
+      // replaces the placeholder instead of needing another click first.
+      this.focusNext = `key:${this.currentTyped()?.properties.length ?? 0}`;
+      this.update((ps) => [...ps, { key: uniqueKey(ps), value: textValue("") }]);
     });
     this.body.appendChild(add);
   }
 
-  private renderRow(
-    fm: FrontMatter,
-    properties: Property[],
-    property: Property,
-    index: number,
-  ): HTMLElement {
+  private renderRow(property: Property, index: number): HTMLElement {
     const row = document.createElement("div");
     row.className = "properties-row";
 
-    const replace = (next: Property): void => {
-      const updated = properties.map((p, i) => (i === index ? next : p));
-      this.emit(this.blockFrom(updated, fm));
-    };
+    // Edit this row as it is now (see `currentTyped`).
+    const replace = (edit: (current: Property) => Property): void =>
+      this.update((ps) => ps.map((p, i) => (i === index ? edit(p) : p)));
 
     const key = document.createElement("input");
     key.type = "text";
@@ -248,15 +319,16 @@ export class PropertiesStrip {
     // doing that on every keystroke would pull focus out from under the user.
     key.addEventListener("change", () => {
       const renamed = key.value.trim();
+      const properties = this.currentTyped()?.properties ?? [];
       // A rename onto another property's name would collapse the two and lose
-      // one of them on save. Refused outright — the re-render restores the old
-      // name, so nothing is written and nothing is lost. Same for an empty name,
-      // which no format can express.
+      // one of them on save. Refused outright — the old name is put back, so
+      // nothing is written and nothing is lost. Same for an empty name, which no
+      // format can express.
       if (renamed === "" || properties.some((p, i) => i !== index && p.key === renamed)) {
-        this.render();
+        key.value = properties[index]?.key ?? property.key;
         return;
       }
-      replace({ ...property, key: renamed });
+      replace((p) => ({ ...p, key: renamed }));
     });
     row.appendChild(key);
 
@@ -270,11 +342,10 @@ export class PropertiesStrip {
     remove.title = `Remove ${property.key}`;
     remove.setAttribute("aria-label", `Remove ${property.key}`);
     remove.addEventListener("click", () => {
-      const next = properties.filter((_, i) => i !== index);
       // Removing the last property leaves an EMPTY block rather than deleting
       // the block: dropping it is a bigger decision than removing a row, and
       // `---\n---\n` is a legitimate document that Obsidian also writes.
-      this.emit(this.blockFrom(next, fm));
+      this.update((ps) => ps.filter((_, i) => i !== index));
     });
     row.appendChild(remove);
 
@@ -284,7 +355,7 @@ export class PropertiesStrip {
   private renderValue(
     property: Property,
     index: number,
-    replace: (next: Property) => void,
+    replace: (edit: (current: Property) => Property) => void,
   ): HTMLElement {
     const { value } = property;
 
@@ -296,7 +367,7 @@ export class PropertiesStrip {
       box.checked = value.value;
       box.setAttribute("aria-label", `${property.key} value`);
       box.addEventListener("change", () =>
-        replace({ ...property, value: { kind: "checkbox", value: box.checked } }),
+        replace((p) => ({ ...p, value: { kind: "checkbox", value: box.checked } })),
       );
       return box;
     }
@@ -311,12 +382,15 @@ export class PropertiesStrip {
         input.value = item;
         input.dataset.focusId = `item:${index}:${i}`;
         input.setAttribute("aria-label", `${property.key} item ${i + 1}`);
-        input.addEventListener("change", () => {
-          const items = value.value.map((v, j) => (j === i ? input.value : v));
-          // An emptied item is a removal — otherwise the list grows blanks that
-          // serialize as empty strings nobody asked for.
-          replace({ ...property, value: { kind: "list", value: items.filter((v) => v !== "") } });
-        });
+        input.addEventListener("change", () =>
+          replace((p) => {
+            if (p.value.kind !== "list") return p;
+            const items = p.value.value.map((v, j) => (j === i ? input.value : v));
+            // An emptied item is a removal — otherwise the list grows blanks
+            // that serialize as empty strings nobody asked for.
+            return { ...p, value: { kind: "list", value: items.filter((v) => v !== "") } };
+          }),
+        );
         wrap.appendChild(input);
       });
 
@@ -328,7 +402,11 @@ export class PropertiesStrip {
       addItem.title = `Add to ${property.key}`;
       addItem.setAttribute("aria-label", `Add to ${property.key}`);
       addItem.addEventListener("click", () =>
-        replace({ ...property, value: { kind: "list", value: [...value.value, "new"] } }),
+        replace((p) =>
+          p.value.kind === "list"
+            ? { ...p, value: { kind: "list", value: [...p.value.value, "new"] } }
+            : p,
+        ),
       );
       wrap.appendChild(addItem);
       return wrap;
@@ -346,7 +424,7 @@ export class PropertiesStrip {
     input.value = String(value.value);
     input.dataset.focusId = `value:${index}`;
     input.setAttribute("aria-label", `${property.key} value`);
-    input.addEventListener("change", () => replace({ ...property, value: retype(input.value) }));
+    input.addEventListener("change", () => replace((p) => ({ ...p, value: retype(input.value) })));
     return input;
   }
 
@@ -360,7 +438,7 @@ export class PropertiesStrip {
 
   private emit(next: FrontMatter, rerender = true): void {
     this.doc = { kind: "present", frontMatter: next };
-    if (rerender) this.render();
+    if (rerender) this.scheduleRender();
     this.opts.onChange(next);
   }
 }

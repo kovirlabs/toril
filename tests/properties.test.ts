@@ -252,7 +252,10 @@ describe("PropertiesStrip", () => {
   });
 
   describe("focus survives the re-render an edit causes", () => {
-    it("puts focus back on the control that was edited", () => {
+    /** The strip redraws once the interaction that made an edit is over. */
+    const settled = () => new Promise((r) => setTimeout(r, 0));
+
+    it("puts focus back on the control that was edited", async () => {
       // Every edit rebuilds the rows; without this a keyboard user is thrown to
       // the top of the document each time they tick a checkbox.
       const { host, strip } = mount();
@@ -261,8 +264,38 @@ describe("PropertiesStrip", () => {
       box.focus();
       box.checked = false;
       box.dispatchEvent(new Event("change"));
+      await settled();
       expect(document.activeElement).toBe(valueInput(host, 2));
       expect(document.activeElement).not.toBe(box); // genuinely a new element
+    });
+
+    // Found driving the app: a field commits as focus leaves it, on the very Tab
+    // that moves to the next field. Redrawing right then destroyed that next
+    // field, focus fell out of the strip, and the value typed next was lost.
+    it("keeps focus on the field Tab moved to, and an edit made there", async () => {
+      const { host, strip, changes } = mount();
+      strip.setDocument(block("---\nstatus: old\n---\n"), true);
+      const key = keyInput(host, 0);
+      const value = valueInput(host, 0);
+
+      key.value = "state";
+      value.focus(); // Tab: focus has moved before the deferred redraw
+      key.dispatchEvent(new Event("change"));
+      await settled();
+      expect(document.activeElement).toBe(valueInput(host, 0));
+
+      type(valueInput(host, 0), "new");
+      expect(changes.at(-1)?.text).toBe("---\nstate: new\n---\n");
+    });
+
+    it("never writes a stale row back over a newer edit", async () => {
+      // Two commits before one redraw: the second handler must start from the
+      // first one's result, not from the rows it was drawn with.
+      const { host, strip, changes } = mount();
+      strip.setDocument(block("---\na: 1\nb: 2\n---\n"), true);
+      type(valueInput(host, 0), "one");
+      type(valueInput(host, 1), "two");
+      expect(changes.at(-1)?.text).toBe("---\na: one\nb: two\n---\n");
     });
   });
 

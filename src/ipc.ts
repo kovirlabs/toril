@@ -5,7 +5,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { ask, message, open as openDialog } from "@tauri-apps/plugin-dialog";
+import { ask, message, open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import type { RecoveryEntry } from "./autosave";
 
 export type { UnlistenFn } from "@tauri-apps/api/event";
@@ -30,6 +30,12 @@ export interface WorkspaceChange {
 }
 
 const MARKDOWN_FILTER = { name: "Markdown", extensions: ["md", "markdown"] };
+const HTML_FILTER = { name: "HTML", extensions: ["html", "htm"] };
+/** Everything Toril opens, listed first so the picker shows all of it. */
+const DOCUMENT_FILTER = {
+  name: "Markdown and HTML",
+  extensions: [...MARKDOWN_FILTER.extensions, ...HTML_FILTER.extensions],
+};
 
 /** Read a UTF-8 markdown file. */
 export function openFile(path: string): Promise<OpenedFile> {
@@ -42,11 +48,18 @@ export function saveFile(path: string, content: string): Promise<void> {
 }
 
 /**
- * Prompt for a destination (native dialog) and atomically write `content`.
- * Resolves to the chosen path, or `null` if the user cancelled.
+ * Native "save" picker for Save As. Returns the chosen path, or `null` if the
+ * user cancelled. Like {@link pickFileToOpen} it only yields a path: the caller
+ * serializes for the *chosen* extension and writes through {@link saveFile}, so
+ * an HTML tab saved as `.md` is written as markdown, not HTML in a `.md` file.
  */
-export function saveFileAs(content: string): Promise<string | null> {
-  return invoke<string | null>("save_file_as", { content });
+export async function pickSavePath(
+  defaultName: string,
+  format: "markdown" | "html",
+): Promise<string | null> {
+  const filters = format === "html" ? [HTML_FILTER, MARKDOWN_FILTER] : [MARKDOWN_FILTER, HTML_FILTER];
+  const selected = await saveDialog({ defaultPath: defaultName, filters });
+  return selected ?? null;
 }
 
 /**
@@ -58,7 +71,7 @@ export async function pickFileToOpen(): Promise<string | null> {
   const selected = await openDialog({
     multiple: false,
     directory: false,
-    filters: [MARKDOWN_FILTER],
+    filters: [DOCUMENT_FILTER, MARKDOWN_FILTER, HTML_FILTER],
   });
   return typeof selected === "string" ? selected : null;
 }
@@ -302,6 +315,14 @@ export async function relaunchApp(): Promise<void> {
  * `menu_recent_3` — and the frontend resolves that against its own list, so an
  * arbitrary path never has to survive a round trip through a menu id.
  */
+/**
+ * Tick the View menu's toggles to match the app (keys are menu item ids). The
+ * menu cannot ask; without this every toggle showed unticked whatever its state.
+ */
+export function setMenuChecks(checks: Record<string, boolean>): Promise<void> {
+  return invoke<void>("set_menu_checks", { checks });
+}
+
 export function setRecentFiles(paths: string[]): Promise<void> {
   return invoke<void>("set_recent_files", { paths });
 }
@@ -475,7 +496,10 @@ export function mergeExternal(path: string, base: string, mine: string): Promise
 
 /** Park `content` beside `path` as a `… (conflict <ts>)` file. Returns its path. */
 export function writeConflictCopy(path: string, content: string): Promise<string> {
-  return invoke<string>("write_conflict_copy", { path, content });
+  // getTimezoneOffset is west-positive; the command wants east-positive, so the
+  // copy's name carries the user's clock time rather than UTC.
+  const utcOffsetMinutes = -new Date().getTimezoneOffset();
+  return invoke<string>("write_conflict_copy", { path, content, utcOffsetMinutes });
 }
 
 /** One stored version of a note (mirrors Rust `snapshots::SnapshotMeta`, §5). */

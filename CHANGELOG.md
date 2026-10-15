@@ -75,6 +75,66 @@ this one is offered from inside the app.
   nothing to restore — the two used to be the same two-line stub. With no folder open,
   the files pane now offers to open one instead of only saying that none is.
 
+### Fixed
+- **Closing a tab with unsaved changes discarded it without asking**, and History →
+  Restore went ahead even when you answered No. The dialog plugin makes the browser's
+  `confirm()` asynchronous, so the guard read a pending answer as "yes". Both now wait.
+- **Undo and Redo did nothing** — from the keyboard or the Edit menu. They work now, and
+  switching tabs can never be "undone" into the previous tab's text.
+- **A code block or table at the end of a note trapped the cursor**: clicking below it
+  or pressing ↓ went nowhere. Both now start a new line after it. Clicking anywhere on
+  the page of a short or blank note now places the cursor too.
+- **A note opened halfway down the page** when the previous tab had been scrolled. New
+  tabs open at the top, and each tab remembers its own scroll position.
+- **Saving straight after typing left the tab marked unsaved**, which brought back the
+  close prompt and an extra autosave. Text that matches what is on disk is never
+  "unsaved" — including after undoing back to it.
+- **A new note from the files pane didn't take the keyboard**, so the first words typed
+  were lost.
+- **HTML files could not be opened from File → Open** — the picker only offered
+  Markdown. It now lists both.
+- **Save As could write HTML into a `.md` file.** It always offered `untitled.md` with a
+  Markdown filter, then wrote the tab's HTML. Save As now suggests the current name and
+  format, and writes whichever format the chosen extension means — so it is also how you
+  convert a note between Markdown and HTML.
+- **Typing in the properties strip could vanish.** A value typed after Tab, a renamed
+  property, a click on "+ Add property" right after editing — the strip redrew under the
+  move and the input was lost. A new property now also starts with its name selected.
+- **A merged external change moved the cursor** to the end of the note, mid-typing. It
+  stays where it was.
+- **Conflict copies were stamped in UTC**, so a copy made at 5:53 PM was named `21-53`.
+  They now use your clock.
+- **Exported RTF lost footnote numbers** at both the reference and the note.
+- **After a restart, the session reopened on a recovered Untitled buffer** instead of the
+  note you had been in.
+- The tab strip clipped the active tab once it overflowed. Tabs now shrink first, the
+  wheel scrolls the strip, and the active tab is always in view. Long tab and file names
+  show in full on hover. The History panel follows a Save As, and the status line no
+  longer says "merged" while the conflict banner says otherwise.
+- **Launching in a small or minimized window shrank the side panes for good.** The saved
+  widths were squeezed to fit the window at startup and then saved back. Your chosen
+  widths now survive; only what is drawn adapts to the window.
+- **A rejected file name lost its error message** (and the name field) — the message
+  appeared and the field closed in the same instant. It now stays, and says which
+  character is the problem.
+- **The View menu's toggles had no checkmarks**, so you could not see whether Autosave
+  was on. Files Pane, Outline, Version History, Autosave and update checks now show
+  their state, and Zoom In shows its shortcut.
+- **Holding a shortcut (e.g. Ctrl+= to zoom) repeated at a fraction of the rate.**
+- **The window could open taller than the screen**, with the status bar behind the
+  taskbar. It is now kept inside the screen it opens on.
+- Hovering a link shows where it goes and that Ctrl+click opens it. Tables and code
+  blocks keep the same spacing below them as a paragraph.
+- **Pasting Markdown text now formats it.** Paste `## Heading` or `**bold**` from
+  anywhere and you get a heading and bold text, not the symbols. Copying out of Toril
+  puts Markdown on the clipboard.
+- **The list and quote buttons work inside lists.** Bullet ⇄ Numbered converts the
+  list, clicking the active one turns the item back into a paragraph, Bullet turns a
+  task into a plain item, and Quote toggles off.
+- **Link and Image open a small form under the button** instead of a browser prompt
+  titled "localhost says". Link on an existing link removes it.
+- An Untitled tab emptied back to nothing is no longer "unsaved".
+
 ### Security
 - **DOMPurify 3.4.13 → 3.4.16**, the sanitizer behind every piece of HTML Toril renders
   (CLAUDE.md §3.3). It brings upstream fixes for bypasses when risky tags are

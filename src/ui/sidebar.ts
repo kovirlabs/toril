@@ -113,8 +113,22 @@ export class Sidebar {
     }
   }
 
+  /** True while `render` is tearing down and rebuilding the tree. */
+  private rendering = false;
+
   private render(): void {
-    this.container.replaceChildren();
+    // Removing a focused input makes Chromium (WebView2) fire `blur` on it
+    // *while it is still connected*, so the field's blur handler took its own
+    // re-render for the user clicking away and cancelled the edit. That is how
+    // a rejected name lost both the field and the message explaining why: the
+    // re-render that shows the error tore the field down. jsdom fires no blur
+    // on removal, which is why the gate never saw it.
+    this.rendering = true;
+    try {
+      this.container.replaceChildren();
+    } finally {
+      this.rendering = false;
+    }
 
     if (this.rootName === null) {
       this.container.append(this.renderEmptyState());
@@ -218,6 +232,7 @@ export class Sidebar {
     details.open = true;
     const summary = document.createElement("summary");
     summary.textContent = node.name;
+    summary.title = node.name; // the pane is narrow and long names are clipped
     summary.dataset.path = node.path;
     summary.addEventListener("contextmenu", (e) => this.openMenuForFolder(e, node.path, node));
     details.append(summary, this.renderNodes(node.children, node.path));
@@ -231,6 +246,7 @@ export class Sidebar {
     entry.className = "file-entry";
     entry.dataset.path = node.path;
     entry.textContent = node.name;
+    entry.title = node.name; // the pane is narrow and long names are clipped
     entry.addEventListener("click", () => this.cb.onOpenFile(node.path));
     entry.addEventListener("contextmenu", (e) => this.openMenuForFile(e, node));
     li.append(entry);
@@ -446,7 +462,7 @@ export class Sidebar {
     // being replaced by a re-render — showing an error rebuilds it, and treating
     // that as a cancel would wipe the message the moment it appeared.
     input.addEventListener("blur", () => {
-      if (!input.isConnected) return;
+      if (!input.isConnected || this.rendering) return;
       if (this.edit && !this.busy) this.endEdit();
     });
     wrap.append(input);
