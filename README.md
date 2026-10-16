@@ -13,7 +13,7 @@ It is built on Tauri 2, TypeScript, and Milkdown. The primary platform is
 
 > **Status: 1.0.** The editor and the workflow around it work, and your notes stay
 > plain files you can walk away with. Installers:
-> **[v1.1.0](https://github.com/kovirlabs/toril/releases/latest)**.
+> **[v1.1.1](https://github.com/kovirlabs/toril/releases/latest)**.
 >
 > Keep backups of anything important, as with any editor. See
 > [CHANGELOG.md](./CHANGELOG.md) for what each release changed.
@@ -70,18 +70,18 @@ Installers are on the
 
 | Platform | Download |
 |---|---|
-| **Windows** | [`Toril_1.1.0_x64-setup.exe`](https://github.com/kovirlabs/toril/releases/download/v1.1.0/Toril_1.1.0_x64-setup.exe) |
-| **Windows** (MSI, for IT deployment) | [`Toril_1.1.0_x64_en-US.msi`](https://github.com/kovirlabs/toril/releases/download/v1.1.0/Toril_1.1.0_x64_en-US.msi) |
-| **macOS** (Apple Silicon) | [`Toril_1.1.0_aarch64.dmg`](https://github.com/kovirlabs/toril/releases/download/v1.1.0/Toril_1.1.0_aarch64.dmg) |
-| **macOS** (Intel) | [`Toril_1.1.0_x64.dmg`](https://github.com/kovirlabs/toril/releases/download/v1.1.0/Toril_1.1.0_x64.dmg) |
-| **Linux** (AppImage) | [`Toril_1.1.0_amd64.AppImage`](https://github.com/kovirlabs/toril/releases/download/v1.1.0/Toril_1.1.0_amd64.AppImage) |
-| **Linux** (Debian/Ubuntu) | [`Toril_1.1.0_amd64.deb`](https://github.com/kovirlabs/toril/releases/download/v1.1.0/Toril_1.1.0_amd64.deb) |
-| **Linux** (Fedora/RHEL) | [`Toril-1.1.0-1.x86_64.rpm`](https://github.com/kovirlabs/toril/releases/download/v1.1.0/Toril-1.1.0-1.x86_64.rpm) |
+| **Windows** | [`Toril_1.1.1_x64-setup.exe`](https://github.com/kovirlabs/toril/releases/download/v1.1.1/Toril_1.1.1_x64-setup.exe) |
+| **Windows** (MSI, for IT deployment) | [`Toril_1.1.1_x64_en-US.msi`](https://github.com/kovirlabs/toril/releases/download/v1.1.1/Toril_1.1.1_x64_en-US.msi) |
+| **macOS** (Apple Silicon) | [`Toril_1.1.1_aarch64.dmg`](https://github.com/kovirlabs/toril/releases/download/v1.1.1/Toril_1.1.1_aarch64.dmg) |
+| **macOS** (Intel) | [`Toril_1.1.1_x64.dmg`](https://github.com/kovirlabs/toril/releases/download/v1.1.1/Toril_1.1.1_x64.dmg) |
+| **Linux** (AppImage) | [`Toril_1.1.1_amd64.AppImage`](https://github.com/kovirlabs/toril/releases/download/v1.1.1/Toril_1.1.1_amd64.AppImage) |
+| **Linux** (Debian/Ubuntu) | [`Toril_1.1.1_amd64.deb`](https://github.com/kovirlabs/toril/releases/download/v1.1.1/Toril_1.1.1_amd64.deb) |
+| **Linux** (Fedora/RHEL) | [`Toril-1.1.1-1.x86_64.rpm`](https://github.com/kovirlabs/toril/releases/download/v1.1.1/Toril-1.1.1-1.x86_64.rpm) |
 
 <details>
 <summary><b>Installing on Windows</b></summary>
 
-**1. Download** `Toril_1.1.0_x64-setup.exe` from the table above.
+**1. Download** `Toril_1.1.1_x64-setup.exe` from the table above.
 
 **2. Unblock it if Windows marked it.** Files downloaded from the internet carry
 a "mark of the web". If the installer refuses to start, right-click it →
@@ -128,14 +128,19 @@ run the uninstaller in `%LOCALAPPDATA%\Toril`.
 <details>
 <summary><b>Installing on macOS and Linux</b></summary>
 
-**macOS:** open the `.dmg` and drag Toril to Applications. The build is unsigned,
-so the first launch needs **right-click → Open** (or *System Settings → Privacy &
-Security → Open Anyway*).
+**macOS:** open the `.dmg` and drag Toril to Applications. The build is not
+notarized by Apple, so the first launch is blocked with *"Apple could not verify
+Toril…"*. Open **System Settings → Privacy & Security**, scroll down, and click
+**Open Anyway**. You only do this once.
+
+> If macOS says Toril **"is damaged and can't be opened"**, you have `v1.1.0` or
+> earlier, whose macOS builds were not signed correctly. Download `v1.1.1` or
+> later. Nothing was wrong with the download itself.
 
 **Linux:** the AppImage is portable —
-`chmod +x Toril_1.1.0_amd64.AppImage` and run it. Or install the `.deb`
-(`sudo apt install ./Toril_1.1.0_amd64.deb`) or `.rpm`
-(`sudo dnf install ./Toril-1.1.0-1.x86_64.rpm`).
+`chmod +x Toril_1.1.1_amd64.AppImage` and run it. Or install the `.deb`
+(`sudo apt install ./Toril_1.1.1_amd64.deb`) or `.rpm`
+(`sudo dnf install ./Toril-1.1.1-1.x86_64.rpm`).
 
 </details>
 

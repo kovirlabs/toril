@@ -11,6 +11,19 @@ GitHub Release notes plus the commits that shipped in it.
 
 ## [Unreleased]
 
+## [v1.1.1] — 2026-10-15
+
+### Fixed
+- **macOS: "Toril is damaged and can't be opened."** The macOS app was never signed as a
+  whole. Only its executable carried a signature, and macOS treats a downloaded app in
+  that state as tampered with, offering no way to open it. The app is now signed, so the
+  first launch shows the usual *"Apple could not verify Toril"* prompt instead. Open it
+  from **System Settings → Privacy & Security → Open Anyway**, once. Nothing was wrong
+  with the downloads themselves, and Windows and Linux are unaffected.
+
+  If you installed `v1.1.0` on a Mac, install this version by hand; it could not have
+  been opened to update itself.
+
 ## [v1.1.0] — 2026-10-15
 
 Toril can now organize your notes, not only edit them, and it can update itself.

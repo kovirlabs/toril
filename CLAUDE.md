@@ -818,6 +818,16 @@ Output: `src-tauri/target/release/` (raw `.exe`) and `…/bundle/` (NSIS install
 Code signing is optional for personal use; without it, Windows SmartScreen warns on first run —
 expected, not a bug.
 
+> **macOS must be ad-hoc signed, never left unsigned — `bundle.macOS.signingIdentity: "-"`.**
+> Without it the `.app` carries only the linker's signature on the executable (`flags=adhoc,
+> linker-signed`), which covers no resources. Gatekeeper reads that bundle as tampered with
+> and reports **"is damaged and can't be opened"**, which has *no* Open Anyway path. Every
+> macOS build through `v1.1.0` shipped that way. Ad-hoc signing (`-`) seals the bundle, so
+> the first launch gets the ordinary "could not verify" prompt with Open Anyway — the macOS
+> equivalent of the SmartScreen warning. Removing the warning entirely needs an Apple
+> Developer ID plus notarization (paid account, `APPLE_*` secrets in CI) — not set up.
+> Check a built app with `codesign --verify --deep --strict Toril.app`: it must pass.
+
 **Releases** are cut by pushing a `v*` git tag (e.g. `v0.1.0-alpha.5`), which triggers
 `.github/workflows/release.yml` (cross-platform `tauri-action` build → GitHub prerelease). **Always add
 the release's notes to `CHANGELOG.md` before pushing the tag** — the changelog is the source of truth
