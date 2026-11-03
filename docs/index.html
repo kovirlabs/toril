@@ -5,47 +5,70 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- HTTPS safety net: auto-upgrade any http subresource so the page is never mixed-content -->
 <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
-<title>Toril — a desktop markdown editor</title>
-<meta name="description" content="Toril is a desktop markdown editor. Your markdown renders in place as you type, and your files stay plain .md in ordinary folders. Built on Tauri, Rust, and Milkdown.">
+<title>Toril — Free WYSIWYG Markdown Editor for Windows, macOS &amp; Linux</title>
+<meta name="description" content="Toril is a free, open-source WYSIWYG markdown editor. Markdown renders in place as you type, files stay plain .md in ordinary folders, and it works alongside an Obsidian vault. Version history, autosave and crash recovery built in.">
 <meta name="theme-color" content="#08171E">
-<meta name="robots" content="index, follow">
-<meta name="author" content="Toril">
-<meta name="keywords" content="markdown editor, WYSIWYG markdown, Tauri, Rust, MarkText alternative, Obsidian compatible, note taking, plain text editor">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="author" content="Kovir Labs">
+<meta name="keywords" content="markdown editor, WYSIWYG markdown editor, free markdown editor, open source markdown editor, Obsidian compatible editor, MarkText alternative, Typora alternative, markdown editor for Windows, offline notes app, Tauri, Rust">
 <link rel="canonical" href="https://toril.ink/">
 
 <!-- Social card (absolute URLs required — scrapers can't resolve relative paths) -->
 <meta property="og:site_name" content="Toril">
-<meta property="og:title" content="Toril — a desktop markdown editor">
-<meta property="og:description" content="Markdown that renders in place as you type. Files stay plain .md in ordinary folders.">
+<meta property="og:title" content="Toril — a free WYSIWYG markdown editor">
+<meta property="og:description" content="Markdown that renders in place as you type. Files stay plain .md in ordinary folders, with version history and crash recovery built in.">
 <meta property="og:url" content="https://toril.ink/">
-<meta property="og:image" content="https://toril.ink/Toril_Icon.png">
-<meta property="og:image:alt" content="The Toril icon — a bull's head fused with a fountain-pen nib.">
+<meta property="og:image" content="https://toril.ink/UI-Screenshot.png">
+<meta property="og:image:alt" content="Toril editing a Markdown document, with a file sidebar and headings, lists and code rendered inline.">
 <meta property="og:image:type" content="image/png">
-<meta property="og:image:width" content="1356">
-<meta property="og:image:height" content="1357">
+<meta property="og:image:width" content="2188">
+<meta property="og:image:height" content="1824">
 <meta property="og:type" content="website">
 <meta property="og:locale" content="en_US">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Toril — a desktop markdown editor">
-<meta name="twitter:description" content="Markdown that renders in place as you type. Files stay plain .md in ordinary folders.">
-<meta name="twitter:image" content="https://toril.ink/Toril_Icon.png">
-<meta name="twitter:image:alt" content="The Toril icon — a bull's head fused with a fountain-pen nib.">
+<meta name="twitter:title" content="Toril — a free WYSIWYG markdown editor">
+<meta name="twitter:description" content="Markdown that renders in place as you type. Files stay plain .md in ordinary folders, with version history and crash recovery built in.">
+<meta name="twitter:image" content="https://toril.ink/UI-Screenshot.png">
+<meta name="twitter:image:alt" content="Toril editing a Markdown document, with a file sidebar and headings, lists and code rendered inline.">
 
-<!-- Structured data for rich results (schema.org SoftwareApplication) -->
+<!-- Structured data for rich results (schema.org) -->
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   "name": "Toril",
-  "applicationCategory": "DeveloperApplication",
-  "operatingSystem": "Windows, macOS, Linux",
-  "description": "Toril is a desktop markdown editor. Your markdown renders in place as you type, and your files stay plain .md in ordinary folders. Built on Tauri, Rust, and Milkdown.",
+  "applicationCategory": "UtilitiesApplication",
+  "applicationSubCategory": "Markdown editor",
+  "operatingSystem": "Windows 10, Windows 11, macOS, Linux",
+  "description": "A free, open-source WYSIWYG markdown editor. Markdown renders in place as you type, and files stay plain .md in ordinary folders, compatible with Obsidian vaults.",
   "url": "https://toril.ink/",
   "image": "https://toril.ink/Toril_Icon.png",
+  "screenshot": "https://toril.ink/UI-Screenshot.png",
   "downloadUrl": "https://github.com/kovirlabs/toril/releases/latest",
-  "softwareVersion": "1.0.0-beta.1",
+  "installUrl": "https://github.com/kovirlabs/toril/releases/latest",
+  "releaseNotes": "https://github.com/kovirlabs/toril/blob/main/CHANGELOG.md",
+  "softwareVersion": "1.1.1",
+  "datePublished": "2026-10-15",
   "isAccessibleForFree": true,
   "license": "https://github.com/kovirlabs/toril/blob/main/LICENSE",
+  "codeRepository": "https://github.com/kovirlabs/toril",
+  "author": {
+    "@type": "Organization",
+    "name": "Kovir Labs",
+    "url": "https://github.com/kovirlabs"
+  },
+  "featureList": [
+    "Inline WYSIWYG markdown editing",
+    "CommonMark and GitHub Flavored Markdown",
+    "Plain .md files, Obsidian-vault compatible",
+    "Front matter properties editor",
+    "Edit HTML files",
+    "Atomic saves, autosave and crash recovery",
+    "Local version history with diff and restore",
+    "Safe merging of external changes from sync clients",
+    "File sidebar, tabs, outline, find and replace",
+    "Export to HTML and RTF"
+  ],
   "offers": {
     "@type": "Offer",
     "price": "0",
@@ -316,21 +339,21 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:54px 0 40
     <img class="mark" src="Toril_Mark.png" width="148" height="148" fetchpriority="high"
          alt="Toril — a bull's head fused with a fountain-pen nib">
     <h1>Toril</h1>
-    <div class="tag">A desktop markdown editor.</div>
-    <p class="sub">Your markdown renders in place as you type — no separate preview pane — and your files stay plain <code>.md</code> in ordinary folders, so a workspace can be a live Obsidian vault.</p>
+    <p class="tag">A WYSIWYG markdown editor for plain files.</p>
+    <p class="sub">Your markdown renders in place as you type, with no separate preview pane. Notes stay plain <code>.md</code> in ordinary folders, so a workspace can also be a live Obsidian vault.</p>
     <div class="hero-cta">
       <a class="btn btn-gold" href="#download">Download</a>
       <a class="btn btn-ghost" href="https://github.com/kovirlabs/toril" target="_blank" rel="noopener">View on GitHub</a>
     </div>
-    <div class="hero-note">Free &amp; open source · Apache-2.0 · beta · Windows, macOS, Linux</div>
+    <div class="hero-note">Free &amp; open source · Apache-2.0 · v1.1.1 · Windows, macOS, Linux</div>
   </div>
 </header>
 
 <!-- INTRO -->
 <section class="intro">
   <div class="wrap reveal">
-    <h2>It is a tool, and it does one job.</h2>
-    <p class="lead">Toril edits markdown. The editing surface is the rendered surface, so there is no split pane and nothing to keep in sync. It is built on Tauri and Rust, which means a native binary rather than a bundled browser. It is beta software: the editor works and is used daily, and there are still rough edges. Keep backups of anything important.</p>
+    <h2>A notes editor you can trust with your writing.</h2>
+    <p class="lead">Toril edits markdown and HTML in place. It saves atomically, keeps a local history of every save, and won't silently overwrite a note that another app or a sync client changed. It ships as a small native app built on Tauri and Rust, not a bundled browser.</p>
   </div>
 </section>
 
@@ -340,7 +363,7 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:54px 0 40
     <figure>
       <img src="UI-Screenshot.png" width="2188" height="1824" loading="lazy" decoding="async"
            alt="Toril editing a Markdown document: a workspace sidebar on the left, a document tab bar, and headings, lists and code rendered inline in the editor.">
-      <figcaption>Toril editing a document — the rendered surface is the editing surface.</figcaption>
+      <figcaption>Toril editing a document. The rendered surface is the editing surface.</figcaption>
     </figure>
   </div>
 </section>
@@ -350,57 +373,63 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:54px 0 40
   <div class="wrap">
     <div class="feat-head reveal">
       <div class="kicker">What's inside</div>
-      <h2>What the current build does</h2>
-      <p class="lead">This is what you get when you download it today. Anything not listed here is either deliberately absent or not written yet — both are covered further down.</p>
+      <h2>What Toril does today</h2>
+      <p class="lead">Everything here is in the current release. What isn't built yet is listed further down.</p>
     </div>
     <div class="grid">
 
       <div class="card reveal">
         <div class="ico"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h7"/><path d="M17 13l3 3-3 3M20 16h-6"/></svg></div>
-        <h3>Live WYSIWYG</h3>
-        <p>Type <code>#&nbsp;</code> and the line becomes a heading — in place. No split pane, no preview lag. The page <em>is</em> the preview.</p>
-      </div>
-
-      <div class="card reveal">
-        <div class="ico"><svg viewBox="0 0 24 24"><path d="M5 7h14M9 5l-1.5 14M16.5 5L15 19"/><path d="M14 14h6M17 11v6"/></svg></div>
-        <h3>CommonMark and GFM</h3>
-        <p>Tables, task lists, footnotes, and strikethrough, plus emoji shortcodes — rendered inline as you type.</p>
-      </div>
-
-      <div class="card reveal">
-        <div class="ico"><svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg></div>
-        <h3>HTML, not just Markdown</h3>
-        <p>Open, edit, and save <code>.html</code> files in the same editor. Markup is sanitized as it loads, so nothing in a file can run.</p>
+        <h3>Live WYSIWYG markdown</h3>
+        <p>Type <code>#&nbsp;</code> and the line becomes a heading in place. Supports CommonMark and GitHub Flavored Markdown (tables, task lists, footnotes, strikethrough) plus emoji shortcodes, with a formatting toolbar.</p>
       </div>
 
       <div class="card reveal">
         <div class="ico"><svg viewBox="0 0 24 24"><path d="M8 4c-2 0-3 1-3 4s1 4-2 4c3 0 2 1 2 4s1 4 3 4M16 4c2 0 3 1 3 4s-1 4 2 4c-3 0-2 1-2 4s-1 4-3 4"/></svg></div>
-        <h3>Plain text, portable</h3>
-        <p>Your notes are ordinary <code>.md</code> files in ordinary folders. Stop using Toril tomorrow and every note still opens in anything.</p>
-      </div>
-
-      <div class="card reveal">
-        <div class="ico"><svg viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4"/><path d="M5 19h14"/></svg></div>
-        <h3>Export to HTML and RTF</h3>
-        <p>A standalone HTML document with the active theme inlined, or RTF for a word processor.</p>
-      </div>
-
-      <div class="card reveal">
-        <div class="ico"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M5 17l4.5-4.5L13 16l3-3 3 3"/></svg></div>
-        <h3>Paste images</h3>
-        <p>Paste an image from your clipboard and Toril writes it beside the document, then links it.</p>
-      </div>
-
-      <div class="card reveal">
-        <div class="ico"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M9 5v14"/><path d="M12 9h6M12 13h4"/></svg></div>
-        <h3>Sidebar, tabs, file watcher</h3>
-        <p>A workspace tree and multiple open documents, with a watcher that notices edits made outside the editor. It reopens your last folder and files on launch.</p>
+        <h3>Obsidian-friendly plain files</h3>
+        <p>Notes are ordinary <code>.md</code> files. Toril writes markdown the way Obsidian does and keeps YAML, TOML or JSON front matter byte-for-byte, editable as typed properties above the note.</p>
       </div>
 
       <div class="card reveal">
         <div class="ico"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg></div>
-        <h3>Atomic saves</h3>
-        <p>Every write is a temp file, an fsync, then a rename — so a crash mid-save cannot corrupt an existing note. Nothing is sent anywhere; there is no account and no telemetry.</p>
+        <h3>Saves you can't lose</h3>
+        <p>Every write is a temp file, an fsync, then a rename, so a crash mid-save can't corrupt a note. Optional autosave, and unsaved work is restored after a crash.</p>
+      </div>
+
+      <div class="card reveal">
+        <div class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></div>
+        <h3>Version history</h3>
+        <p>Every save keeps a local snapshot. Diff against any earlier version and restore it in one click. History lives outside your vault, so it never clutters your folders.</p>
+      </div>
+
+      <div class="card reveal">
+        <div class="ico"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 13.7-5.6L20 9"/><path d="M20 4v5h-5"/><path d="M20 12a8 8 0 0 1-13.7 5.6L4 15"/><path d="M4 20v-5h5"/></svg></div>
+        <h3>Plays well with sync</h3>
+        <p>When Obsidian, Dropbox or another app changes an open note, Toril merges the change. If both sides edited the same lines, it saves the losing side as a conflict copy, so no edit is ever thrown away.</p>
+      </div>
+
+      <div class="card reveal">
+        <div class="ico"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M9 5v14"/><path d="M12 9h6M12 13h4"/></svg></div>
+        <h3>A real workspace</h3>
+        <p>File sidebar with new, rename and delete. Deleted notes go to a <code>.trash</code> folder you can undo from. Also tabs, a document outline, Find &amp; Replace, recent files and drag-and-drop open.</p>
+      </div>
+
+      <div class="card reveal">
+        <div class="ico"><svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg></div>
+        <h3>HTML, not just markdown</h3>
+        <p>Open, edit and save <code>.html</code> files in the same editor, which is handy for documents AI assistants produce. Markup is sanitized as it loads, so nothing in a file can run. Save As converts between the two formats.</p>
+      </div>
+
+      <div class="card reveal">
+        <div class="ico"><svg viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4"/><path d="M5 19h14"/></svg></div>
+        <h3>Export, images, themes</h3>
+        <p>Export to standalone HTML or RTF, paste an image from the clipboard straight into a note, switch between light, dark and system themes, and zoom the text.</p>
+      </div>
+
+      <div class="card reveal">
+        <div class="ico"><svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15L6 16z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg></div>
+        <h3>Updates on your terms</h3>
+        <p>Toril tells you when a new version is out and never installs one behind your back. It won't restart while anything is unsaved. There's no account and no telemetry.</p>
       </div>
 
     </div>
@@ -413,24 +442,24 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:54px 0 40
     <div class="feat-head">
       <div class="kicker">Just as important</div>
       <h2>What it doesn't do</h2>
-      <p class="lead">Some of this is deliberate and permanent. Some is simply not built yet. The difference matters, so they are listed apart.</p>
+      <p class="lead">Some of this is deliberate. Some is simply not built yet.</p>
     </div>
     <div class="grid">
       <div class="card design reveal">
         <h3>By design</h3>
         <ul>
-          <li>No account, no cloud sync, no backend, no telemetry — Toril does not phone home.</li>
-          <li>No proprietary container or sidecar database.</li>
-          <li>No plugin system, and none planned.</li>
+          <li>No account, no cloud, no telemetry. The only network request is a daily update check for a static file, and you can turn it off.</li>
+          <li>No proprietary format or sidecar database.</li>
+          <li>No plugin system.</li>
           <li>No mobile app.</li>
         </ul>
       </div>
       <div class="card pending reveal">
         <h3>Not yet built</h3>
         <ul>
-          <li>Math rendering (KaTeX), PDF export, and in-editor YAML front matter.</li>
-          <li>Search across a whole vault, wikilinks, and backlinks.</li>
-          <li>Signed installers — Windows SmartScreen and macOS Gatekeeper warn on first run. That is expected for an unsigned build, not a sign of a problem.</li>
+          <li>Math (KaTeX) and PDF export. For a PDF, export to HTML and print it from a browser.</li>
+          <li>Search across a whole vault, wikilinks and backlinks.</li>
+          <li>Code-signed installers. Windows SmartScreen and macOS warn on first launch; that's expected for an unsigned build.</li>
         </ul>
       </div>
     </div>
@@ -443,9 +472,9 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:54px 0 40
   <div class="wrap reveal">
     <div class="kicker">Where it's going</div>
     <h2>Data safety first, then features.</h2>
-    <p>Current work is a floor to stand on: autosave and crash recovery, local version history, safe delete, and coexisting cleanly with folders that Obsidian or a sync client is also writing to. Search, wikilinks, and backlinks come after that — a tool you keep notes in has to be trustworthy before it is clever.</p>
-    <p>An AI assist layer is planned further out, built around your own API key or a local model. None of it is written yet, and nothing in Toril talks to a network today.</p>
-    <p class="note">The name: in the Spanish bullring, <span class="pen">el toril</span> is the pen where the bull waits before it charges — a nod to Tauri (the bull) and to writing (the pen).</p>
+    <p>The safety work is done: atomic saves, autosave, crash recovery, version history, safe delete, and coexisting with sync clients. Next up is turning the editor into a notes system, with vault-wide search, wikilinks and backlinks.</p>
+    <p>An optional AI assist using your own API key or a local model is planned further out. None of it is built yet.</p>
+    <p class="note">The name: in the Spanish bullring, <span class="pen">el toril</span> is the pen where the bull waits before it charges. It's a nod to Tauri (the bull) and to writing (the pen).</p>
   </div>
 </section>
 
@@ -465,13 +494,13 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:54px 0 40
 <!-- FINAL CTA -->
 <section class="final" id="download">
   <div class="wrap reveal">
-    <h2>Download</h2>
-    <p>Installers for Windows, macOS, and Linux are on the releases page, or you can build it from source. It's free, Apache-2.0, and there's nothing to sign up for.</p>
+    <h2>Download Toril</h2>
+    <p>Installers for Windows (<code>.exe</code>, <code>.msi</code>), macOS (Apple Silicon and Intel) and Linux (AppImage, <code>.deb</code>, <code>.rpm</code>). Free, Apache-2.0, and nothing to sign up for.</p>
     <div class="hero-cta">
-      <a class="btn btn-gold" href="https://github.com/kovirlabs/toril/releases/latest" target="_blank" rel="noopener">Download</a>
+      <a class="btn btn-gold" href="https://github.com/kovirlabs/toril/releases/latest" target="_blank" rel="noopener">Download v1.1.1</a>
       <a class="btn btn-ghost" href="https://github.com/kovirlabs/toril#building-from-source" target="_blank" rel="noopener">Build from source</a>
     </div>
-    <p class="dl-other">v1.0.0-beta.1 · Windows is the primary platform; macOS and Linux build from the same stack and get less testing</p>
+    <p class="dl-other">Windows is the primary platform · Installed copies update themselves from v1.1.0 on · <a href="https://github.com/kovirlabs/toril/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a></p>
   </div>
 </section>
 
