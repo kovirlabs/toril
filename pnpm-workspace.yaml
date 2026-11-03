@@ -3,12 +3,13 @@
 allowBuilds:
   esbuild: true
 
-# Force a patched undici (jsdom pulls it transitively as ^7.25.0). 7.29.1 is the
-# floor for every open advisory (GHSA-4cwx-7wf7-3272, GHSA-w293-vg96-wgc3 and
-# eight lesser ones), after 7.28.0 fixed GHSA-vmh5-mc38-953g and
-# GHSA-pr7r-676h-xcf6. Test-only (jsdom). Drop once jsdom's range moves.
+# Force a patched undici (jsdom pulls it transitively as ^7.25.0). 7.30.1 is the
+# floor for every open advisory (the TLS-validation bypass, renegotiation and
+# content-encoding DoS, cross-origin-redirect cache poisoning, WebSocket PONG
+# buffering), after 7.29.1 and 7.28.0 fixed the earlier rounds. Test-only
+# (jsdom). Drop once jsdom's range moves.
 overrides:
-  undici@>=7.0.0 <7.29.1: 7.29.1
+  undici@>=7.0.0 <7.30.1: 7.30.1
   # Milkdown pulls dompurify ^3.2.5 transitively; force the whole tree to the
   # direct dep's version. The floor started at 3.4.12 (GHSA-c2j3-45gr-mqc4); left
   # there it *held* Milkdown's copy at 3.4.12 while the direct dep moved on, past
