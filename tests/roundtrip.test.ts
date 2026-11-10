@@ -89,6 +89,53 @@ const preserved: Record<string, string> = {
   thematicBreak: "Above.\n\n---\n\nBelow.\n", // deliberate overlap with `fixtures`
   asteriskEmphasis: "Some *italic* and **bold** text.\n",
   underscoreEmphasis: "Some _italic_ and __bold__ text.\n",
+  // Escapes are emitted only where the parse proves them necessary
+  // (src/editor/escapes.ts). Before that, every one of these gained backslashes.
+  literalAsterisk: "A literal asterisk * and an underscore_in_word here.\n",
+  bracketCitation: "See figure [1] and [a, b].\n",
+  approximateTilde: "50% stenosis, ~3 cm, 5 * 3 mm.\n",
+  bareAutolink: "Visit https://example.com today.\n",
+};
+
+// Obsidian-specific syntax. Toril does not *render* most of it yet, but it must
+// never break it: before src/editor/escapes.ts, saving an edited note rewrote
+// `[[Note]]` as `\[\[Note]]`, which Obsidian shows as literal text — every
+// wikilink, image embed and callout in that note silently stopped working.
+const obsidianPreserved: Record<string, string> = {
+  wikilink: "See [[Pneumothorax]] and [[Pneumothorax#Signs|signs]].\n",
+  wikilinkBlockRef: "As in [[Case 12^finding]].\n",
+  adjacentWikilinks: "[[a]][[b]]\n",
+  wikilinkInHeading: "# Heading with [[Link]]\n",
+  wikilinkInBold: "**bold [[Link]]** text\n",
+  wikilinkInList: "- item [[Link]]\n- ![[img.png]]\n",
+  imageEmbed: "![[Pasted image 20261101.png]]\n",
+  imageEmbedSized: "![[cxr.png|400]]\n",
+  noteEmbed: "![[Chest#Signs]]\n",
+  callout: "> [!tip] Pearl\n> Deep sulcus sign on supine film.\n",
+  calloutFoldOpen: "> [!note]+ Title\n> body\n",
+  calloutFoldClosed: "> [!question]- What is the sign?\n> Answer.\n",
+  nestedCallout: "> > [!tip] nested\n> > x\n",
+  highlight: "The ==silhouette sign== matters.\n",
+  comment: "Text %%hidden%% here.\n",
+  blockId: "A key finding. ^finding1\n",
+  nestedTag: "Case of #chest/pneumothorax here.\n",
+  sizedImage: "![cxr|300](assets/cxr.png)\n",
+  ankiCloze: "The {{c1::deep sulcus}} sign.\n",
+  ankiInline: "Q:: What is X?\nA:: Y\n",
+  inlineMath: "Inline $E=mc^2$ math.\n",
+  blockMath: "$$\nx^2\n$$\n",
+};
+
+// The other half of the escape rule: where an escape IS needed, it stays. Each
+// of these would change meaning without its backslash (task item, heading,
+// ordered list, bullet, blockquote, raw HTML), so the output must keep it.
+const escapesKept: Record<string, string> = {
+  taskMarkerInList: "- \\[ ] literal\n",
+  headingMarker: "\\# not heading\n",
+  orderedMarker: "1\\. not list\n",
+  bulletMarker: "\\- not bullet\n",
+  quoteMarker: "\\> not quote\n",
+  rawHtml: "\\<div> text\n",
 };
 
 // Input that Toril legitimately rewrites. Each entry pins the EXACT output, so
@@ -109,9 +156,17 @@ const normalized: Record<string, [input: string, output: string]> = {
   asteriskRule: ["Above.\n\n***\n\nBelow.\n", "Above.\n\n---\n\nBelow.\n"],
   underscoreRule: ["Above.\n\n___\n\nBelow.\n", "Above.\n\n---\n\nBelow.\n"],
   tablePadding: ["| A | B |\n|---|---|\n| 1 | 2 |\n", "| A | B |\n| - | - |\n| 1 | 2 |\n"],
-  intrawordUnderscore: [
-    "A literal asterisk \\* and an underscore_in_word here.\n",
+  // Superfluous escapes are dropped — the reverse of the old normalization,
+  // which *added* them. Rendering is identical; only unneeded backslashes go.
+  superfluousEscapes: [
     "A literal asterisk \\* and an underscore\\_in\\_word here.\n",
+    "A literal asterisk * and an underscore_in_word here.\n",
+  ],
+  // Obsidian table cells keep their escaped pipe; the column padding is computed
+  // before minimization, so it may run a character wide.
+  wikilinkAliasInTable: [
+    "| a | b |\n| - | - |\n| [[x\\|y]] | z |\n",
+    "| a          | b |\n| ---------- | - |\n| [[x\\|y]] | z |\n",
   ],
   emojiShortcode: ["Hello :smile: world\n", "Hello 😄 world\n"],
   // An UNUSED link reference definition is DELETED — the one place the rewrite
@@ -123,7 +178,13 @@ const normalized: Record<string, [input: string, output: string]> = {
   // this single normalization dominates the conflict rate that feat/sync-coexistence
   // reasons about, far more than any construct-level reformat below.
   crlfLineEndings: ["- one\r\n- two\r\n", "- one\n- two\n"],
-  bareAutolink: ["Visit https://example.com today.\n", "Visit <https://example.com> today.\n"],
+  // A note damaged by an earlier Toril save (CHANGELOG, Unreleased) is repaired by
+  // the next one — the claim the release notes make to affected users.
+  repairsEscapedObsidianSyntax: [
+    "See \\[\\[Note]] and !\\[\\[scan.png]].\n\n> \\[!tip] Pearl\n",
+    "See [[Note]] and ![[scan.png]].\n\n> [!tip] Pearl\n",
+  ],
+  angleAutolink: ["Visit <https://example.com> today.\n", "Visit https://example.com today.\n"],
   plusBullets: ["+ one\n+ two\n", "- one\n- two\n"],
   parenOrderedMarker: ["1) one\n2) two\n", "1. one\n2. two\n"],
   overIndentedNesting: ["- Parent\n    - Child\n", "- Parent\n  - Child\n"],
@@ -189,6 +250,18 @@ describe("round-trip fidelity (Phase 1 gate)", () => {
       expect(once).toBe(md); // (1) lossless on canonical input
       const twice = await roundtrip(once);
       expect(twice).toBe(once); // (2) idempotent
+    });
+  }
+
+  for (const [name, md] of Object.entries(obsidianPreserved)) {
+    it(`preserves Obsidian syntax: ${name}`, async () => {
+      expect(await roundtrip(md)).toBe(md);
+    });
+  }
+
+  for (const [name, md] of Object.entries(escapesKept)) {
+    it(`keeps a necessary escape: ${name}`, async () => {
+      expect(await roundtrip(md)).toBe(md);
     });
   }
 

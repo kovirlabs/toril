@@ -96,6 +96,39 @@ no AI. That gap is this roadmap.
 > gospel, and the tag has run ahead of it twice now; §3's trust-before-reach rule still
 > governs what may be *reached* from the UI, regardless of version.
 
+> **Status update (2026-11-09) — who is actually using it, and a §3 fix it surfaced.**
+> Toril is seeing heavy use by **radiology / medical students**. That audience changes
+> priorities: their notes are image-heavy, structured around cases, studied rather than
+> just written, often live in an Obsidian vault they also read on a phone, and sometimes
+> brush against patient-identifying images. Two new tracks below — **Track H
+> (hardening)** and **Track M (medical & radiology students)** — and §9 (value Toril
+> does not offer today) come out of that review.
+>
+> Reviewing for that audience found a **§3 round-trip bug**: saving an *edited* note
+> backslash-escaped Obsidian syntax — `[[link]]` → `\[\[link]]`, `![[img.png]]` →
+> `!\[\[img.png]]`, `> [!tip]` → `> \[!tip]` — which Obsidian renders as literal text,
+> so links, embedded images and callouts broke. It also rewrote ordinary prose
+> (`figure [1]`, `~3 cm`, `snake_case`). **Fixed on `fix/obsidian-syntax-escaping`**:
+> `src/editor/escapes.ts` removes every escape that re-parsing *proves* unnecessary.
+> Branch 8 was framed as a feature; its *preservation* half was really a data-safety
+> fix, the same way front matter (branch 10) was. Rendering and navigation remain branch 8.
+>
+> **Recommended order from here** (audience-weighted; supersedes the numbering for
+> sequencing, not the numbering itself):
+> 1. Ship `fix/obsidian-syntax-escaping` as a patch release — it is a §3 fix.
+> 2. Merge **branch 6 (vault search)** — already built on `origin/feat/vault-search`.
+> 3. **H1** vault-wide repair of notes damaged by earlier saves, and **H2** save
+>    compare-and-swap (closes the documented TOCTOU).
+> 4. **H3 / H4** images in and out of notes the way Obsidian expects.
+> 5. **H5** render what H0 now preserves: clickable wikilinks, image embeds, callouts.
+> 6. **M1** templates → **M2** case log.
+> 7. **M5** privacy kit, **M6** self-quiz, **M3** image viewing.
+> 8. Branches 9 (tags) and 7 (palette); then **M7 / M8** study tools; then AI, local-first.
+>
+> Deprioritized for this audience: 13 (code highlighting), 16 (focus/typewriter),
+> 17 (writing stats), and 28 (own mobile app — see §8: with faithful Obsidian syntax,
+> Obsidian mobile on the same synced vault *is* the mobile story).
+
 ---
 
 ## 2. How we work (recap — these don't change)
@@ -286,6 +319,10 @@ editor something you keep using rather than something you tried.
 - [ ] **8. `feat/wikilinks-backlinks`** — `[[wikilink]]` with `[[`-autocomplete + a backlinks
    panel. The main thing that makes a folder of notes navigable, and it is the syntax
    Obsidian already uses, so vaults stay readable in both.
+   - *Preservation already done (H0, 2026-11-09):* `[[links]]` and `![[embeds]]` survive a
+     save byte-for-byte. Before that fix they were escaped on save, which made this a §3
+     bug and not only a missing feature. What remains here is rendering, navigation,
+     autocomplete and backlinks (shared with H5).
    - *New crate:* `crates/linkgraph` — parse `[[links]]`, resolve to files, maintain a
      backlink index; updates on watcher events.
    - *Touches:* a Milkdown `$node`/`$inputRule` for the link + autocomplete (canonical,
@@ -491,6 +528,197 @@ that has to land before a `v1.0` means anything.
 
 ---
 
+### Track H — Hardening · *make "Obsidian-compatible" and "never loses a note" fully true*
+
+**Why:** each item below is a place where a claim in the README is weaker than it
+reads. None is glamorous; all of them are what a heavy daily user hits first.
+
+- [x] **H0. `fix/obsidian-syntax-escaping`** — *(2026-11-09)* proof-checked escape
+  minimization in the canonical serializer, so wikilinks, embeds, callouts and plain
+  prose survive a save byte-for-byte. See CLAUDE.md §0.
+  - *Built:* `src/editor/escapes.ts`, wired in `serializer.ts`.
+  - *Gate:* `tests/escapes.test.ts` (search + 200-case property over the real parser) and
+    the `obsidianPreserved` / `escapesKept` classes in `roundtrip.test.ts`.
+  - *Open:* serialization now costs about one extra full parse (~180 ms at 12k words in
+    jsdom, paid on the debounced change listener). If very long notes feel sluggish, take
+    the whole-document proof off the dirty check, which only needs to know whether the text
+    differs from disk, and keep it on the write path.
+  - *Pre-existing quirks found while gating, not yet fixed:* a bare URL ending in `\`
+    gains a backslash on every save; remark moves a space out of a strikethrough
+    boundary. Both reproduce on `main` without H0.
+
+- [ ] **H1. `feat/repair-escaped-syntax`** — a vault-wide, **explicit** action that finds
+  notes damaged by pre-H0 saves (`\[\[`, `!\[\[`, `> \[!`) and repairs them. It shows the
+  list and per-file diff first, snapshots every file before writing, and writes atomically.
+  Never automatic (§3: no unrequested rewrites). Opening and saving a note in Toril already
+  repairs it, which is pinned as `repairsEscapedObsidianSyntax`. This is for the ones
+  nobody reopens.
+  - *Touches:* reuse `vaultsearch` for the scan; `snapshots` + `fsatomic` for the write.
+  - *Gate:* repair is idempotent; a note with no damage is byte-untouched.
+
+- [ ] **H2. `fix/save-compare-and-swap`** — close the documented TOCTOU (CLAUDE.md §5,
+  "Known limit of the guarantee"): `save_file` takes the expected base hash and refuses
+  the write unless the bytes on disk still match, inside the same Rust call.
+  - *Gate:* `fsatomic`-level test with a write landing between check and rename.
+
+- [ ] **H3. `feat/image-insertion`** — image input that works the way people try it:
+  - Drag an image file onto the editor and it is inserted. Today a drop only *opens*
+    files, and images are not on that allowlist, so they are silently dropped.
+  - Paste into an **unsaved** note: stage the image, and move it into place on first save.
+  - Paths with spaces, written as `<…>` or `%20`. Obsidian accepts both; CommonMark rejects
+    a raw space.
+  - Large-image guard: warn above a size threshold, and optionally downscale a *copy*.
+  - *Gate:* `imgasset` tests + a drop-allowlist case in `tests/paths.test.ts`.
+
+- [ ] **H4. `feat/obsidian-attachment-settings`** — read `.obsidian/app.json`
+  (`attachmentFolderPath`, `newLinkFormat`, `useMarkdownLinks`), so a pasted image lands
+  where Obsidian would put it and is written as `![[…]]` or `![](…)` to match the vault.
+  Read-only on `.obsidian/`; never write it. With no `.obsidian/`, keep `./assets/`.
+
+- [ ] **H5. `feat/obsidian-rendering`** — the rendering half of branch 8 plus its siblings:
+  - Clickable `[[wikilinks]]` (navigation only, resolved by `linkgraph`).
+  - Rendered `![[image.png]]` and `![[image.png|400]]`.
+  - Callouts `> [!type] Title`, including foldable `+`/`-`.
+  - The `==highlight==` mark.
+
+  Each must stay a canonical node whose markdown form is *exactly* the Obsidian spelling,
+  so the H0 fixtures double as this branch's round-trip gate.
+
+- [ ] **H6. `feat/trash-and-purge`** — a trash browser (`list_trash` already has a command
+  and an `ipc.ts` wrapper) plus **permanent delete**. Permanent delete removes the
+  `.trash/` entry, the note's `history/` directory, and any `recovery.json` entry, after an
+  explicit confirm. Today nothing Toril deletes is ever really gone, and §M5 explains why
+  that matters.
+
+- [ ] **H7. Small items, each a few lines but each a stated promise:**
+  - `spellcheck="true"` on the editable, verified in WebView2. Also check whether the DOM
+    context menu suppresses the native spelling suggestions.
+  - Decide `app.security.csp` (CLAUDE.md §0, still open #3).
+  - Show `.html`/`.htm` in the sidebar, since HTML is advertised as first-class.
+  - Pull **branch 24 (per-tab undo)** forward. Losing undo on every tab switch is a daily
+    irritation, not a Movement V concern.
+
+- [ ] **H8. Reconsider PDF export (§7).** Students print and share study sheets, and
+  HTML → browser → "Save as PDF" is friction they notice. Re-weigh the per-platform
+  print APIs against the demand that now exists. Alternatively, a one-click "Print"
+  that opens the exported HTML in the default browser's print dialog would reduce the
+  friction without new unsafe FFI.
+
+---
+
+### Track M — Medical & radiology students · *the audience that showed up*
+
+**Why:** a radiology note is a **case**: images first, a fixed structure (history →
+findings → impression → differential → pearls), studied repeatedly, and sometimes
+derived from material containing patient identifiers. Obsidian can approximate all of
+this with five community plugins; Toril can do it out of the box, and the
+local-first, no-account stance is a real fit for sensitive material. Keep every item
+plain-markdown and Obsidian-readable: these users also open the vault in Obsidian,
+often on a phone.
+
+- [ ] **M1. `feat/daily-notes-templates`** (= **branch 18**, pulled forward) with
+  **starter templates** shipped as ordinary `.md` files the user can edit:
+  - *Case note:* front matter for `modality`, `region`, `diagnosis`, `source`,
+    `rotation`, `date` and `tags`, then History / Technique / Findings / Impression /
+    Differential / Teaching points.
+  - *Structured report:* a Technique / Comparison / Findings / Impression skeleton in
+    the familiar structured-reporting shape.
+  - *Topic note:* Definition / Imaging features by modality / Mimics / Pearls / Pitfalls.
+  - *Differential table:* a GFM table template.
+  - *Gate:* `tests/templates.test.ts`. Every shipped template is also a round-trip
+    fixture, the same discipline as the welcome note.
+
+- [ ] **M2. `feat/case-log`** — a table view of front-matter properties across the vault,
+  sortable and filterable (*every CT chest case on my IR rotation*), with **CSV
+  export** for logbooks and applications. The properties strip already parses all three
+  formats.
+  - *Shape:* Rust returns raw front-matter blocks and the TS side parses them with the
+    *existing* `frontmatter-values.ts`. Do **not** add a Rust YAML crate: `serde_yaml` is
+    archived, so it fails §2.
+  - *Touches:* a `vault_properties` command (sibling of `vaultscan`) and
+    `src/ui/caselog.ts` in the rail or a tab.
+  - *Gate:* the splitter parity cases (TS ⇄ Rust) + a pure table-model test.
+
+- [ ] **M3. `feat/image-viewing`** — radiology is read on black:
+  - Click an image to open a lightbox with zoom and pan on a black background.
+  - Consecutive images in one paragraph lay out **side by side** (prior vs current,
+    T1/T2/FLAIR). This needs no new syntax, so it stays Obsidian-portable.
+  - Alt text shown as a caption.
+  - A low-luminance "reading room" theme.
+  - **Do not build a DICOM viewer**: screenshots are the medium, and DICOM parsing pulls in
+    a large, risky surface.
+
+- [ ] **M4. `feat/image-annotation`** — arrows, circles and short labels drawn on a
+  **copy** (`scan.annotated.png`); the original is never modified, and the note links
+  the copy. Canvas in the frontend, written through `imgasset`. Larger than it looks;
+  scope to three tools and undo.
+
+- [ ] **M5. `feat/privacy-kit`** — for material that may carry patient identifiers:
+  - **Strip image metadata** on insert (JPEG APPn/EXIF, PNG text chunks), done losslessly
+    in `imgasset` by dropping segments rather than re-encoding.
+  - **Crop on insert**, to cut burned-in names or record numbers off a screenshot before
+    it is ever written.
+  - **Permanent delete** (H6). Today a deleted note survives in `.trash/`, which sits
+    *inside* the synced vault, and in version history.
+  - A short `docs/` page on using Toril with clinical images: de-identify first, follow
+    your institution's policy, and think twice before a consumer cloud sync. **Never
+    claim HIPAA or GDPR compliance**: Toril is a local editor, and compliance is about the
+    whole workflow.
+  - *Gate:* `imgasset` tests that stripped output decodes identically and carries no
+    metadata segments.
+
+- [ ] **M6. `feat/self-quiz`** — unknown-case practice:
+  - Callouts folded with `-` (`> [!question]- What is the sign?`) render **collapsed**
+    and open on click.
+  - A per-note "hide answers" toggle collapses every foldable callout and `<details>`.
+  - Optionally hide sections by heading (Impression, Diagnosis) until revealed.
+
+  It is purely view state, and the file never changes. Depends on H5's callout rendering.
+
+- [ ] **M7. `feat/flashcard-export`** — export `{{c1::cloze}}` and `Q::A` lines (the
+  Obsidian_to_Anki syntax, both already pinned as preserved) to an Anki-importable
+  **CSV**. An `.apkg` file needs SQLite, which means C (`rusqlite` bundles it) and fails
+  §2's C-free rule, so do not build it. Media cannot ride a CSV, so say so in the dialog.
+  Building spaced repetition *into* Toril is out of scope: students already use Anki, and
+  the job is to feed it.
+
+- [ ] **M8. `feat/review-queue`** — lightweight review without Anki: `review_next:` /
+  `last_reviewed:` front-matter dates, a "due today" list in the rail, and a "Reviewed"
+  action that updates the property. Uses typed rows, so it is only offered when the
+  block re-serializes byte-exact.
+
+- [ ] **M9. `feat/text-snippets`** — user-defined expansions (`;nlcxr` → a normal chest
+  radiograph paragraph), stored as a plain `.md` file in the vault so they sync and
+  stay editable. Insertion is a ProseMirror transaction, never raw text (§3.2).
+
+- [ ] **M10. Medical spelling** — depends on H7's spellcheck. A user dictionary that
+  persists, and optionally a bundled medical word list, **after a licence check** (several
+  common medical dictionaries are GPL or unclear; §2 applies to data too).
+
+- [ ] **M11. Pull forward branch 15 (Mermaid)** — decision trees and imaging algorithms
+  are a staple of these notes, far more than code highlighting or math.
+
+- [ ] **M12. AI, local-first for clinical content** — when branch 20 lands, default to
+  **Ollama**, and require an explicit per-vault opt-in, with a plain warning about patient
+  data, before any note goes to a cloud provider. Useful and low-risk: generate flashcards
+  or quiz questions from a note, summarize, outline. **Do not** build "suggest a diagnosis"
+  or differential features: the accuracy and liability profile is wrong for an editor. The
+  MCP bridge (branch 23) needs the same opt-in.
+
+- [ ] **M13. `feat/web-clip`** — paste from a reference site keeps structure, downloads
+  remote images into the attachment folder (offline study, no link rot), and records
+  `source:` in front matter for attribution. Sanitize as always (§3.3).
+
+- [ ] **M14. `feat/case-presentation`** — present a note as slides (split on `---` or H2),
+  image-first on black, arrow keys to advance: case conferences and teaching rounds. A
+  view, not a format, so there is nothing new to round-trip.
+
+- [ ] **M15. Portable build** — a zip that runs without installing, for locked-down
+  hospital and library PCs (WebView2 is already present on Windows 11). Settings and
+  history stay beside the executable when a marker file says so.
+
+---
+
 ### Parallel track — Toril-TUI follow-ups · *parked 2026-07-08*
 
 Not part of the desktop Movement ladder. **Toril-TUI** is a second, webview-free
@@ -566,4 +794,41 @@ floor supports. Everything else is execution.
 - **Beta graduation bar:** which exact branches must be green to drop `-alpha`? (Proposed:
   all of Movements I–II.)
 - **Mobile scope for v1.0:** full edit parity, or read + light-edit first? (Lean
-  light-edit first; the sandbox makes full parity expensive.)
+  light-edit first; the sandbox makes full parity expensive.) **Re-opened 2026-11-09:**
+  with Obsidian syntax now preserved (H0), Obsidian mobile reading the same synced
+  vault may simply *be* the mobile answer — a quarter of work (branch 28) against a
+  free, mature client. Decide after H5 makes the desktop side render what mobile
+  writes.
+- **How far to specialize for medical users?** Track M is mostly general-purpose
+  features with medical *defaults* (templates, case log, quiz, privacy). Keep it that
+  way: a templates system with a radiology starter pack, not a radiology app. Revisit
+  if the audience broadens or narrows.
+- **Learn the audience without telemetry.** Toril does not phone home, and that stays.
+  Use an opt-in feedback channel (a GitHub Discussions category, or a short survey
+  linked from Help) and talk to a handful of the students directly before committing
+  to the larger M items (M2, M4).
+
+---
+
+## 9. Value Toril does not offer today (unplaced — pull from here)
+
+Ideas that came out of the 2026-11-09 review, beyond Tracks H and M. Unscheduled and
+in scope, held to the same rules: plain files, one serializer per format, all disk
+I/O in Rust, healthy dependencies only.
+
+| Idea | Why it matters | Notes / constraints |
+|---|---|---|
+| **Split view** — two notes side by side | Comparing cases, writing from a source note | Today one shared editor swaps content (branch 24 is the prerequisite) |
+| **PDF reader pane** with page-linked notes | Lecture slides and papers are where study notes come from | `pdf.js` (Mozilla, healthy); a link format like `[[deck.pdf#page=12]]` matches Obsidian |
+| **Study-packet export** — many notes → one HTML (later PDF) | Printable revision packs, sharing with a study group | Reuses `mdhtml` + the sanitize chokepoint; ordering by folder or a list note |
+| **Vault health check** | Broken `[[links]]`, orphaned attachments, oversized images, H1 damage | Read-only report; any fix is a separate, explicit, snapshotted action |
+| **Citations** — Pandoc `[@key]` + a Zotero (Better BibTeX) JSON file | Research-track students and residents | `[@key]` already survives a save (H0); render a reference list on export |
+| **Searchable image text (OCR)** | Find a case by text inside a screenshot | Use the OS engines (Windows.Media.Ocr, macOS Vision) through Rust bindings; Tesseract is C and fails §2. Store results outside the vault, like history |
+| **Scheduled backup** — vault + history to a second folder or zip | Version history lives in the app config dir; a disk loss takes both | Atomic, additive, opt-in; never into the vault itself |
+| **Import cleanup** — Notion, OneNote, Evernote exports | Students arrive from OneNote and Notion | Notion's escape-heavy markdown is now normalized by H0 on first edit; an explicit batch import is the remaining piece |
+| **Link previews** for reference URLs | Context on hover | Any network fetch is a privacy decision: opt-in, no telemetry, nothing sent but the URL the user wrote |
+| **Shared study vault guidance** | Groups already share a synced folder | The conflict machinery (branch 4) is built for this; it needs documenting more than code |
+
+**Considered and deliberately left out:** a graph view (rarely used after the first
+week; backlinks carry the value), a plugin system (README: "no plans"), and an in-app
+spaced-repetition engine (feed Anki instead — M7).

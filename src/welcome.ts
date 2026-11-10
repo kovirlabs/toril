@@ -60,7 +60,7 @@ also records a version you can go back to, and if a file changes underneath you
 
 ---
 
-Ctrl-click a link to open it in your browser: <https://github.com/kovirlabs/toril>
+Ctrl-click a link to open it in your browser: https://github.com/kovirlabs/toril
 `;
 
 export const EMPTY = `# Untitled
