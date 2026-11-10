@@ -142,7 +142,26 @@ export class TabManager {
     if (prev) this.cb.onDeactivate(prev);
     this.activeId = id;
     const next = this.active();
-    if (next) this.cb.onActivate(next);
+    try {
+      if (next) this.cb.onActivate(next);
+    } catch (e) {
+      // A document the editor cannot load must never become the active tab.
+      // onActivate throws after the editor's *state* was replaced but before the
+      // screen redrew, so leaving `next` active would show the previous note
+      // while Save — which needs no dirty flag — wrote the half-loaded text over
+      // the file that failed. Put `prev` back (re-loading it is what clears the
+      // half-loaded state) and let the caller report the failure. The failed
+      // tab stays in the list with its buffer untouched: it was never active, so
+      // nothing was ever flushed into it, and a recovered buffer is not dropped.
+      this.activeId = prev?.id ?? null;
+      try {
+        if (prev) this.cb.onActivate(prev);
+      } catch {
+        this.activeId = null; // nothing loadable to fall back to
+      }
+      this.render();
+      throw e;
+    }
     this.render();
   }
 

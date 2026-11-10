@@ -5,7 +5,7 @@
 import "@milkdown/theme-nord/style.css";
 import "./styles.css";
 import { editorViewCtx, type Editor } from "@milkdown/kit/core";
-import { caretOf, createEditor, resetHistory } from "./editor/milkdown";
+import { type CaretSnapshot, caretOf, createEditor, resetHistory } from "./editor/milkdown";
 import { docToMarkdown, markdownToDoc } from "./editor/serializer";
 import { docToHtml, htmlToDoc } from "./editor/html-serializer";
 import type { FrontMatter, SplitFile } from "./editor/frontmatter";
@@ -255,6 +255,21 @@ function loadIntoEditor(content: string, format: DocFormat, caret: "keep" | "sta
   // Taken before the swap: afterwards every position has been mapped to the end.
   const before = caret === "keep" ? caretOf(editor) : "start";
   loading = true;
+  try {
+    loadIntoEditorUnguarded(content, format, before);
+  } finally {
+    // A load that throws (a document the view cannot draw) must not leave every
+    // later keystroke ignored as "still loading" — TabManager reloads the
+    // previous tab after the failure, and that reload is a normal load.
+    loading = false;
+  }
+}
+
+function loadIntoEditorUnguarded(
+  content: string,
+  format: DocFormat,
+  before: CaretSnapshot | "start",
+): void {
   if (format === "html") {
     // Front matter is a markdown-file concept; an `.html` document has none, and
     // the strip stays hidden for those tabs.
@@ -395,12 +410,37 @@ async function openPath(path: string): Promise<void> {
     return;
   }
   const file = await openFile(path);
-  openDocument(file.path, basename(file.path), file.content, formatForPath(file.path));
+  try {
+    openDocument(file.path, basename(file.path), file.content, formatForPath(file.path));
+  } catch (e) {
+    // The editor could not load it. TabManager has already put the previous tab
+    // back; the new tab never became active, holds exactly what is on disk, and
+    // can never be opened — so drop it rather than leave a dead tab whose click
+    // only fails again. The caller reports the error.
+    const failed = tabs.byPath(file.path);
+    if (failed && failed.id !== tabs.active()?.id && !failed.dirty) tabs.close(failed.id);
+    throw e;
+  }
   // Recorded from the path the backend resolved, and only once the read
   // succeeded — a file that failed to open must not enter a list whose whole
   // purpose is offering it again.
   rememberRecent(file.path);
   setStatus(`Opened ${basename(file.path)}`);
+}
+
+/**
+ * `openPath` for the fire-and-forget callers (sidebar click, a second launch, a
+ * drop). Awaited there, a failure was an unhandled rejection: clicking a note
+ * the editor could not load did nothing at all, with no message.
+ */
+async function openPathOrReport(path: string): Promise<boolean> {
+  try {
+    await openPath(path);
+    return true;
+  } catch (e) {
+    setStatus(`Open failed: ${String(e)}`);
+    return false;
+  }
 }
 
 async function doOpenFile(): Promise<void> {
@@ -1995,7 +2035,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   if (!editorRoot || !tabbar || !sidebarEl || !formatBar) return;
 
   sidebar = new Sidebar(sidebarEl, {
-    onOpenFile: (p) => void openPath(p),
+    onOpenFile: (p) => void openPathOrReport(p),
     // Routed through the same action as the menu item, so the empty state's
     // button cannot drift from File → Open Folder.
     onOpenFolder: () => runAction("menu_open_folder"),
@@ -2145,7 +2185,7 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // While Toril is already running, a second double-click is forwarded here by
   // the single-instance plugin rather than starting a new process (§5).
-  void onOpenFile((path) => void openPath(path));
+  void onOpenFile((path) => void openPathOrReport(path));
 
   // Dropping notes on the window opens them. A drop is the one open path with
   // no file-type filter in front of it, so `selectOpenable` is an allowlist —
@@ -2160,9 +2200,19 @@ window.addEventListener("DOMContentLoaded", async () => {
       return;
     }
     void (async () => {
-      for (const path of openable) await openPath(path);
+      let opened = 0;
+      for (const path of openable) if (await openPathOrReport(path)) opened++;
       const skipped = paths.length - openable.length;
-      if (skipped > 0) setStatus(`Opened ${openable.length}; skipped ${skipped}`);
+      // A failed open already put its own message up; only overwrite it with a
+      // summary that still mentions it.
+      if (skipped > 0 || opened < openable.length) {
+        const failed = openable.length - opened;
+        setStatus(
+          `Opened ${opened}` +
+            (skipped > 0 ? `; skipped ${skipped}` : "") +
+            (failed > 0 ? `; ${failed} failed to open` : ""),
+        );
+      }
     })();
   });
 

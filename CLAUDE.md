@@ -364,6 +364,7 @@ toril/
 │   │   ├── milkdown.ts        # WYSIWYG setup + plugins (incl. clipboard-image paste, §6)
 │   │   ├── serializer.ts      # the ONE markdown <-> doc converter (§3.2)
 │   │   ├── escapes.ts         # proof-checked escape minimization, used only by serializer.ts
+│   │   ├── emoji.ts           # the ONE emoji stack: upstream + ©/®/™ kept as text (§6)
 │   │   ├── html-serializer.ts # the ONE HTML <-> doc converter (§3.2/§3.3)
 │   │   └── html-constructs.ts # richer HTML-only schema: callout/details/dl/mark/sub/sup (§6)
 │   ├── ui/
@@ -635,7 +636,7 @@ frontend never touches the filesystem directly; it asks via `invoke()`.
 | WYSIWYG core | `@milkdown/core` + `@milkdown/preset-commonmark` |
 | GFM (tables, task lists, strikethrough) | `@milkdown/preset-gfm` |
 | Math (KaTeX) | **Deferred** — `@milkdown/plugin-math` is deprecated; omitted until a maintained option exists (§0/§8) |
-| Emoji shortcodes | `@milkdown/plugin-emoji` |
+| Emoji shortcodes | `@milkdown/plugin-emoji`, assembled **only** in `src/editor/emoji.ts` (app and every gate import `emoji` from there). That module adds one remark step: an emoji node twemoji did not draw as an `<img>` (bare ©, ®, ™ — `emoji-regex` matches them, twemoji leaves them as text) goes back to plain text. Upstream made them nodes that crash the view on load (prosemirror-model ≥ 1.25.5 rejects the Text node `toDOM` returns) **and** serialize to nothing. **Do not upgrade to 7.23.0 thinking it fixes this**: it fixes the crash, not the deletion on save |
 | Inline / slash shortcuts | `@milkdown/plugin-slash` + keymap config |
 | Formatting toolbar | `toolbar.ts` → Milkdown commands via `callCommand` (the few command-less items use a plain ProseMirror transaction); **never inserts raw markdown text** (§3.2). Buttons reflect active state via `activeState()`. The pure command layer is exported separately from the DOM so the gate tests it headlessly. *Underline omitted by design* (no markdown form). *Front-matter button deferred* (not lossless yet). |
 | Front matter | **Not a Milkdown plugin, by design** — `src/editor/frontmatter.ts` splits the block off at the load/serialize boundary so it never enters the ProseMirror doc (§3). Edited in `src/ui/properties.ts`, a collapsible strip above the writing surface: typed rows for a block that provably re-serializes byte-exact, raw text for anything else |
@@ -760,6 +761,13 @@ Phases 0–3 are complete and Phase 4 (polish) is in progress; the shipped detai
   in the **future** fails *open* — a corrected clock must not disable update checks
   forever with no symptom. What it cannot cover is anything downstream of the network:
   see §D of `docs/ON-DEVICE-VERIFICATION.md`.
+- **Emoji / symbols:** `tests/emoji.test.ts` + `trademarkSymbols`/`symbolsBesideEmoji` in the
+  round-trip `preserved` class — ©/®/™ parse as text, load into a *mounted* view, and save
+  byte-exact, while the emoji-presentation forms (©️ ®️ ™️) stay image emoji. Red before the fix.
+- **Failed loads:** `tests/tabs.test.ts` ("an activation that throws") — a document the editor
+  cannot load never becomes the active tab. `onActivate` throws *after* the editor state was
+  replaced, so `setActive` restores and reloads the previous tab, never flushes the editor into
+  the failed one, and rethrows; `openPath` then drops the never-activated tab.
 - Plus `vaultscan`, `imgasset`, `theme`, `statusbar`, `search`, `security`, `tabs` suites.
 
 > **The browser harness.** `dev-harness.html` is `app.html` plus a fake Tauri IPC bridge

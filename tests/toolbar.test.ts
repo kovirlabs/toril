@@ -18,7 +18,7 @@ import { describe, expect, it } from "vitest";
 import { Editor, defaultValueCtx, editorViewCtx, rootCtx } from "@milkdown/kit/core";
 import { commonmark } from "@milkdown/kit/preset/commonmark";
 import { gfm } from "@milkdown/kit/preset/gfm";
-import { emoji } from "@milkdown/plugin-emoji";
+import { emoji } from "../src/editor/emoji";
 import { TextSelection } from "@milkdown/kit/prose/state";
 import { useCanonical } from "../src/editor/canonical";
 import { docToMarkdown } from "../src/editor/serializer";

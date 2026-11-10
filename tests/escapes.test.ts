@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 import { Editor, defaultValueCtx, editorViewCtx, rootCtx, serializerCtx } from "@milkdown/kit/core";
 import { commonmark } from "@milkdown/kit/preset/commonmark";
 import { gfm } from "@milkdown/kit/preset/gfm";
-import { emoji } from "@milkdown/plugin-emoji";
+import { emoji } from "../src/editor/emoji";
 import { useCanonical } from "../src/editor/canonical";
 import { findCandidates, minimizeEscapes, splitBlocks } from "../src/editor/escapes";
 import { docToMarkdown } from "../src/editor/serializer";
