@@ -22,7 +22,7 @@ import { describe, expect, it } from "vitest";
 import { Editor, defaultValueCtx, rootCtx } from "@milkdown/kit/core";
 import { commonmark } from "@milkdown/kit/preset/commonmark";
 import { gfm } from "@milkdown/kit/preset/gfm";
-import { emoji } from "@milkdown/plugin-emoji";
+import { emoji } from "../src/editor/emoji";
 import { useCanonical } from "../src/editor/canonical";
 import { docToMarkdown } from "../src/editor/serializer";
 import { joinFrontMatter, splitFrontMatter } from "../src/editor/frontmatter";
@@ -95,6 +95,12 @@ const preserved: Record<string, string> = {
   bracketCitation: "See figure [1] and [a, b].\n",
   approximateTilde: "50% stenosis, ~3 cm, 5 * 3 mm.\n",
   bareAutolink: "Visit https://example.com today.\n",
+  // emoji-regex counts ©/®/™ as emoji but twemoji leaves them as text, so
+  // upstream made them `emoji` nodes that crashed the view on load ("Invalid
+  // array passed to renderSpec") and serialized to nothing — `A © B` saved as
+  // `A  B` (src/editor/emoji.ts). Mounting the view is part of this gate.
+  trademarkSymbols: "Omnipaque® and Visipaque™, © 2026.\n",
+  symbolsBesideEmoji: "Ship it 🚀 under the Toril™ name.\n",
 };
 
 // Obsidian-specific syntax. Toril does not *render* most of it yet, but it must

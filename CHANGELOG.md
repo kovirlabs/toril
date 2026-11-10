@@ -11,6 +11,11 @@ GitHub Release notes plus the commits that shipped in it.
 
 ## [Unreleased]
 
+## [v1.1.2] — 2026-11-09
+
+Saving a note in an Obsidian vault no longer breaks its links, embeds and callouts, and
+notes containing ©, ® or ™ open again.
+
 ### Fixed
 - **Saving a note no longer breaks Obsidian links, embeds and callouts.** When you edited a
   note in an Obsidian vault, saving it rewrote `[[Pneumothorax]]` as `\[\[Pneumothorax]]`,
@@ -29,6 +34,19 @@ GitHub Release notes plus the commits that shipped in it.
   written only where the text would otherwise change meaning, such as a line that would
   turn into a heading or list. Every save checks this by re-reading what it is about to
   write and comparing it with your note, so no backslash is removed where it is needed.
+
+- **Notes containing ©, ® or ™ open again, and those symbols are kept when you save.**
+  Any note with one of them failed to open with *"RangeError: Invalid array passed to
+  renderSpec"*. The emoji support treated the three symbols as emoji it could not draw, and
+  a save would also have deleted them: `Omnipaque® and Visipaque™, © 2026` would have been
+  written as `Omnipaque and Visipaque,  2026`. They are now ordinary text. The emoji
+  versions (©️ ®️ ™️, as an emoji keyboard or `:tm:` types them) are unchanged.
+
+- **A note that fails to open no longer leaves a broken tab behind.** After a failed open,
+  the new tab stayed selected while the editor still showed the previous note, and
+  pressing Save could write the wrong text into the file that had failed to open. Toril
+  now stays on the note you were in and reports the error, including when you open a note
+  from the sidebar, which previously failed without any message.
 
 ## [v1.1.1] — 2026-10-15
 

@@ -138,3 +138,71 @@ describe("TabManager", () => {
     expect(tab.diverged?.theirs).toBe("y\n"); // clearing one leaves the other
   });
 });
+
+// A document the editor cannot load must never become the active tab. The
+// controller's onActivate throws *after* the editor's state was replaced but
+// before the screen redrew, so a tab left active there is the worst of both:
+// the user sees the previous note, while Save (which does not need a dirty tab)
+// writes the editor's half-loaded text over the file that failed to open.
+describe("TabManager: an activation that throws", () => {
+  function failing(badName: string) {
+    const container = document.createElement("div");
+    const events: string[] = [];
+    const tm = new TabManager(container, {
+      onActivate: (t) => {
+        events.push(`activate:${t.name}`);
+        if (t.name === badName) throw new RangeError("cannot load");
+      },
+      onDeactivate: (t) => events.push(`deactivate:${t.name}`),
+      onCloseRequest: () => {},
+    });
+    return { tm, container, events };
+  }
+
+  it("keeps the previous tab active, reloads it, and rethrows", () => {
+    const h = failing("bad.md");
+    const a = h.tm.open({ path: "/a.md", name: "a.md", content: "A" });
+    h.events.length = 0;
+    expect(() => h.tm.open({ path: "/bad.md", name: "bad.md", content: "B" })).toThrow("cannot load");
+    expect(h.tm.active()).toBe(a);
+    // deactivate a (flush), try bad, then reload a — the editor holds bad's
+    // half-loaded state until a is put back.
+    expect(h.events).toEqual(["deactivate:a.md", "activate:bad.md", "activate:a.md"]);
+    expect(h.container.querySelector('.tab[data-active="true"]')?.textContent).toContain("a.md");
+  });
+
+  it("never flushes the editor into the tab that failed to load", () => {
+    const h = failing("bad.md");
+    h.tm.open({ path: "/a.md", name: "a.md", content: "A" });
+    try {
+      h.tm.open({ path: "/bad.md", name: "bad.md", content: "B" });
+    } catch {
+      /* expected */
+    }
+    const bad = h.tm.byPath("/bad.md");
+    h.events.length = 0;
+    h.tm.open({ path: "/c.md", name: "c.md", content: "C" });
+    // Only the tab that was really active is flushed; bad.md's buffer is untouched.
+    expect(h.events).toEqual(["deactivate:a.md", "activate:c.md"]);
+    expect(bad?.content).toBe("B");
+  });
+
+  it("leaves no tab active when there was none to fall back to", () => {
+    const h = failing("bad.md");
+    expect(() => h.tm.open({ path: "/bad.md", name: "bad.md", content: "B" })).toThrow();
+    expect(h.tm.active()).toBeUndefined();
+  });
+
+  it("restores the active tab when switching to an existing tab fails", () => {
+    const h = failing("bad.md");
+    const a = h.tm.open({ path: "/a.md", name: "a.md", content: "A" });
+    try {
+      h.tm.open({ path: "/bad.md", name: "bad.md", content: "B" });
+    } catch {
+      /* expected */
+    }
+    const bad = h.tm.byPath("/bad.md")!;
+    expect(() => h.tm.setActive(bad.id)).toThrow();
+    expect(h.tm.active()).toBe(a);
+  });
+});

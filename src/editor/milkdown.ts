@@ -12,7 +12,7 @@ import { listener, listenerCtx } from "@milkdown/kit/plugin/listener";
 import { $prose } from "@milkdown/kit/utils";
 import { EditorState, Plugin, PluginKey, TextSelection, type Selection } from "@milkdown/kit/prose/state";
 import type { EditorView } from "@milkdown/kit/prose/view";
-import { emoji } from "@milkdown/plugin-emoji";
+import { emoji } from "./emoji";
 import { nord } from "@milkdown/theme-nord";
 import { searchPlugin } from "../ui/search";
 import { useCanonical } from "./canonical";

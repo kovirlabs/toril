@@ -13,7 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Editor, rootCtx } from "@milkdown/kit/core";
 import { commonmark } from "@milkdown/kit/preset/commonmark";
 import { gfm } from "@milkdown/kit/preset/gfm";
-import { emoji } from "@milkdown/plugin-emoji";
+import { emoji } from "../src/editor/emoji";
 import { useCanonical } from "../src/editor/canonical";
 import { docToHtml, htmlToDoc } from "../src/editor/html-serializer";
 import { docToMarkdown } from "../src/editor/serializer";
