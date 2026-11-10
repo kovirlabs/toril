@@ -547,6 +547,35 @@ reads. None is glamorous; all of them are what a heavy daily user hits first.
     gains a backslash on every save; remark moves a space out of a strikethrough
     boundary. Both reproduce on `main` without H0.
 
+- [ ] **H0b. Findings from a real vault (2026-11-09).** H0 was checked against a
+  179-note personal Obsidian vault: each note was split, round-tripped and rejoined
+  exactly as `main.ts` does, on a copy. Results:
+  - Before H0, saving broke links in 23 notes: 352 wikilinks/embeds/callout markers
+    came back as 296.
+  - After H0, no note lost a link, no note loads differently, and no note became
+    unstable.
+  - The only differences between `main` and H0 across the whole vault are 1,175 removed
+    backslashes and 81 removed autolink `<…>` pairs.
+
+  The same run surfaced rewrites and a crash that predate H0. Each one is a §3 item, in
+  order of reach:
+  - **A note containing `®`, `©` or `™` fails to load** in the jsdom gate
+    (`RangeError: Invalid array passed to renderSpec`). It comes from `@milkdown/plugin-emoji`
+    treating those characters as emoji: the same input loads fine without the plugin.
+    **Confirm in WebView2/WKWebView first.** If it reproduces there, it is the most urgent
+    item on this list: medical notes are full of `®` drug and contrast-agent names.
+  - **An empty list item `- ` is saved as `- <br />`** in 56 of 178 notes. Obsidian users
+    routinely leave a trailing empty bullet, and Toril writes raw HTML into the file.
+  - Blank-line normalization, in about 130 notes.
+  - Trailing whitespace stripped, in 71 notes. This is not in CLAUDE.md's
+    normalization list.
+  - Table re-padding, in 31 notes (already pinned as `tablePadding`).
+  - Tab-indented nested lists rewritten to two spaces.
+  - Emphasis split around inline code: `_Source: \`path\`_` → `_Source:_ _\`path\`_`.
+
+  Each needs a fixture pinning today's behavior before it is changed, as with every
+  `normalized` entry.
+
 - [ ] **H1. `feat/repair-escaped-syntax`** — a vault-wide, **explicit** action that finds
   notes damaged by pre-H0 saves (`\[\[`, `!\[\[`, `> \[!`) and repairs them. It shows the
   list and per-file diff first, snapshots every file before writing, and writes atomically.
