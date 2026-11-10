@@ -54,12 +54,31 @@ the feature-by-feature record.
 **Known trade-off:** Toril's canonical form (`src/editor/canonical.ts`) is `-` bullets and `---`
 thematic breaks, matching Obsidian — so most notes survive open→save untouched. Some constructs
 still reformat (setext headings, indented code blocks, `~~~` fences, two-space hard breaks, link
-reference definitions, `*`/`+`-authored bullets, `1)` ordered markers, over-indented nesting, bare
-URLs, and **CRLF line endings → LF**, which rewrites every line of a Windows-authored note); the
+reference definitions, `*`/`+`-authored bullets, `1)` ordered markers, over-indented nesting,
+`<angle-bracket>` autolinks → bare URLs, superfluous backslash escapes dropped, and **CRLF line
+endings → LF**, which rewrites every line of a Windows-authored note); the
 `normalized` class in `tests/roundtrip.test.ts` is the authoritative list — each entry pinned to its
 exact output. The reformatting is idempotent and never drops *rendered* content; the one known
 exception is that an **unused link reference definition is deleted outright** (see the deferred list
 above). Relevant to Obsidian-vault diffs (§1).
+
+**Escapes are minimal and proven — `fix/obsidian-syntax-escaping`.** remark-stringify escapes
+defensively (every `[`, `*`, `_`, `~`), which was a §3 bug, not a style issue: saving an edited
+note rewrote `[[Note]]` as `\[\[Note]]`, `![[x.png]]` as `!\[\[x.png]]` and `> [!tip]` as
+`> \[!tip]` — literal text in Obsidian, so every wikilink, image embed and callout in that note
+broke. It also rewrote ordinary prose (`figure [1]`, `~3 cm`, `snake_case`). `docToMarkdown`
+(`serializer.ts`) now passes the escaped output through `src/editor/escapes.ts`, which removes
+each escape **only if re-parsing proves the document unchanged** — never by re-implementing
+CommonMark's escaping rules. Per-block bisection (memoized, so between keystrokes only the edited
+block re-parses), then one whole-document parse as the proof; if that fails (a block whose meaning
+depends on another, e.g. a reference definition), a bounded whole-document search. Cost: roughly
+one extra full parse per serialization (~12 ms at 800 words, ~180 ms at 12k words in jsdom), paid
+on the debounced change listener. Rules for whoever touches it: the property gate compares against
+the **fully escaped** output, not the live doc, because two upstream quirks are lossy or unstable
+with or without this module — remark moves a space out of a strikethrough boundary
+(`~~a ~~b` shapes), and **a bare URL ending in `\` gains a backslash on every save** (pre-existing on
+`main`, not yet fixed). Table column padding is computed before minimization, so a cell holding
+`[[x\|y]]` may pad a character or two wide (pinned as `wikilinkAliasInTable`).
 
 **HTML as a first-class editable format — shipped in v0.1.1-alpha.1.** Open/edit/save `.html`
 WYSIWYG alongside `.md`, motivated by AI assistants emitting rich HTML instead of Markdown. The editor
@@ -344,6 +363,7 @@ toril/
 │   ├── editor/
 │   │   ├── milkdown.ts        # WYSIWYG setup + plugins (incl. clipboard-image paste, §6)
 │   │   ├── serializer.ts      # the ONE markdown <-> doc converter (§3.2)
+│   │   ├── escapes.ts         # proof-checked escape minimization, used only by serializer.ts
 │   │   ├── html-serializer.ts # the ONE HTML <-> doc converter (§3.2/§3.3)
 │   │   └── html-constructs.ts # richer HTML-only schema: callout/details/dl/mark/sub/sup (§6)
 │   ├── ui/
@@ -657,15 +677,24 @@ Phases 0–3 are complete and Phase 4 (polish) is in progress; the shipped detai
 **Gates (all green) — keep them green:**
 - **Atomic save:** `cargo test -p fsatomic` — interrupting a save leaves the original intact (§3.1).
 - **Round-trip:** `tests/roundtrip.test.ts` — real Milkdown in jsdom, built through
-  `canonical.ts` so the gate tests the canon that ships. Three classes: `fixtures`
+  `canonical.ts` so the gate tests the canon that ships. Classes: `fixtures`
   (canonical input is stable), `preserved` (human/Obsidian-authored input is **not**
-  rewritten), `normalized` (what we do rewrite, pinned to exact output), and
+  rewritten), `obsidianPreserved` (wikilinks, embeds, callouts, `==highlight==`,
+  `%%comments%%`, block IDs, nested tags, Anki cloze — Obsidian syntax Toril does not
+  render yet but must never break), `escapesKept` (the escapes that *are* needed —
+  task markers, heading/list/quote markers, raw HTML — stay), `normalized` (what we
+  do rewrite, pinned to exact output), and
   `frontMatter` (**whole-file** trip — split, round-trip the body, rejoin — the class
   that pins the §3 front-matter fix, including blocks no serializer could reproduce).
   Add math fixtures if math ever lands (§3.2). Plus `tests/frontmatter.test.ts`, the
   splitter's own gate: `join(split(x)) === x` over fixtures *and* 2000 randomized
   documents, detection per format, and the Rust-parity cases mirrored in
-  `mdhtml`/`mdrtf`.
+  `mdhtml`/`mdrtf`. Plus `tests/escapes.test.ts` — the minimizer's own gate: the
+  bisection (joint verification, so `\*a\*` never loses both escapes), the
+  whole-document fallback, the parse budget, a throwing parser read as *inequality*,
+  and a 200-case randomized property over the real parser (the saved file loads
+  exactly as the fully escaped file would, and is stable wherever the old output was).
+  Verified with teeth: forcing the verifier to accept everything fails 8 tests.
 - **Front-matter properties:** `tests/frontmatter-values.test.ts` — Obsidian's own
   writes come back as typed rows (the feature is useless otherwise), and everything
   we would *reformat* lands in raw mode instead: comments, anchors, flow sequences,

@@ -11,6 +11,25 @@ GitHub Release notes plus the commits that shipped in it.
 
 ## [Unreleased]
 
+### Fixed
+- **Saving a note no longer breaks Obsidian links, embeds and callouts.** When you edited a
+  note in an Obsidian vault, saving it rewrote `[[Pneumothorax]]` as `\[\[Pneumothorax]]`,
+  `![[scan.png]]` as `!\[\[scan.png]]`, and `> [!tip]` as `> \[!tip]`. Obsidian shows those
+  as plain text, so every link, embedded image and callout in that note stopped working.
+  Notes you only opened were never affected; notes you edited were. They now save
+  exactly as written.
+
+  If a note was saved by an earlier version, its links are still escaped on disk. Removing
+  the backslashes is safe: open the note in Toril, make any edit, and save. Toril writes
+  the links back without them. Version history also holds the copy from before Toril
+  first saved it.
+
+- **Toril no longer adds backslashes to ordinary text.** `figure [1]`, `~3 cm`, `5 * 3`,
+  `snake_case` and bare web addresses are left as you typed them. A backslash is now
+  written only where the text would otherwise change meaning, such as a line that would
+  turn into a heading or list. Every save checks this by re-reading what it is about to
+  write and comparing it with your note, so no backslash is removed where it is needed.
+
 ## [v1.1.1] — 2026-10-15
 
 ### Fixed

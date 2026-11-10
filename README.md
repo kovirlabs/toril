@@ -56,8 +56,10 @@ distinction matters, so they are listed separately.
 
 **Not yet built:**
 
-- Math rendering (KaTeX), PDF export, and in-editor YAML front matter.
-- Global search across a vault, wikilinks, and backlinks.
+- Math rendering (KaTeX) and PDF export.
+- Global search across a vault, and wikilink navigation and backlinks.
+  Obsidian's `[[links]]`, `![[embeds]]` and `> [!callouts]` are kept intact when
+  Toril saves a note, but are not yet clickable or rendered.
 - Signed installers, so Windows SmartScreen and macOS Gatekeeper warn on first
   run. That is expected for an unsigned build, not a sign of a problem.
 
