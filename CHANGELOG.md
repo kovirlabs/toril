@@ -11,6 +11,11 @@ GitHub Release notes plus the commits that shipped in it.
 
 ## [Unreleased]
 
+## [v1.1.2] — 2026-11-09
+
+Saving a note in an Obsidian vault no longer breaks its links, embeds and callouts, and
+notes containing ©, ® or ™ open again.
+
 ### Fixed
 - **Saving a note no longer breaks Obsidian links, embeds and callouts.** When you edited a
   note in an Obsidian vault, saving it rewrote `[[Pneumothorax]]` as `\[\[Pneumothorax]]`,
