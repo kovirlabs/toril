@@ -11,6 +11,22 @@ GitHub Release notes plus the commits that shipped in it.
 
 ## [Unreleased]
 
+## [v1.1.3] — 2026-11-26
+
+A security maintenance release. Nothing changes in how Toril edits or saves notes.
+
+### Security
+- **Updated the self-update component to clear three advisories in a library it uses.**
+  Toril's updater depended on an old version of the `zip` library with three published
+  vulnerabilities (one rated critical) in how it reads zip archives. The updater now uses
+  a fixed version. Toril's own updates are not zip files and are signature-checked before
+  anything is unpacked, so the risk to installed copies was low. The fix ships anyway
+  because this code runs on the update path.
+
+### Changed
+- Tauri, the framework Toril is built on, moves from 2.11 to 2.12. The updater plugin
+  needed it.
+
 ## [v1.1.2] — 2026-11-09
 
 Saving a note in an Obsidian vault no longer breaks its links, embeds and callouts, and
